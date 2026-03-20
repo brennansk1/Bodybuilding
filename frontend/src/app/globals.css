@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Gym mode — larger text, higher contrast */
+.gym-mode {
+  font-size: 1.125rem;
+}
+.gym-mode .input-field {
+  font-size: 1.125rem;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+.gym-mode .text-sm {
+  font-size: 1rem;
+}
+.gym-mode .text-xs {
+  font-size: 0.875rem;
+}
+
+:root {
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+}
+
+body {
+  background-color: #0b1410;
+  color: #e8efe9;
+}
+
+/* Scrollbar theming */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0b1410;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a3328;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #245a3a;
+}
+
+/* Gold accent glow for focus states */
+*:focus-visible {
+  outline: 2px solid #c8a84e;
+  outline-offset: 2px;
+}
+
+/* Responsive breakpoints for desktop/mobile */
+@layer components {
+  .container-app {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+  .card {
+    @apply bg-jungle-card border border-jungle-border rounded-xl p-4 sm:p-6;
+  }
+  .card-hover {
+    @apply hover:bg-jungle-card-hover hover:border-jungle-border-hover transition-all duration-200;
+  }
+  .btn-primary {
+    @apply px-6 py-2.5 bg-jungle-accent hover:bg-jungle-accent-hover text-jungle-dark font-semibold rounded-lg transition-colors;
+  }
+  .btn-secondary {
+    @apply px-6 py-2.5 bg-jungle-card border border-jungle-border hover:border-jungle-accent text-jungle-text rounded-lg transition-colors;
+  }
+  .input-field {
+    @apply w-full px-3 py-2.5 bg-jungle-deeper border border-jungle-border rounded-lg focus:border-jungle-accent focus:outline-none text-jungle-text placeholder:text-jungle-dim transition-colors;
+  }
+  .label-field {
+    @apply block text-sm text-jungle-muted mb-1.5 font-medium;
+  }
+}

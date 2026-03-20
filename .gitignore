@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+*.egg
+
+# Node
+node_modules/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker/postgres/data/
+
+# OS
+.DS_Store
+Thumbs.db
+.Rhistory
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Data
+megaGymDataset.csv
+FoodData_Central_foundation_food_csv_2025-12-18/
+Ansur/
