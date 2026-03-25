@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date
 
 from pydantic import BaseModel, Field
@@ -12,6 +14,9 @@ class ProfileCreate(BaseModel):
     training_experience_years: int = Field(ge=0, le=50)
     wrist_circumference_cm: float | None = Field(default=None, gt=10, lt=25)
     ankle_circumference_cm: float | None = Field(default=None, gt=15, lt=35)
+    # Optional fields from onboarding enhancements
+    manual_body_fat_pct: float | None = Field(default=None, ge=3, le=50)
+    current_phase: str | None = Field(default=None, pattern="^(bulk|lean_bulk|cut|maintain|restoration|peak)?$")
 
 
 class MeasurementsCreate(BaseModel):
@@ -58,6 +63,8 @@ class PreferencesCreate(BaseModel):
     cardio_machine: str | None = Field(default=None, pattern="^(treadmill|stairmaster)$")
     cheat_meals_per_week: int | None = Field(default=None, ge=0, le=7)
     intra_workout_nutrition: bool | None = None
+    training_start_time: str | None = Field(default="10:00", pattern="^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    training_duration_min: int | None = Field(default=75, ge=30, le=240)
 
 
 class OnboardingCompleteResponse(BaseModel):

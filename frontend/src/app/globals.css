@@ -23,9 +23,25 @@
   --font-body: "Inter", system-ui, sans-serif;
 }
 
-body {
+html {
   background-color: #0b1410;
+}
+
+body {
   color: #e8efe9;
+}
+
+/* Desktop background image — hidden on mobile for performance */
+@media (min-width: 768px) {
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: url("/bg.jpg") center center / cover no-repeat fixed;
+    opacity: 0.18;
+    pointer-events: none;
+  }
 }
 
 /* Scrollbar theming */

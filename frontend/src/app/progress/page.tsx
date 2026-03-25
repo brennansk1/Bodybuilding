@@ -272,7 +272,7 @@ export default function ProgressPage() {
   };
 
   return (
-    <div className="min-h-screen bg-jungle-dark">
+    <div className="min-h-screen">
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
       <main className="container-app py-6">
@@ -289,7 +289,7 @@ export default function ProgressPage() {
           </div>
 
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="card text-center">
               <p className="text-[10px] text-jungle-muted uppercase tracking-wide">Current PDS</p>
               <p className="text-2xl font-bold text-jungle-accent mt-1">
@@ -346,8 +346,8 @@ export default function ProgressPage() {
               {weightData.length >= 2 ? (
                 <>
                   <MiniLineChart data={weightData} height={160} color="#c8a84e" />
-                  <div className="grid grid-cols-3 gap-3 mt-4">
-                    <div className="bg-jungle-deeper rounded-lg p-3 text-center">
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-4">
+                    <div className="bg-jungle-deeper rounded-lg p-2 sm:p-3 text-center">
                       <p className="text-[10px] text-jungle-muted">Start</p>
                       <p className="font-bold">{firstWeight}kg</p>
                     </div>

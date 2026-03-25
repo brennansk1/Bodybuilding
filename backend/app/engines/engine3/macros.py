@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 """
 Engine 3 — Nutrition Controller: Macro Prescription Calculator
 
-Pure math module for computing TDEE via Mifflin-St Jeor and deriving
-phase-specific macronutrient prescriptions.  No DB or HTTP imports.
+Pure math module for computing TDEE via Katch-McArdle (when LBM is
+available) or Mifflin-St Jeor (fallback) and deriving phase-specific
+macronutrient prescriptions.  No DB or HTTP imports.
 """
 
 from typing import Dict
@@ -12,11 +15,12 @@ from typing import Dict
 # Phase caloric adjustments (kcal)
 # ---------------------------------------------------------------------------
 _PHASE_OFFSETS = {
-    "bulk":     400,    # +300-500 midpoint
-    "cut":     -400,    # -(300-500) midpoint
+    "bulk":     450,    # +300-600 surplus
+    "lean_bulk": 250,   # +200-300 controlled surplus
+    "cut":     -400,    # deficit
     "maintain":  0,
     "peak":   -700,
-    "restoration": 0,   # starts at maintenance; calories increase weekly
+    "restoration": 0,
 }
 
 # Protein targets (g per kg TOTAL body weight) — aligned with ISSN position stand and
@@ -26,27 +30,91 @@ _PHASE_OFFSETS = {
 # Higher during deficit phases to defend against catabolism; lower in surplus where
 # anabolic environment reduces the protein stimulus required.
 _PROTEIN_PER_KG = {
-    "bulk":     2.0,   # ~1g/lb TBW — surplus environment, carbs drive anabolism
-    "maintain": 2.0,   # mid-range — adequate for tissue maintenance and MPS
-    "cut":      2.4,   # above maintenance — blunts muscle catabolism in deficit
-    "peak":     2.7,   # upper ceiling — extreme deficit of contest week demands maximum protection
-    "restoration": 2.2, # moderate — tapering down from peak protein during reverse diet
+    "bulk":      2.0,
+    "lean_bulk": 2.2,   # slightly higher to prioritize LBM in surplus
+    "maintain":  2.0,
+    "cut":       2.4,
+    "peak":      2.7,
+    "restoration": 2.2,
 }
 
 # Hard bounds enforced regardless of division overrides or other overrides (g/kg TBW)
 _PROTEIN_MIN_PER_KG = 1.6
 _PROTEIN_MAX_PER_KG = 2.7
 
-# Minimum fat floor (g per kg TOTAL body weight) — raised from prior 0.8 g/kg LBM.
-# Research: 20–35% of total calories from fat required for optimal androgen synthesis
-# (testosterone precursor biosynthesis). 1.0 g/kg TBW ≈ 22–28% of calories at typical
-# training TDEEs. Do not drop below this floor in any phase.
-_FAT_FLOOR_PER_KG = 1.0
+# Phase-decaying fat floor (g per kg TOTAL body weight)
+# Offseason: 1.0 g/kg — optimal for androgen synthesis and hormonal health
+# Early cut: 0.8 g/kg — slight sacrifice to spare carbs for training performance
+# Late cut (men <8% BF / women <14% BF): 0.5 g/kg — aggressive fat reduction,
+#   spared calories routed strictly to carbohydrates for muscle fullness
+# Peak: 0.4 g/kg — maximum carb sparing for glycogen supercompensation
+_FAT_FLOOR_BY_PHASE: dict[str, float] = {
+    "bulk": 1.0,
+    "lean_bulk": 1.0,
+    "maintain": 1.0,
+    "restoration": 0.9,
+    "cut": 0.8,        # early cut default — overridden to 0.5 when lean (see below)
+    "peak": 0.4,
+}
+_FAT_FLOOR_PER_KG = 1.0  # legacy fallback
+
+
+def _fat_floor_for_context(
+    phase: str,
+    body_fat_pct: float | None = None,
+    sex: str = "male",
+) -> float:
+    """Return the phase-appropriate fat floor in g/kg TBW.
+
+    During late-stage cuts (men <8% BF, women <14% BF), the floor drops
+    further to 0.5 g/kg to maximise carbohydrate availability for training
+    performance and muscle fullness.
+    """
+    phase_key = phase.strip().lower()
+    floor = _FAT_FLOOR_BY_PHASE.get(phase_key, _FAT_FLOOR_PER_KG)
+
+    # Late-cut override: smooth interpolation to avoid a jarring step-change
+    # at the threshold. Transitions from 0.8 → 0.5 g/kg over a 2% BF band
+    # (e.g., male: 10.0% → 8.0% BF), preventing macros from suddenly shifting
+    # by 50+ carb grams when a BF estimate crosses the threshold.
+    if phase_key == "cut" and body_fat_pct is not None:
+        lean_threshold = 8.0 if sex.strip().lower() == "male" else 14.0
+        transition_band = 2.0  # start transitioning 2% above threshold
+        if body_fat_pct <= lean_threshold:
+            # Fully in late-cut territory
+            floor = 0.5
+        elif body_fat_pct < lean_threshold + transition_band:
+            # Smooth interpolation band: 0.8 g/kg at threshold+2% → 0.5 at threshold
+            fraction = (lean_threshold + transition_band - body_fat_pct) / transition_band
+            floor = 0.8 - fraction * 0.3
+    return floor
 
 # Caloric densities
 _KCAL_PER_G_PROTEIN = 4.0
 _KCAL_PER_G_CARB    = 4.0
 _KCAL_PER_G_FAT     = 9.0
+
+
+def compute_rmr_cunningham(lbm_kg: float) -> float:
+    """Cunningham equation — gold standard for hyper-muscular athletes.
+
+    RMR = 500 + (22 × LBM_kg)
+
+    More accurate than Katch-McArdle for athletes with LBM > 75 kg
+    (Men's Open / Classic competitors), as Katch-McArdle under-predicts
+    RMR at extreme lean mass levels.
+
+    Parameters
+    ----------
+    lbm_kg : float
+        Lean body mass in kilograms.
+
+    Returns
+    -------
+    float
+        Resting metabolic rate in kcal/day.
+    """
+    return 500.0 + (22.0 * lbm_kg)
 
 
 def compute_tdee(
@@ -55,8 +123,13 @@ def compute_tdee(
     age: int,
     sex: str,
     activity_multiplier: float,
+    lean_mass_kg: float | None = None,
+    use_cunningham: bool = False,
 ) -> float:
-    """Return Total Daily Energy Expenditure using Mifflin-St Jeor.
+    """Return Total Daily Energy Expenditure.
+
+    Uses Katch-McArdle when lean body mass is available (more accurate for
+    muscular athletes); falls back to Mifflin-St Jeor otherwise.
 
     Parameters
     ----------
@@ -70,6 +143,9 @@ def compute_tdee(
         ``"male"`` or ``"female"`` (case-insensitive).
     activity_multiplier : float
         Standard PAL multiplier (e.g. 1.2 sedentary … 1.9 very active).
+    lean_mass_kg : float | None
+        Lean body mass in kg.  When provided, the Katch-McArdle formula
+        is used instead of Mifflin-St Jeor.
 
     Returns
     -------
@@ -82,7 +158,16 @@ def compute_tdee(
         If *sex* is not ``"male"`` or ``"female"``.
     """
     sex_lower = sex.strip().lower()
-    if sex_lower == "male":
+
+    if lean_mass_kg is not None and lean_mass_kg > 0:
+        if use_cunningham or lean_mass_kg >= 75.0:
+            # Cunningham — gold standard for hyper-muscular athletes (LBM ≥ 75 kg)
+            bmr = compute_rmr_cunningham(lean_mass_kg)
+        else:
+            # Katch-McArdle — accurate for typical muscular athletes
+            bmr = 370.0 + (21.6 * lean_mass_kg)
+    elif sex_lower == "male":
+        # Mifflin-St Jeor fallback when LBM unknown
         bmr = (10.0 * weight_kg) + (6.25 * height_cm) - (5.0 * age) + 5.0
     elif sex_lower == "female":
         bmr = (10.0 * weight_kg) + (6.25 * height_cm) - (5.0 * age) - 161.0
@@ -98,6 +183,7 @@ def compute_macros(
     weight_kg: float,
     sex: str,
     lean_mass_kg: float | None = None,
+    body_fat_pct: float | None = None,
 ) -> Dict[str, float]:
     """Derive a macronutrient prescription from TDEE and training phase.
 
@@ -156,8 +242,10 @@ def compute_macros(
     protein_g = round(protein_per_kg * weight_kg, 1)
     protein_kcal = protein_g * _KCAL_PER_G_PROTEIN
 
-    # Fat — floor of 1.0 g/kg TBW to maintain endocrine function
-    fat_g = round(_FAT_FLOOR_PER_KG * weight_kg, 1)
+    # Fat — phase-decaying floor (1.0 g/kg offseason → 0.5 late cut → 0.4 peak)
+    # Spared fat calories are routed strictly to carbohydrates
+    fat_floor = _fat_floor_for_context(phase_lower, body_fat_pct, sex)
+    fat_g = round(fat_floor * weight_kg, 1)
     fat_kcal = fat_g * _KCAL_PER_G_FAT
 
     # Carbs — remainder
@@ -175,17 +263,24 @@ def compute_macros(
 def compute_training_rest_day_macros(
     base_macros: dict,
     weight_kg: float,
+    days_per_week: int = 5,
+    phase: str = "maintain",
+    body_fat_pct: float | None = None,
+    sex: str = "male",
 ) -> dict:
     """
     Split the flat macro prescription into training-day and rest-day targets.
 
-    Training days: +20% carbs, fat adjusted down to keep calories similar.
-    Rest days: -20% carbs, fat adjusted up to compensate.
+    Uses weekly-neutral carb cycling: the total weekly carb budget is
+    preserved across training and rest days.  Training days receive ~25%
+    more carbs than rest days, with fat adjusted to keep weekly calories
+    roughly the same.
 
     Args:
         base_macros: Output of :func:`compute_macros` (with ``carbs_g``,
                      ``fat_g``, ``protein_g``, ``target_calories``).
         weight_kg: Body weight in kg (used to ensure fat floor is maintained).
+        days_per_week: Number of training days per week (default 5).
 
     Returns:
         Dict with ``training_day`` and ``rest_day`` sub-dicts, each
@@ -195,18 +290,31 @@ def compute_training_rest_day_macros(
     base_carbs = base_macros["carbs_g"]
     base_fat = base_macros["fat_g"]
     base_protein = base_macros["protein_g"]
-    fat_floor = round(_FAT_FLOOR_PER_KG * weight_kg, 1)
+    fat_floor = round(_fat_floor_for_context(phase, body_fat_pct, sex) * weight_kg, 1)
 
-    # Training day: +20% carbs, reduce fat to compensate
-    train_carbs = round(base_carbs * 1.20, 1)
-    extra_kcal = (train_carbs - base_carbs) * _KCAL_PER_G_CARB
-    train_fat = round(max(fat_floor, base_fat - extra_kcal / _KCAL_PER_G_FAT), 1)
+    rest_days = 7 - days_per_week
+
+    # Weekly carb budget must be preserved: 7 × base_carbs
+    # Solve: (days_per_week × train_carbs) + (rest_days × rest_carbs) = 7 × base_carbs
+    # With constraint: train_carbs = rest_carbs × ratio
+    # ratio chosen so training days get proportionally more carbs
+    if rest_days > 0 and days_per_week > 0:
+        # Target: training days get ~25% more carbs than rest days
+        ratio = 1.25
+        # rest_carbs × (days_per_week × ratio + rest_days) = 7 × base_carbs
+        rest_carbs = round((7.0 * base_carbs) / (days_per_week * ratio + rest_days), 1)
+        train_carbs = round(rest_carbs * ratio, 1)
+    else:
+        train_carbs = base_carbs
+        rest_carbs = base_carbs
+
+    # Adjust fat to keep weekly calories roughly the same
+    extra_carb_kcal = (train_carbs - base_carbs) * _KCAL_PER_G_CARB
+    train_fat = round(max(fat_floor, base_fat - extra_carb_kcal / _KCAL_PER_G_FAT), 1)
     train_cals = round(base_protein * 4 + train_carbs * 4 + train_fat * 9, 0)
 
-    # Rest day: -20% carbs, increase fat to maintain calories
-    rest_carbs = round(base_carbs * 0.80, 1)
-    saved_kcal = (base_carbs - rest_carbs) * _KCAL_PER_G_CARB
-    rest_fat = round(base_fat + saved_kcal / _KCAL_PER_G_FAT, 1)
+    saved_carb_kcal = (base_carbs - rest_carbs) * _KCAL_PER_G_CARB
+    rest_fat = round(base_fat + saved_carb_kcal / _KCAL_PER_G_FAT, 1)
     rest_cals = round(base_protein * 4 + rest_carbs * 4 + rest_fat * 9, 0)
 
     return {
@@ -279,8 +387,9 @@ def compute_restoration_macros(
     protein_g = round(protein_per_kg * weight_kg, 1)
     protein_kcal = protein_g * _KCAL_PER_G_PROTEIN
 
-    # Fat — floor of 1.0 g/kg TBW
-    fat_g = round(_FAT_FLOOR_PER_KG * weight_kg, 1)
+    # Fat — restoration phase uses 0.9 g/kg (rebuilding hormonal function)
+    fat_floor = _fat_floor_for_context("restoration")
+    fat_g = round(fat_floor * weight_kg, 1)
     fat_kcal = fat_g * _KCAL_PER_G_FAT
 
     # Carbs — remainder
@@ -476,3 +585,172 @@ def compute_peri_workout_carb_split(carbs_g: float, meal_count: int = 5) -> dict
         "other_meals_g": per_other_g,
         "other_meal_count": other_meals,
     }
+
+
+# Intra-workout HBCD scaling by session muscle tags
+# Large compound sessions (legs, back) deplete 2-3x more glycogen than isolation days
+_INTRA_HBCD_BY_MUSCLE: dict[str, int] = {
+    "quads": 50, "hamstrings": 50, "glutes": 40, "back": 45,
+    "chest": 25, "front_delt": 20, "side_delt": 15, "rear_delt": 15,
+    "shoulders": 25,
+    "biceps": 0, "triceps": 0, "forearms": 0, "calves": 0, "abs": 0, "traps": 10,
+}
+
+
+def compute_chrono_meal_plan(
+    daily_macros: dict,
+    training_start_time: str,
+    training_duration_min: int = 90,
+    meal_count: int = 5,
+    session_muscles: list[str] | None = None,
+) -> list[dict]:
+    """
+    Generate a chrono-nutrient meal plan anchored to the training window.
+
+    Distributes daily macros across meals with peri-workout optimization:
+    - Pre-workout (90-120 min before): high protein + carbs, minimal fat
+    - Intra-workout (scaled by session muscle tags): EAAs + HBCD
+    - Post-workout (within 60 min after): highest carb meal
+    - Remaining meals spaced 3.5-4 hours apart
+
+    Args:
+        daily_macros: {protein_g, carbs_g, fat_g, target_calories}
+        training_start_time: "HH:MM" format (e.g., "17:30")
+        training_duration_min: training session length in minutes
+        meal_count: total meals per day (3-6, default 5)
+        session_muscles: list of muscle group tags for today's session
+            (e.g. ["quads", "hamstrings", "glutes"]). Used to scale
+            intra-workout HBCD prescription by glycogen demand.
+
+    Returns:
+        List of meal dicts with time, macro targets, and labels.
+    """
+    # Parse training time
+    parts = training_start_time.split(":")
+    train_hour = int(parts[0])
+    train_min = int(parts[1]) if len(parts) > 1 else 0
+
+    protein = daily_macros.get("protein_g", 180)
+    carbs = daily_macros.get("carbs_g", 300)
+    fat = daily_macros.get("fat_g", 70)
+
+    meals = []
+
+    # Pre-workout: 90 min before training, high carb + protein, very low fat
+    pre_hour = train_hour - 2 if train_min < 30 else train_hour - 1
+    pre_min = (train_min + 30) % 60 if train_min >= 30 else train_min + 30
+    pre_carbs = round(carbs * 0.35, 0)
+    pre_protein = round(protein / meal_count * 1.1, 0)
+    pre_fat = round(min(5.0, fat * 0.05), 0)
+
+    # Post-workout: largest carb meal (within 60 min after session ends)
+    end_hour = train_hour + training_duration_min // 60
+    end_min = train_min + training_duration_min % 60
+    if end_min >= 60:
+        end_hour += 1
+        end_min -= 60
+    post_hour = end_hour
+    post_min = end_min + 30
+    if post_min >= 60:
+        post_hour += 1
+        post_min -= 60
+    post_carbs = round(carbs * 0.25, 0)
+    post_protein = round(protein / meal_count * 1.2, 0)
+    post_fat = round(min(5.0, fat * 0.05), 0)
+
+    # Intra-workout: HBCD scaled by muscle group glycogen demand
+    # Large muscle groups (quads, hamstrings, back) deplete glycogen heavily;
+    # small muscles (arms, calves) rely on pre-workout meal only.
+    intra = None
+    if training_duration_min > 75:
+        if session_muscles:
+            # Take the max HBCD demand from the session's muscle tags
+            intra_carbs = max(
+                (_INTRA_HBCD_BY_MUSCLE.get(m.lower(), 20) for m in session_muscles),
+                default=20,
+            )
+        else:
+            intra_carbs = 20  # fallback when no session info
+        if intra_carbs > 0:
+            intra_note = f"15g EAA + {intra_carbs}g HBCD (scaled to session demand)"
+            intra = {
+                "label": "Intra-Workout",
+                "time": f"{train_hour:02d}:{train_min:02d}",
+                "protein_g": 0,
+                "eaa_g": 15,
+                "carbs_g": intra_carbs,
+                "fat_g": 0,
+                "note": intra_note,
+            }
+        else:
+            intra = None  # arms/calves day — rely on pre-workout meal
+
+    # Remaining macros after peri-workout allocation
+    remaining_protein = protein - pre_protein - post_protein
+    remaining_carbs = carbs - pre_carbs - post_carbs - (intra["carbs_g"] if intra else 0)
+    remaining_fat = fat - pre_fat - post_fat
+    remaining_meals = meal_count - 2  # minus pre and post
+
+    # Distribute remaining meals evenly, spaced 3.5-4 hours
+    # Calculate available time windows (assume 8am wake, last meal 3h before sleep)
+    other_meals = []
+    per_meal_protein = round(max(0, remaining_protein) / max(1, remaining_meals), 0)
+    per_meal_carbs = round(max(0, remaining_carbs) / max(1, remaining_meals), 0)
+    per_meal_fat = round(max(0, remaining_fat) / max(1, remaining_meals), 0)
+
+    # Simple spacing: start at 8am, space by 4 hours, skip peri-workout window
+    meal_hour = 8
+    meal_num = 1
+    for _ in range(remaining_meals):
+        # Skip if this meal overlaps with pre/post workout window
+        while abs(meal_hour - pre_hour) < 2 or abs(meal_hour - post_hour) < 2:
+            meal_hour += 1
+        if meal_hour > 22:
+            break
+        other_meals.append({
+            "label": f"Meal {meal_num}",
+            "time": f"{meal_hour:02d}:00",
+            "protein_g": int(per_meal_protein),
+            "carbs_g": int(per_meal_carbs),
+            "fat_g": int(per_meal_fat),
+        })
+        meal_num += 1
+        meal_hour += 4
+
+    # Last meal: casein-dominant (if there's room)
+    if other_meals:
+        other_meals[-1]["label"] = f"Meal {meal_num - 1} (Casein)"
+        other_meals[-1]["note"] = "Slow-digesting protein before sleep"
+
+    # Assemble in chronological order
+    all_meals = []
+    for m in other_meals:
+        if int(m["time"].split(":")[0]) < pre_hour:
+            all_meals.append(m)
+
+    all_meals.append({
+        "label": "Pre-Workout",
+        "time": f"{pre_hour:02d}:{pre_min:02d}",
+        "protein_g": int(pre_protein),
+        "carbs_g": int(pre_carbs),
+        "fat_g": int(pre_fat),
+        "note": "High protein + complex carbs, strict <10g fat for rapid gastric emptying",
+    })
+
+    if intra:
+        all_meals.append(intra)
+
+    all_meals.append({
+        "label": "Post-Workout",
+        "time": f"{post_hour:02d}:{post_min:02d}",
+        "protein_g": int(post_protein),
+        "carbs_g": int(post_carbs),
+        "fat_g": int(post_fat),
+        "note": "Highest carb meal — maximize glycogen resynthesis",
+    })
+
+    for m in other_meals:
+        if int(m["time"].split(":")[0]) >= post_hour + 2:
+            all_meals.append(m)
+
+    return all_meals

@@ -1,0 +1,19 @@
+# Development overrides — automatically loaded by `docker compose up`
+# For production: docker compose -f docker-compose.yml up
+services:
+  backend:
+    build:
+      target: development
+    volumes:
+      - ./backend:/app
+    environment:
+      ENVIRONMENT: development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      target: development
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    command: npx next dev --turbo -H 0.0.0.0

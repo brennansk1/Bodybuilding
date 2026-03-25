@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date
 
@@ -315,7 +317,7 @@ async def generate_program(
     comp_date = getattr(profile, "competition_date", None)
     current_phase = prep_phase_for_date(comp_date)
     phase_config = get_phase_config(current_phase)
-    mesocycle_weeks = max(4, phase_config.get("recommended_meso_weeks", 4))
+    mesocycle_weeks = max(4, phase_config.get("recommended_meso_weeks", 6))
 
     # Read preferences — split is auto-selected by the engine based on HQI gaps
     prefs = profile.preferences or {}
@@ -459,7 +461,7 @@ async def get_session(
         raise HTTPException(status_code=404, detail="No session for this date")
 
     sets_result = await db.execute(
-        select(TrainingSet, Exercise.name, Exercise.primary_muscle)
+        select(TrainingSet, Exercise.name, Exercise.primary_muscle, Exercise.equipment)
         .join(Exercise, TrainingSet.exercise_id == Exercise.id)
         .where(TrainingSet.session_id == session.id)
         .order_by(TrainingSet.set_number)
@@ -496,13 +498,14 @@ async def get_session(
             }
 
     sets = []
-    for ts, name, muscle in sets_rows:
+    for ts, name, muscle, equipment in sets_rows:
         key = f"{name}_{ts.set_number}"
         ghost = prev_actuals.get(key, {})
         sets.append({
             "id": str(ts.id),
             "exercise_name": name,
             "muscle_group": muscle,
+            "equipment": equipment or "bodyweight",
             "set_number": ts.set_number,
             "prescribed_reps": ts.prescribed_reps,
             "prescribed_weight_kg": ts.prescribed_weight_kg,
@@ -532,6 +535,7 @@ class SetLog(BaseModel):
     actual_reps: int | None = None
     actual_weight_kg: float | None = None
     rpe: float | None = None
+    actual_exercise_name: str | None = None
 
 
 class SessionLogRequest(BaseModel):
@@ -574,6 +578,25 @@ async def log_session(
             training_set.actual_weight_kg = set_log.actual_weight_kg
         if set_log.rpe is not None:
             training_set.rpe = set_log.rpe
+
+        is_substitute = bool(set_log.actual_exercise_name and set_log.actual_exercise_name.strip().lower() != ex_name.strip().lower())
+
+        if is_substitute and set_log.actual_reps and set_log.actual_weight_kg:
+            from app.models.training import StrengthLog
+            from app.engines.engine2.resistance import estimate_1rm
+            from datetime import date
+            e1rm = estimate_1rm(set_log.actual_weight_kg, set_log.actual_reps)
+            db.add(StrengthLog(
+                user_id=user.id,
+                recorded_date=date.today(),
+                exercise_name=set_log.actual_exercise_name,
+                weight_kg=set_log.actual_weight_kg,
+                reps=set_log.actual_reps,
+                rpe=set_log.rpe,
+                estimated_1rm=e1rm,
+            ))
+            # Skip double progression for the original exercise because this was an ad-hoc substitution
+            continue
 
         # Double progression check with equipment-specific increments
         if training_set.actual_reps and training_set.actual_weight_kg and training_set.rpe:
@@ -696,6 +719,48 @@ async def get_strength_history(
 
 
 # ---------------------------------------------------------------------------
+# Autoregulation & Progression
+# ---------------------------------------------------------------------------
+
+@router.post("/program/autoregulate-today")
+async def autoregulate_today(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Lookup today's active session
+    today = date.today()
+    result_session = await db.execute(
+        select(TrainingSession)
+        .where(
+            TrainingSession.user_id == user.id, 
+            TrainingSession.session_date == today, 
+            TrainingSession.completed == False
+        )
+    )
+    session = result_session.scalar_one_or_none()
+    if not session:
+        return {"message": "No active session today.", "dropped_sets": 0}
+
+    # Fetch today's HRVLog for soreness data
+    result_hrv = await db.execute(
+        select(HRVLog)
+        .where(HRVLog.user_id == user.id, HRVLog.recorded_date == today)
+    )
+    hrv = result_hrv.scalar_one_or_none()
+    if not hrv or not getattr(hrv, "sore_muscles", None):
+        return {"message": "No sore muscles logged today.", "dropped_sets": 0}
+
+    # Call the training service
+    from app.services.training import autoregulate_session_for_soreness
+    dropped, affected = await autoregulate_session_for_soreness(db, user.id, session, hrv.sore_muscles)
+    await db.commit()
+
+    return {
+        "message": f"Session autoregulated. Dropped {dropped} sets.",
+        "dropped_sets": dropped,
+        "affected_exercises": affected,
+    }
+
 # Progression status
 # ---------------------------------------------------------------------------
 

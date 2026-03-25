@@ -9,6 +9,7 @@ import SpiderChart from "@/components/SpiderChart";
 import MiniLineChart from "@/components/MiniLineChart";
 import MuscleHeatmap from "@/components/MuscleHeatmap";
 import AdherenceHeatmap from "@/components/AdherenceHeatmap";
+import OnboardingWizard, { shouldShowWizard } from "@/components/OnboardingWizard";
 
 interface PDSEntry {
   date: string;
@@ -198,6 +199,36 @@ export default function DashboardPage() {
 
   // Quick log weight state
   const [quickWeight, setQuickWeight] = useState("");
+
+  // Coronado onboarding wizard
+  const [showWizard, setShowWizard] = useState(false);
+  useEffect(() => {
+    if (shouldShowWizard()) setShowWizard(true);
+  }, []);
+
+  // kg/lbs toggle — synced with training page via localStorage
+  const [useLbs, setUseLbs] = useState(false);
+  useEffect(() => {
+    setUseLbs(localStorage.getItem("useLbs") === "true");
+  }, []);
+  const toggleUnit = () => {
+    const next = !useLbs;
+    setUseLbs(next);
+    localStorage.setItem("useLbs", String(next));
+  };
+  const unit = useLbs ? "lbs" : "kg";
+  const wt = (kg: number | null | undefined, decimals = 1): string => {
+    if (kg == null) return "—";
+    const val = useLbs ? kg * 2.20462 : kg;
+    return val.toFixed(decimals);
+  };
+
+  // Calculate inflation multiplier for current body -> ideal ghost
+  const currentLbm = diagnostic?.body_fat?.lean_mass_kg || 0;
+  const targetLbm = diagnostic?.weight_cap?.target_lbm_kg || 0;
+  const inflationMultiplier = (currentLbm > 0 && targetLbm > 0)
+    ? Math.pow(targetLbm / currentLbm, 1 / 3)
+    : diagnostic?.ghost_model?.allometric_multiplier || 1.0;
   const [quickLogging, setQuickLogging] = useState(false);
   const [quickLogged, setQuickLogged] = useState(false);
   const [recentWeights, setRecentWeights] = useState<WeightEntry[]>([]);
@@ -205,6 +236,17 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!loading && !user) { router.push("/auth/login"); return; }
     if (!user) return;
+
+    // Reset state before fetching new data to prevent bleedthrough
+    setPds(null);
+    setMuscleGaps(null);
+    setSymmetry(null);
+    setPhaseRec(null);
+    setAri(null);
+    setAdherence([]);
+    setDiagnostic(null);
+    setClassEstimate(null);
+    setRecentWeights([]);
 
     // Load independent data immediately
     api.get<ARIData>("/engine2/ari").then(setAri).catch(() => {});
@@ -241,6 +283,11 @@ export default function DashboardPage() {
     setRunningDiag(true);
     try {
       await api.post("/engine1/run");
+      
+      // Update dependent engines after the new state is measured
+      await api.post("/engine2/program/generate").catch(() => {});
+      await api.post("/engine3/autoregulation").catch(() => {});
+      
       const [newPds, newGaps, newSymmetry, newPhaseRec, newDiag] = await Promise.all([
         api.get<PDSData>("/engine1/pds"),
         api.get<MuscleGapsData>("/engine1/muscle-gaps"),
@@ -267,8 +314,9 @@ export default function DashboardPage() {
     const val = parseFloat(quickWeight);
     if (isNaN(val) || val <= 0) return;
     setQuickLogging(true);
+    const kg_val = useLbs ? val / 2.20462 : val;
     try {
-      await api.post("/checkin/daily", { body_weight_kg: val });
+      await api.post("/checkin/daily", { body_weight_kg: kg_val });
       setQuickLogged(true);
       setQuickWeight("");
       setTimeout(() => setQuickLogged(false), 2000);
@@ -324,7 +372,8 @@ export default function DashboardPage() {
   const phaseColorClass = PHASE_COLORS[currentPhase] ?? "bg-blue-500/20 text-blue-400";
 
   return (
-    <div className="min-h-screen bg-jungle-dark">
+    <div className="min-h-screen">
+      {showWizard && <OnboardingWizard onDismiss={() => setShowWizard(false)} />}
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
       <main className="container-app py-6">
@@ -336,9 +385,18 @@ export default function DashboardPage() {
             </h1>
             <p className="text-jungle-muted text-sm mt-1">Competitive physique dashboard</p>
           </div>
-          <a href="/checkin" className="btn-primary text-center whitespace-nowrap">
-            Daily Check-In
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleUnit}
+              className="btn-secondary text-xs px-3 py-1.5 font-mono"
+              title="Toggle weight unit"
+            >
+              {useLbs ? "LBS" : "KG"}
+            </button>
+            <a href="/checkin" className="btn-primary text-center whitespace-nowrap">
+              Daily Check-In
+            </a>
+          </div>
         </div>
 
         {/* PDS Banner */}
@@ -377,7 +435,7 @@ export default function DashboardPage() {
                     {diagnostic.body_fat.lean_mass_kg && (
                       <div>
                         <p className="text-xs text-jungle-muted uppercase tracking-wide">LBM</p>
-                        <p className="text-lg font-semibold">{diagnostic.body_fat.lean_mass_kg} kg</p>
+                        <p className="text-lg font-semibold">{wt(diagnostic.body_fat.lean_mass_kg)} {unit}</p>
                       </div>
                     )}
                   </>
@@ -387,12 +445,12 @@ export default function DashboardPage() {
                     <div className="hidden sm:block w-px h-8 self-center bg-jungle-border" />
                     <div>
                       <p className="text-xs text-jungle-muted uppercase tracking-wide">Weight Cap</p>
-                      <p className="text-lg font-semibold">{diagnostic.weight_cap.weight_cap_kg} kg</p>
+                      <p className="text-lg font-semibold">{wt(diagnostic.weight_cap.weight_cap_kg)} {unit}</p>
                       <p className="text-[9px] text-jungle-dim">IFBB division cap</p>
                     </div>
                     <div>
                       <p className="text-xs text-jungle-muted uppercase tracking-wide">Target LBM</p>
-                      <p className="text-lg font-semibold">{diagnostic.weight_cap.target_lbm_kg} kg</p>
+                      <p className="text-lg font-semibold">{wt(diagnostic.weight_cap.target_lbm_kg)} {unit}</p>
                     </div>
                   </>
                 )}
@@ -502,9 +560,9 @@ export default function DashboardPage() {
 
           {/* PDS Glide Path */}
           <ChartCard
-            title="PDS Glide Path"
-            subtitle="Trajectory Over Time"
-            tooltip="PDS (Physique Development Score) is your overall stage-readiness score combining muscle mass, conditioning, symmetry, and proportion — weighted for your division."
+            title="PDS Trajectory"
+            subtitle="PDS Glide Path Over Time"
+            tooltip="PDS (Physique Development Score) is your overall stage-readiness score. The ideal glide path represents steady progression toward your physical peak."
           >
             {pds && pdsLineData.length >= 2 ? (
               <div className="mt-3">
@@ -516,9 +574,15 @@ export default function DashboardPage() {
                   bandMax={tierBand[1]}
                   bandColor="#c8a84e18"
                 />
-                <div className="flex items-center gap-2 mt-2 text-[10px] text-jungle-dim">
-                  <span className="w-3 h-1.5 bg-jungle-accent/30 rounded inline-block" />
-                  <span>{currentTier} tier band</span>
+                <div className="flex items-center justify-between mt-2 text-[10px] text-jungle-dim">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-1.5 bg-jungle-accent/30 rounded inline-block" />
+                    <span className="capitalize">{currentTier} tier band</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 border-t border-dashed border-jungle-accent/70 inline-block" />
+                    <span>Target Trajectory</span>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -618,8 +682,8 @@ export default function DashboardPage() {
             tooltip="Recommended training phase based on your current physique state — muscle gaps, PDS score, and body fat. Cross-engine signal from Engine 1 → Engine 3."
           >
             {phaseRec ? (
-              <div className="mt-3 space-y-3">
-                <div className="flex items-center gap-3">
+              <div className="mt-3 flex flex-col h-full">
+                <div className="flex items-center gap-3 mb-2">
                   <span
                     className={`px-2 py-1 rounded text-xs font-bold uppercase ${
                       PHASE_COLORS[phaseRec.recommended_phase] ?? "bg-blue-500/20 text-blue-400"
@@ -641,10 +705,28 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
+                {diagnostic?.prep_timeline && (
+                   <div className="grid grid-cols-2 gap-2 mb-3">
+                     <div className="bg-jungle-deeper rounded-lg p-2 text-center">
+                       <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Timeline</p>
+                       <p className="text-sm font-bold text-jungle-muted">{diagnostic.prep_timeline.weeks_out} weeks left</p>
+                     </div>
+                     <div className="bg-jungle-deeper rounded-lg p-2 text-center">
+                       <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Duration</p>
+                       <p className="text-sm font-bold text-jungle-muted">{diagnostic.prep_timeline.total_weeks} weeks total</p>
+                     </div>
+                   </div>
+                )}
                 {phaseRec.reason && (
-                  <p className="text-[11px] text-jungle-muted border-t border-jungle-border pt-2">
+                  <p className="text-[11px] text-jungle-muted border-t border-jungle-border pt-2 pb-2">
                     {phaseRec.reason}
                   </p>
+                )}
+                {diagnostic?.prep_timeline?.phase_info && (
+                  <div className="border-t border-jungle-border pt-2 mt-auto space-y-1.5">
+                    <p className="text-[10px] text-jungle-dim"><span className="font-semibold text-jungle-muted">Diet:</span> {diagnostic.prep_timeline.phase_info.nutrition_cue}</p>
+                    <p className="text-[10px] text-jungle-dim"><span className="font-semibold text-jungle-muted">Training:</span> {diagnostic.prep_timeline.phase_info.training_cue}</p>
+                  </div>
                 )}
               </div>
             ) : (
@@ -656,8 +738,8 @@ export default function DashboardPage() {
           {classEstimate && (
             <ChartCard
               title="Competition Class"
-              subtitle="Division Routing"
-              tooltip="Your estimated competition class based on your height, weight, and division. Shows the class you'd compete in and the associated weight cap from IFBB rules."
+              subtitle="Division Routing & Ghost Limits"
+              tooltip="Your estimated competition class based on your height, weight, and division. Shows the mathematically derived Ghost limits scaling to your IFBB cap."
             >
               <div className="mt-3 space-y-3">
                 <div className="flex items-center gap-3">
@@ -668,42 +750,40 @@ export default function DashboardPage() {
                     <p className="text-xs text-jungle-muted capitalize">
                       {classEstimate.division.replace(/_/g, " ")}
                     </p>
-                    {classEstimate.max_weight_kg && classEstimate.max_weight_kg < 999 && (
-                      <p className="text-[10px] text-jungle-dim">
-                        Max weight: {classEstimate.max_weight_kg} kg
-                      </p>
-                    )}
                     {classEstimate.max_height_cm && classEstimate.max_height_cm < 999 && (
                       <p className="text-[10px] text-jungle-dim">
-                        Max height: {classEstimate.max_height_cm} cm
+                        Given Height: {classEstimate.max_height_cm} cm
                       </p>
                     )}
                   </div>
                 </div>
-                {diagnostic?.weight_cap && (
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div className="bg-jungle-deeper rounded-lg p-2">
-                      <p className="text-[9px] text-jungle-dim">Division Cap</p>
-                      <p className="text-sm font-bold">{diagnostic.weight_cap.weight_cap_kg} kg</p>
-                    </div>
-                    <div className="bg-jungle-deeper rounded-lg p-2">
-                      <p className="text-[9px] text-jungle-dim">Target LBM</p>
-                      <p className="text-sm font-bold">{diagnostic.weight_cap.target_lbm_kg} kg</p>
-                    </div>
-                  </div>
-                )}
-                {diagnostic?.ghost_model && (
-                  <div className="border-t border-jungle-border pt-2 mt-2">
-                    <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1.5">Ghost Model</p>
+                
+                {diagnostic?.weight_cap && diagnostic?.ghost_model && (
+                  <div className="border-t border-jungle-border pt-3 mt-2 space-y-3">
                     <div className="grid grid-cols-2 gap-2 text-center">
                       <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim">Ghost Mass</p>
-                        <p className="text-sm font-bold">{diagnostic.ghost_model.ghost_mass_kg.toFixed(1)} kg</p>
+                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Division Cap</p>
+                        <p className="text-sm font-bold text-red-400">{wt(diagnostic.weight_cap.weight_cap_kg)} {unit}</p>
                       </div>
                       <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim">Scale Factor</p>
-                        <p className="text-sm font-bold">{diagnostic.ghost_model.allometric_multiplier.toFixed(4)}x</p>
+                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Max LBM Limit</p>
+                        <p className="text-sm font-bold text-orange-400">{wt(diagnostic.weight_cap.target_lbm_kg)} {unit}</p>
                       </div>
+                      <div className="bg-jungle-deeper rounded-lg p-2">
+                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Ghost Mass</p>
+                        <p className="text-sm font-bold text-blue-400">{wt(diagnostic.ghost_model.ghost_mass_kg)} {unit}</p>
+                      </div>
+                      <div className="bg-jungle-deeper rounded-lg p-2">
+                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Ghost LBM Est.</p>
+                        <p className="text-sm font-bold text-green-400">
+                          {wt(diagnostic.ghost_model.ghost_mass_kg * 0.95)} {unit}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-jungle-deeper rounded-lg p-2 flex items-center justify-between px-4">
+                        <p className="text-[10px] text-jungle-dim uppercase tracking-wide">Mathematical Scale Factor</p>
+                        <p className="text-sm font-bold text-jungle-accent">{inflationMultiplier.toFixed(4)}x</p>
                     </div>
                   </div>
                 )}
@@ -725,9 +805,9 @@ export default function DashboardPage() {
                     <div className="flex justify-between text-[10px] mb-1">
                       <span className="text-jungle-dim">Ghost Mass</span>
                       <span className="text-jungle-muted font-medium">
-                        {diagnostic.ghost_model.ghost_mass_kg.toFixed(1)} kg
+                        {wt(diagnostic.ghost_model.ghost_mass_kg)} {unit}
                         <span className="text-jungle-dim ml-1">
-                          → {diagnostic.weight_cap?.target_lbm_kg} kg target
+                          → {wt(diagnostic.weight_cap?.target_lbm_kg)} {unit} target
                         </span>
                       </span>
                     </div>
@@ -746,16 +826,15 @@ export default function DashboardPage() {
                         }}
                       />
                     </div>
-                    <div className="flex justify-between text-[9px] text-jungle-dim mt-0.5">
-                      <span>0 kg</span>
-                      <span className="text-green-400">target</span>
+                    <div className="flex justify-end text-[9px] text-green-400 font-medium mt-0.5">
+                      <span>Target: {wt(diagnostic.weight_cap?.target_lbm_kg)} {unit}</span>
                     </div>
                   </div>
                   <div className="text-center shrink-0">
                     <p className="text-2xl font-bold text-jungle-accent">
-                      {diagnostic.ghost_model.allometric_multiplier.toFixed(3)}x
+                      {inflationMultiplier.toFixed(3)}x
                     </p>
-                    <p className="text-[9px] text-jungle-dim">scale factor</p>
+                    <p className="text-[9px] text-jungle-dim tracking-tight">scale factor</p>
                   </div>
                 </div>
 
@@ -1097,7 +1176,7 @@ export default function DashboardPage() {
             </h3>
             <div className="flex gap-2 items-end mb-3">
               <div className="flex-1">
-                <label className="label-field">Weight (kg)</label>
+                <label className="label-field">Weight ({unit})</label>
                 <input
                   type="number"
                   step="0.1"
@@ -1131,7 +1210,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between text-[10px] text-jungle-dim mb-1">
                   <span>Last {sparklineEntries.length} entries</span>
                   <span className="text-jungle-accent font-medium">
-                    {sparklineEntries[sparklineEntries.length - 1]?.weight_kg}kg
+                    {wt(sparklineEntries[sparklineEntries.length - 1]?.weight_kg)}{unit}
                   </span>
                 </div>
                 <svg

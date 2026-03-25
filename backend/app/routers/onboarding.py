@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +10,8 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.profile import UserProfile
 from app.models.measurement import BodyWeightLog, TapeMeasurement, SkinfoldMeasurement
+
+logger = logging.getLogger(__name__)
 from app.models.training import StrengthBaseline, Exercise
 from app.engines.engine1.body_fat import jackson_pollock_7
 from app.schemas.onboarding import (
@@ -41,7 +44,17 @@ async def create_profile(
         profile.training_experience_years = data.training_experience_years
         profile.wrist_circumference_cm = data.wrist_circumference_cm
         profile.ankle_circumference_cm = data.ankle_circumference_cm
+        if data.manual_body_fat_pct is not None:
+            profile.manual_body_fat_pct = data.manual_body_fat_pct
+        # Store current_phase in preferences JSONB
+        if data.current_phase:
+            prefs = profile.preferences or {}
+            prefs["initial_phase"] = data.current_phase
+            profile.preferences = prefs
     else:
+        prefs = {}
+        if data.current_phase:
+            prefs["initial_phase"] = data.current_phase
         profile = UserProfile(
             user_id=user.id,
             sex=data.sex,
@@ -52,6 +65,8 @@ async def create_profile(
             training_experience_years=data.training_experience_years,
             wrist_circumference_cm=data.wrist_circumference_cm,
             ankle_circumference_cm=data.ankle_circumference_cm,
+            manual_body_fat_pct=data.manual_body_fat_pct,
+            preferences=prefs if prefs else None,
         )
         db.add(profile)
 
@@ -165,6 +180,8 @@ async def set_preferences(
     if data.intra_workout_nutrition is not None:
         prefs["intra_workout_nutrition"] = data.intra_workout_nutrition
     profile.preferences = prefs
+    profile.training_start_time = data.training_start_time
+    profile.training_duration_min = data.training_duration_min
     await db.flush()
     return {"message": "Preferences saved", "step": 4}
 
@@ -189,6 +206,13 @@ async def get_profile(
         "wrist_circumference_cm": profile.wrist_circumference_cm,
         "ankle_circumference_cm": profile.ankle_circumference_cm,
         "manual_body_fat_pct": profile.manual_body_fat_pct,
+        "training_start_time": profile.training_start_time,
+        "training_duration_min": profile.training_duration_min,
+        "cycle_tracking_enabled": profile.cycle_tracking_enabled,
+        "cycle_start_date": str(profile.cycle_start_date) if profile.cycle_start_date else None,
+        "available_equipment": profile.available_equipment or [],
+        "disliked_exercises": profile.disliked_exercises or [],
+        "injury_history": profile.injury_history or [],
         "preferences": prefs,
         "display_name": prefs.get("display_name"),
     }
@@ -207,9 +231,12 @@ async def update_profile(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     allowed_fields = {
-        "age", "division", "competition_date", "training_experience_years",
-        "wrist_circumference_cm", "ankle_circumference_cm", "manual_body_fat_pct"
+        "age", "sex", "height_cm", "division", "competition_date",
+        "training_experience_years", "wrist_circumference_cm", "ankle_circumference_cm",
+        "manual_body_fat_pct", "training_start_time", "training_duration_min",
+        "cycle_tracking_enabled", "cycle_start_date",
     }
+    list_fields = {"available_equipment", "disliked_exercises", "injury_history"}
     for field, value in data.items():
         if field in allowed_fields and value is not None:
             if field == "competition_date" and isinstance(value, str):
@@ -218,15 +245,23 @@ async def update_profile(
                     value = _d.fromisoformat(value)
                 except ValueError:
                     continue
+            if field == "cycle_start_date" and isinstance(value, str):
+                from datetime import date as _d
+                try:
+                    value = _d.fromisoformat(value)
+                except ValueError:
+                    continue
             setattr(profile, field, value)
+        elif field in list_fields:
+            if isinstance(value, list):
+                setattr(profile, field, value)
 
     if "preferences" in data and isinstance(data["preferences"], dict):
         # Force a copy so SQLAlchemy detects change in JSONB column
         current = dict(profile.preferences or {})
         current.update(data["preferences"])
         profile.preferences = current
-        # Also ensure we log for debugging if needed
-        print(f"Updating preferences for user {user.id}: {data['preferences']}")
+        logger.debug("Preferences updated for user %s", user.id)
 
     await db.flush()
     return {"message": "Profile updated"}

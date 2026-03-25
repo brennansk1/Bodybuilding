@@ -39,3 +39,17 @@ htmlcov/
 megaGymDataset.csv
 FoodData_Central_foundation_food_csv_2025-12-18/
 Ansur/
+
+# Database
+*.db
+
+# Uploads
+uploads/
+
+# Auth tokens
+.audit_token
+
+# Large assets
+*.jpg
+*.jpeg
+*.png

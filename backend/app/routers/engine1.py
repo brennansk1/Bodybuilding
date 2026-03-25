@@ -93,12 +93,17 @@ async def get_muscle_gaps(
     if not log:
         raise HTTPException(status_code=404, detail="No muscle gap data. Run diagnostics first.")
 
+    from app.models.profile import UserProfile
+    profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
+    profile = profile_result.scalar_one_or_none()
+    division = profile.division if profile else None
+
     site_data = log.site_scores
     # Detect format: new format has gap_cm/pct_of_ideal keys
     if site_data and isinstance(next(iter(site_data.values()), None), dict):
-        ranked = rank_sites_by_gap(site_data)
+        ranked = rank_sites_by_gap(site_data, division=division)
         total_gap = compute_total_gap(site_data)
-        avg_pct = compute_avg_pct_of_ideal(site_data)
+        avg_pct = compute_avg_pct_of_ideal(site_data, division=division)
     else:
         ranked = []
         total_gap = 0.0
@@ -526,4 +531,4 @@ async def get_phase_recommendation(
     muscle_gaps = hqi_log.site_scores if hqi_log else {}
     pds_score = pds_log.pds_score if pds_log else 50.0
 
-    return _recommend_phase(muscle_gaps, pds_score, bf_pct, profile.sex, profile.preferences)
+    return _recommend_phase(muscle_gaps, pds_score, bf_pct, profile.sex, profile.preferences, competition_date=profile.competition_date)

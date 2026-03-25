@@ -72,7 +72,7 @@ class TestDivisionVectors:
 
 class TestKSiteFactors:
     def test_all_sites_present(self):
-        expected = {"neck", "shoulders", "chest", "bicep", "forearm", "waist", "hips", "thigh", "calf"}
+        expected = {"neck", "shoulders", "chest", "bicep", "forearm", "waist", "hips", "thigh", "calf", "back_width"}
         assert set(K_SITE_FACTORS.keys()) == expected
 
     def test_all_between_0_and_1(self):

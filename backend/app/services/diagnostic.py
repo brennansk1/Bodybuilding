@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Diagnostic Service — orchestrates Engine 1 modules with DB data.
 
@@ -10,7 +12,10 @@ Key changes from v1:
 - Enhanced symmetry details in PDS
 - Cross-engine phase recommendation (Engine 1 → Engine 3)
 """
+import logging
 from datetime import date
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,25 +74,31 @@ SITE_AVERAGE_MAP = {
     "neck": ["neck"],
     "shoulders": ["shoulders"],
     "chest": ["chest"],
+    "chest_relaxed": ["chest_relaxed"],
+    "chest_lat_spread": ["chest_lat_spread"],
     "bicep": ["left_bicep", "right_bicep"],
     "forearm": ["left_forearm", "right_forearm"],
     "waist": ["waist"],
     "hips": ["hips"],
     "thigh": ["left_thigh", "right_thigh"],
+    "proximal_thigh": ["left_proximal_thigh", "right_proximal_thigh"],
+    "distal_thigh": ["left_distal_thigh", "right_distal_thigh"],
     "calf": ["left_calf", "right_calf"],
-    # back_width is a single linear measurement (no bilateral averaging needed)
     "back_width": ["back_width"],
 }
 
 # Map averaged site name → skinfold column name for site-specific lean girth
 _SITE_SKINFOLD_MAP = {
     "chest": "chest",
+    "chest_relaxed": "chest",
+    "chest_lat_spread": "chest",
     "bicep": "bicep",
     "thigh": "thigh",
+    "proximal_thigh": "thigh",
+    "distal_thigh": "thigh",
     "calf": "calf",
     "waist": "abdominal",
     "hips": "suprailiac",
-    # Back width: use lower_back skinfold when available (best proxy for back subcutaneous fat)
     "back_width": "lower_back",
 }
 
@@ -168,10 +179,30 @@ async def get_latest_weight(db: AsyncSession, user_id) -> BodyWeightLog | None:
     return result.scalar_one_or_none()
 
 
-def _recommend_phase(muscle_gaps: dict, pds_score: float, body_fat_pct: float | None, sex: str, profile_prefs: dict | None = None) -> dict:
+def _recommend_phase(
+    muscle_gaps: dict,
+    pds_score: float,
+    body_fat_pct: float | None,
+    sex: str,
+    profile_prefs: dict | None = None,
+    competition_date=None,
+    weeks_out: int | None = None,
+) -> dict:
     """
     Cross-engine feedback: Engine 1 → Engine 3 phase recommendation.
-    Based on current physique state, suggest the optimal training phase.
+
+    Considers competition date, LBM adequacy (muscle gaps), AND body fat.
+    An athlete who is undermuscled should NOT be told to cut just because
+    BF% is above a threshold — they need muscle mass first, then cut.
+
+    Phase priority:
+      1. If competition is <20 weeks out and BF is high → cut (no choice)
+      2. If competition is <3 weeks out → peak_week
+      3. If far out (>30 weeks) and undermuscled → bulk/lean_bulk regardless of BF
+      4. If moderate BF (>fat_threshold) but >20 weeks out and undermuscled → lean_bulk
+         (build muscle in a slight surplus; BF will come down during the cut phase later)
+      5. If BF is very high (>25% male / >32% female) → always cut first (health)
+      6. Standard logic for remaining cases
     """
     avg_pct = compute_avg_pct_of_ideal(muscle_gaps)
     bf = body_fat_pct or 15.0
@@ -179,35 +210,112 @@ def _recommend_phase(muscle_gaps: dict, pds_score: float, body_fat_pct: float | 
     if sex == "male":
         lean_threshold = 10.0
         fat_threshold = 18.0
+        health_threshold = 25.0  # above this, cut regardless
     else:
         lean_threshold = 16.0
         fat_threshold = 25.0
+        health_threshold = 32.0
 
     if profile_prefs and profile_prefs.get("cut_threshold_bf_pct") is not None:
         fat_threshold = float(profile_prefs["cut_threshold_bf_pct"])
 
-    if avg_pct < 75 and bf < fat_threshold:
+    # Calculate weeks out if competition date provided
+    if weeks_out is None and competition_date:
+        from datetime import date as date_type
+        if isinstance(competition_date, str):
+            try:
+                competition_date = date_type.fromisoformat(competition_date)
+            except ValueError:
+                competition_date = None
+        if competition_date:
+            days = (competition_date - date_type.today()).days
+            weeks_out = max(0, days // 7) if days > 0 else None
+
+    # --- Priority 1: Very high BF (health risk) → always cut ---
+    if bf > health_threshold:
+        return {
+            "recommended_phase": "cut",
+            "reason": f"Body fat at {bf:.1f}% exceeds health threshold — cut to reduce metabolic risk.",
+            "confidence": "high",
+        }
+
+    # --- Priority 2: Peak week (≤3 weeks out) ---
+    if weeks_out is not None and weeks_out <= 3:
+        return {
+            "recommended_phase": "peak_week",
+            "reason": f"{weeks_out} weeks to show — peak week protocol.",
+            "confidence": "high",
+        }
+
+    # --- Priority 3: Close to show (<20 weeks) and BF above stage-ready ---
+    if weeks_out is not None and weeks_out <= 20 and bf > lean_threshold:
+        return {
+            "recommended_phase": "cut",
+            "reason": f"{weeks_out} weeks to show at {bf:.1f}% BF — time to cut for stage conditioning.",
+            "confidence": "high",
+        }
+
+    # --- Priority 4: Far from show (>20 weeks) — prioritize muscle building ---
+    if weeks_out is not None and weeks_out > 20:
+        if avg_pct < 80:
+            phase = "bulk" if avg_pct < 70 else "lean_bulk"
+            return {
+                "recommended_phase": phase,
+                "reason": (
+                    f"Muscle development at {avg_pct:.0f}% of ideal with {weeks_out} weeks to show — "
+                    f"prioritize building mass now, cut later."
+                ),
+                "confidence": "high",
+            }
+        elif bf > fat_threshold:
+            # Above fat threshold but still far out and well-muscled → lean bulk or mini-cut
+            if bf > fat_threshold + 5:
+                return {
+                    "recommended_phase": "cut",
+                    "reason": f"Body fat at {bf:.1f}% is elevated — brief cut to improve insulin sensitivity before resuming growth.",
+                    "confidence": "medium",
+                }
+            else:
+                return {
+                    "recommended_phase": "lean_bulk",
+                    "reason": f"BF at {bf:.1f}% is slightly elevated but {weeks_out} weeks to show — lean bulk to add quality mass.",
+                    "confidence": "medium",
+                }
+
+    # --- No competition date: use standard logic with muscle adequacy ---
+    if avg_pct < 75 and bf < health_threshold:
         return {
             "recommended_phase": "bulk",
-            "reason": f"Muscle development at {avg_pct}% of ideal — prioritize building mass.",
+            "reason": f"Muscle development at {avg_pct:.0f}% of ideal — prioritize building mass.",
             "confidence": "high",
         }
     elif avg_pct < 85 and bf < fat_threshold:
         return {
             "recommended_phase": "lean_bulk",
-            "reason": f"Good foundation ({avg_pct}% of ideal) — controlled surplus to continue building.",
+            "reason": f"Good foundation ({avg_pct:.0f}% of ideal) — controlled surplus to continue building.",
             "confidence": "medium",
         }
     elif bf > fat_threshold:
+        # BF is high but check muscle adequacy — undermuscled athletes
+        # benefit from lean bulking even at moderate BF levels
+        if avg_pct < 80:
+            return {
+                "recommended_phase": "lean_bulk",
+                "reason": (
+                    f"BF at {bf:.1f}% is elevated but muscle development is only {avg_pct:.0f}% of ideal — "
+                    f"lean bulk to build foundation before cutting."
+                ),
+                "confidence": "medium",
+            }
         return {
             "recommended_phase": "cut",
-            "reason": f"Body fat at {bf}% — cut to reveal existing muscle before building more.",
+            "reason": f"Body fat at {bf:.1f}% with good muscle base ({avg_pct:.0f}%) — cut to reveal existing muscle.",
             "confidence": "high",
         }
     elif bf <= lean_threshold and avg_pct >= 85:
         return {
             "recommended_phase": "maintain",
-            "reason": f"Near ideal ({avg_pct}%) and lean ({bf}%) — maintain or prep for competition.",
+            "reason": f"Near ideal ({avg_pct:.0f}%) and lean ({bf:.1f}%) — maintain or prep for competition.",
             "confidence": "medium",
         }
     else:
@@ -333,71 +441,108 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
     # Lean-adjust circumferences
     lean_averaged = _lean_adjust_measurements(averaged, body_fat_pct or 15.0, sf_data)
 
-    # LCSA
-    lcsa_values = compute_all_lcsa(tape_dict, body_fat_pct)
-    total_lcsa = compute_total_lcsa(lcsa_values)
+    # LCSA — fault-tolerant
+    lcsa_values: dict = {}
+    total_lcsa: float = 0.0
+    try:
+        lcsa_values = compute_all_lcsa(tape_dict, body_fat_pct)
+        total_lcsa = compute_total_lcsa(lcsa_values)
+    except Exception as _e:
+        logger.warning("LCSA computation failed: %s", _e)
 
-    # Volumetric Ghost Model — 3D biomechanical proportion analysis
-    ghost_result = run_ghost_pipeline(
-        height_cm=profile.height_cm,
-        division=profile.division,
-        lean_measurements=lean_averaged,
-        sex=profile.sex,
-    )
-    muscle_gaps = ghost_result["site_scores"]
-    ideal_circs = ghost_result["ideal_circumferences"]
-    total_gap = compute_total_gap(muscle_gaps)
-    avg_pct = compute_avg_pct_of_ideal(muscle_gaps, division=profile.division)
+    # Volumetric Ghost Model — 3D biomechanical proportion analysis (fault-tolerant)
+    ghost_result: dict = {}
+    muscle_gaps: dict = {}
+    total_gap: float = 0.0
+    avg_pct: float = 0.0
+    weight_cap: dict | None = None
+    ghost_model_data: dict | None = None
+    try:
+        ghost_result = run_ghost_pipeline(
+            height_cm=profile.height_cm,
+            division=profile.division,
+            lean_measurements=lean_averaged,
+            sex=profile.sex,
+        )
+        muscle_gaps = ghost_result["site_scores"]
+        total_gap = compute_total_gap(muscle_gaps)
+        avg_pct = compute_avg_pct_of_ideal(muscle_gaps, division=profile.division)
+        weight_cap = {
+            "weight_cap_kg": ghost_result["weight_cap_kg"],
+            "target_lbm_kg": ghost_result["target_lbm_kg"],
+            "stage_weight_kg": ghost_result["weight_cap_kg"],
+            "ghost_mass_kg": ghost_result["ghost_mass_kg"],
+            "allometric_multiplier": ghost_result["allometric_multiplier"],
+        }
+        ghost_model_data = {
+            "ghost_mass_kg": ghost_result["ghost_mass_kg"],
+            "allometric_multiplier": ghost_result["allometric_multiplier"],
+            "hanavan_volumes": ghost_result["hanavan_volumes"],
+            "scaled_ghost": ghost_result["scaled_ghost"],
+        }
+    except Exception as _e:
+        logger.warning("Ghost pipeline failed: %s", _e)
 
-    # Class estimation
-    class_estimate = estimate_class(
-        height_cm=profile.height_cm,
-        division=profile.division,
-        body_weight_kg=body_weight,
-    )
+    # Class estimation — fault-tolerant
+    class_estimate = None
+    try:
+        class_estimate = estimate_class(
+            height_cm=profile.height_cm,
+            division=profile.division,
+            body_weight_kg=body_weight,
+        )
+    except Exception as _e:
+        logger.warning("Class estimation failed: %s", _e)
 
-    # Aesthetic Vector
-    proportion_vector = compute_proportion_vector(lean_averaged, profile.height_cm)
-    delta_vector = compute_delta_vector(proportion_vector, division_vector)
-    priority_scores = compute_priority_scores(delta_vector, division=profile.division)
-    similarity = cosine_similarity(proportion_vector, division_vector)
+    # Aesthetic Vector — fault-tolerant
+    proportion_vector: dict = {}
+    delta_vector: dict = {}
+    priority_scores: dict = {}
+    similarity: float = 0.0
+    aesthetic_score: float = 50.0
+    try:
+        proportion_vector = compute_proportion_vector(lean_averaged, profile.height_cm)
+        delta_vector = compute_delta_vector(proportion_vector, division_vector)
+        priority_scores = compute_priority_scores(delta_vector, division=profile.division)
+        similarity = cosine_similarity(proportion_vector, division_vector)
 
-    # Aesthetic score
-    import math as _math
-    common = [s for s in division_vector if s in proportion_vector and s not in ("shoulder_to_waist", "v_taper")]
-    if common:
-        squared_errors = [(proportion_vector[s] - division_vector[s]) ** 2 for s in common]
-        rmse = _math.sqrt(sum(squared_errors) / len(squared_errors))
-        rmse_score = max(0.0, 1.0 - rmse / 0.05)
-        aesthetic_score = round((0.5 * similarity + 0.5 * rmse_score) * 100, 1)
-    else:
-        aesthetic_score = similarity * 100
+        import math as _math
+        common = [s for s in division_vector if s in proportion_vector and s not in ("shoulder_to_waist", "v_taper")]
+        if common:
+            squared_errors = [(proportion_vector[s] - division_vector[s]) ** 2 for s in common]
+            rmse = _math.sqrt(sum(squared_errors) / len(squared_errors))
+            rmse_score = max(0.0, 1.0 - rmse / 0.05)
+            aesthetic_score = round((0.5 * similarity + 0.5 * rmse_score) * 100, 1)
+        else:
+            aesthetic_score = similarity * 100
+    except Exception as _e:
+        logger.warning("Aesthetic vector computation failed: %s", _e)
 
-    mass_score = compute_muscle_mass_score(total_lcsa, profile.height_cm, profile.sex)
-    cond_score = compute_conditioning_score(body_fat_pct, profile.sex)
-    sym_score = compute_symmetry_score(tape_dict)
-    sym_details = compute_symmetry_details(tape_dict)
-
-    # Division-specific PDS
-    pds_score = compute_pds(aesthetic_score, mass_score, cond_score, sym_score, division=profile.division)
-    tier = get_tier(pds_score)
-    pds_weights = get_division_weights(profile.division)
-
-    # Weight cap (from Ghost pipeline — IFBB table lookup)
-    weight_cap = {
-        "weight_cap_kg": ghost_result["weight_cap_kg"],
-        "target_lbm_kg": ghost_result["target_lbm_kg"],
-        "stage_weight_kg": ghost_result["weight_cap_kg"],
-        "ghost_mass_kg": ghost_result["ghost_mass_kg"],
-        "allometric_multiplier": ghost_result["allometric_multiplier"],
-    }
-
-    # Prep timeline + annual calendar
+    # Prep timeline + annual calendar (computed early so phase feeds into conditioning score)
     comp_date = getattr(profile, "competition_date", None)
     current_phase = prep_phase_for_date(comp_date)
     phase_info = phase_description(current_phase)
     weeks_remaining = weeks_out(comp_date)
     annual_calendar = generate_annual_calendar(comp_date) if comp_date else None
+
+    # PDS components — fault-tolerant
+    mass_score: float = 0.0
+    cond_score: float = 50.0
+    sym_score: float = 100.0
+    sym_details: list = []
+    pds_score: float = 0.0
+    tier: str = "novice"
+    pds_weights: dict = {}
+    try:
+        mass_score = compute_muscle_mass_score(total_lcsa, profile.height_cm, profile.sex)
+        cond_score = compute_conditioning_score(body_fat_pct, profile.sex, phase=current_phase or "offseason")
+        sym_score = compute_symmetry_score(tape_dict)
+        sym_details = compute_symmetry_details(tape_dict)
+        pds_score = compute_pds(aesthetic_score, mass_score, cond_score, sym_score, division=profile.division)
+        tier = get_tier(pds_score)
+        pds_weights = get_division_weights(profile.division)
+    except Exception as _e:
+        logger.warning("PDS computation failed: %s", _e)
 
     # Body fat details
     body_fat_info = None
@@ -415,7 +560,7 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
             body_fat_info["individual_estimates"] = bf_composite.get("individual_estimates")
 
     # Phase recommendation (cross-engine: E1 → E3)
-    phase_recommendation = _recommend_phase(muscle_gaps, pds_score, body_fat_pct, profile.sex, profile.preferences)
+    phase_recommendation = _recommend_phase(muscle_gaps, pds_score, body_fat_pct, profile.sex, profile.preferences, competition_date=profile.competition_date)
 
     # Response profiling from PDS history
     response_profile = None
@@ -440,42 +585,39 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
         trajectory = predict_trajectory(pds_score, ceiling_pds, 52, profile.training_experience_years)
 
     today = date.today()
-
-    # Persist LCSA
-    lcsa_log = LCSALog(
-        user_id=user.id,
-        recorded_date=today,
-        site_values=lcsa_values,
-        total_lcsa=total_lcsa,
-    )
-    db.add(lcsa_log)
-
-    # Persist Muscle Gaps (stored in HQILog for backward compat — data format changed)
-    hqi_log = HQILog(
-        user_id=user.id,
-        recorded_date=today,
-        site_scores=muscle_gaps,
-        overall_hqi=avg_pct,
-    )
-    db.add(hqi_log)
-
-    # Persist PDS
     component_scores = {
         "aesthetic": aesthetic_score,
         "muscle_mass": mass_score,
         "conditioning": cond_score,
         "symmetry": sym_score,
     }
-    pds_log = PDSLog(
-        user_id=user.id,
-        recorded_date=today,
-        pds_score=pds_score,
-        component_scores=component_scores,
-        tier=tier,
-    )
-    db.add(pds_log)
 
-    await db.flush()
+    # Persist computed data — fault-tolerant so a DB error doesn't mask results
+    try:
+        if lcsa_values:
+            db.add(LCSALog(
+                user_id=user.id,
+                recorded_date=today,
+                site_values=lcsa_values,
+                total_lcsa=total_lcsa,
+            ))
+        if muscle_gaps:
+            db.add(HQILog(
+                user_id=user.id,
+                recorded_date=today,
+                site_scores=muscle_gaps,
+                overall_hqi=avg_pct,
+            ))
+        db.add(PDSLog(
+            user_id=user.id,
+            recorded_date=today,
+            pds_score=pds_score,
+            component_scores=component_scores,
+            tier=tier,
+        ))
+        await db.flush()
+    except Exception as _e:
+        logger.warning("Failed to persist diagnostic logs: %s", _e)
 
     return {
         "lcsa": {"site_values": lcsa_values, "total": total_lcsa},
@@ -514,12 +656,7 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
         "response_profile": response_profile,
         "advanced_measurements": _build_advanced_measurements(tape, lean_averaged),
         "class_estimate": class_estimate,
-        "ghost_model": {
-            "ghost_mass_kg": ghost_result["ghost_mass_kg"],
-            "allometric_multiplier": ghost_result["allometric_multiplier"],
-            "hanavan_volumes": ghost_result["hanavan_volumes"],
-            "scaled_ghost": ghost_result["scaled_ghost"],
-        },
+        "ghost_model": ghost_model_data,
     }
 
 

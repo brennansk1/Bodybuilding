@@ -453,3 +453,155 @@ def compute_weight_from_1rm(
     if target_reps <= 0:
         return round(estimated_1rm, 1)
     return round(estimated_1rm / (1.0 + target_reps / 30.0), 1)
+
+
+# ---------------------------------------------------------------------------
+# Seed weight estimation (RPE-adaptive starting point)
+# ---------------------------------------------------------------------------
+# Conservative bodyweight multipliers per muscle × equipment type.
+# These produce approximately RPE 6-7 starting weights so the
+# double-progression loop can ramp upward naturally via RPE feedback.
+# Multipliers are intentionally LOW to avoid overloading a new user.
+
+_SEED_MULTIPLIERS: dict[str, dict[str, float]] = {
+    # {muscle_group: {equipment_category: multiplier_of_bodyweight}}
+    "chest": {
+        "barbell":   0.55,   # ~RPE 6 bench press for intermediate
+        "dumbbell":  0.20,   # per hand
+        "cable":     0.18,
+        "machine":   0.45,
+    },
+    "back": {
+        "barbell":   0.50,   # barbell row
+        "dumbbell":  0.22,
+        "cable":     0.30,   # lat pulldown / cable row
+        "machine":   0.45,
+    },
+    "shoulders": {
+        "barbell":   0.30,   # overhead press
+        "dumbbell":  0.10,   # lateral raise / DB press
+        "cable":     0.06,   # cable lateral
+        "machine":   0.25,
+    },
+    "quads": {
+        "barbell":   0.70,   # squat
+        "dumbbell":  0.20,
+        "cable":     0.15,
+        "machine":   0.80,   # leg press (higher absolute)
+    },
+    "hamstrings": {
+        "barbell":   0.50,   # RDL
+        "dumbbell":  0.20,
+        "cable":     0.15,
+        "machine":   0.35,   # leg curl
+    },
+    "glutes": {
+        "barbell":   0.60,   # hip thrust
+        "dumbbell":  0.18,
+        "cable":     0.20,
+        "machine":   0.50,
+    },
+    "biceps": {
+        "barbell":   0.25,
+        "dumbbell":  0.10,
+        "cable":     0.12,
+        "machine":   0.20,
+    },
+    "triceps": {
+        "barbell":   0.35,   # close grip bench / skull crusher
+        "dumbbell":  0.10,
+        "cable":     0.15,
+        "machine":   0.20,
+    },
+    "calves": {
+        "barbell":   0.50,
+        "dumbbell":  0.15,
+        "cable":     0.15,
+        "machine":   0.60,
+    },
+    "traps": {
+        "barbell":   0.40,
+        "dumbbell":  0.18,
+        "cable":     0.15,
+        "machine":   0.30,
+    },
+    "forearms": {
+        "barbell":   0.15,
+        "dumbbell":  0.08,
+        "cable":     0.08,
+        "machine":   0.12,
+    },
+    "abs": {
+        "barbell":   0.10,
+        "dumbbell":  0.05,
+        "cable":     0.15,
+        "machine":   0.20,
+    },
+}
+
+# Rep adjustment factor: heavier for lower reps, lighter for higher reps
+# (inverse Epley — the same multiplier scaled for the target rep count)
+def _rep_adjustment(target_reps: int) -> float:
+    """Scale seed weight down for higher-rep ranges."""
+    if target_reps <= 0:
+        return 1.0
+    return 1.0 / (1.0 + target_reps / 30.0)
+
+
+def estimate_seed_weight(
+    body_weight_kg: float,
+    equipment: str,
+    muscle: str,
+    rep_target: int = 10,
+) -> float:
+    """
+    Estimate a conservative starting weight when no strength baseline exists.
+
+    Uses bodyweight-ratio multipliers that intentionally underestimate
+    (~RPE 6-7) so the double-progression loop in ``compute_progression()``
+    naturally ramps the athlete upward via RPE feedback.
+
+    Args:
+        body_weight_kg: Athlete's current bodyweight in kg.
+        equipment: Exercise equipment type (barbell, dumbbell, cable, machine, etc).
+        muscle: Target muscle group (DB primary_muscle name).
+        rep_target: Prescribed rep count for this set.
+
+    Returns:
+        Estimated working weight in kg, rounded to nearest 1.25 kg.
+    """
+    if body_weight_kg <= 0:
+        return 20.0  # absolute minimum fallback
+
+    eq = equipment.strip().lower()
+
+    # Map equipment string to category
+    if "barbell" in eq or "ez" in eq:
+        eq_key = "barbell"
+    elif "dumbbell" in eq:
+        eq_key = "dumbbell"
+    elif "cable" in eq:
+        eq_key = "cable"
+    elif "machine" in eq or "plate" in eq:
+        eq_key = "machine"
+    elif "body" in eq:
+        return 0.0  # bodyweight exercises have no external load
+    else:
+        eq_key = "machine"  # safe default
+
+    muscle_key = muscle.strip().lower()
+    muscle_multipliers = _SEED_MULTIPLIERS.get(muscle_key, {})
+    multiplier = muscle_multipliers.get(eq_key, 0.15)  # conservative fallback
+
+    # Base weight from BW ratio
+    base = body_weight_kg * multiplier
+
+    # Scale for rep target (lower reps → heavier, higher reps → lighter)
+    adjusted = base * _rep_adjustment(rep_target)
+
+    # Round to nearest 1.25 kg (smallest practical plate increment)
+    rounded = round(adjusted / 1.25) * 1.25
+
+    # Enforce minimum floor (the lightest useful working set)
+    min_weight = 5.0 if eq_key == "barbell" else 2.5
+    return max(min_weight, rounded)

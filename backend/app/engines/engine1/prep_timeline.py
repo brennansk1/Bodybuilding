@@ -15,6 +15,8 @@ contest      — show day ± 1 day
 restoration  — 1-12 weeks post-show: reverse diet, metabolic recovery
 """
 
+from __future__ import annotations
+
 from datetime import date, timedelta
 
 
@@ -60,6 +62,17 @@ def prep_phase_for_date(
         return "cut"
     if days_out <= 140:      # ≤ 20 weeks out
         return "lean_bulk"
+
+    # For long preps (> 20 weeks out), insert mini-cut phases every 16 weeks
+    # of offseason growth to resensitize insulin and prevent excessive adiposity
+    if days_out > 140:
+        weeks_out_val = days_out // 7
+        # Calculate which 16-week block we're in (counting backward from cut start)
+        weeks_into_offseason = weeks_out_val - 20  # weeks before lean_bulk starts
+        block_position = weeks_into_offseason % 20  # 16 weeks bulk + 4 weeks mini-cut
+        if block_position < 4:
+            return "mini_cut"
+
     return "offseason"
 
 
@@ -97,6 +110,17 @@ def phase_description(phase: str) -> dict:
             "nutrition_cue": "Modest +300-400 kcal surplus. Keep protein at 1.8-2.0 g/kg.",
             "training_cue": "Continue progressive overload. Begin tracking body composition closely.",
             "calorie_modifier": 1.10,
+        },
+        "mini_cut": {
+            "label": "Mini-Cut",
+            "description": (
+                "4-week aggressive deficit to resensitize insulin response and clear metabolic "
+                "fatigue from extended offseason growth. Prevents excessive adiposity during "
+                "long preps and primes the body for subsequent anabolic surplus."
+            ),
+            "nutrition_cue": "500-700 kcal deficit. Protein at 2.4 g/kg to preserve muscle. Minimize cardio.",
+            "training_cue": "Maintain intensity, reduce volume by 20%. Focus on strength retention.",
+            "calorie_modifier": 0.82,
         },
         "cut": {
             "label": "Contest Prep — Cut",
@@ -145,6 +169,7 @@ def get_phase_config(phase: str) -> dict:
     _CONFIGS = {
         "offseason":  {"recommended_meso_weeks": 6},
         "lean_bulk":  {"recommended_meso_weeks": 6},
+        "mini_cut":   {"recommended_meso_weeks": 4},
         "cut":        {"recommended_meso_weeks": 4},
         "peak_week":  {"recommended_meso_weeks": 2},
         "contest":    {"recommended_meso_weeks": 1},
@@ -169,17 +194,49 @@ def generate_annual_calendar(
     
     calendar: list[dict] = []
 
-    # 1. Off-season: from start_anchor to 20w out
+    # 1. Off-season with mini-cuts: from start_anchor to 20w out
+    #    Insert 4-week mini-cut phases every 16 weeks of growth
     offseason_end = comp - timedelta(weeks=20) - timedelta(days=1)
     if start_anchor < offseason_end:
-        calendar.append({
-            "phase": "offseason",
-            "start_date": start_anchor.isoformat(),
-            "end_date": offseason_end.isoformat(),
-            "weeks": (offseason_end - start_anchor).days // 7,
-            "recommended_meso_weeks": 6,
-            "description": "Building phase. Focus on strength, size, and structural improvements.",
-        })
+        offseason_weeks = (offseason_end - start_anchor).days // 7
+        if offseason_weeks > 20:
+            # Long offseason: break into 16-week bulk + 4-week mini-cut blocks
+            block_start = start_anchor
+            while block_start < offseason_end:
+                bulk_end = min(block_start + timedelta(weeks=16) - timedelta(days=1), offseason_end)
+                if block_start < bulk_end:
+                    calendar.append({
+                        "phase": "offseason",
+                        "start_date": block_start.isoformat(),
+                        "end_date": bulk_end.isoformat(),
+                        "weeks": (bulk_end - block_start).days // 7,
+                        "recommended_meso_weeks": 6,
+                        "description": "Building phase. Focus on strength, size, and structural improvements.",
+                    })
+                mini_cut_start = bulk_end + timedelta(days=1)
+                mini_cut_end = min(mini_cut_start + timedelta(weeks=4) - timedelta(days=1), offseason_end)
+                if mini_cut_start < offseason_end and mini_cut_start < mini_cut_end:
+                    calendar.append({
+                        "phase": "mini_cut",
+                        "start_date": mini_cut_start.isoformat(),
+                        "end_date": mini_cut_end.isoformat(),
+                        "weeks": (mini_cut_end - mini_cut_start).days // 7,
+                        "recommended_meso_weeks": 4,
+                        "description": (
+                            "4-week mini-cut to resensitize insulin response "
+                            "and manage body fat before next growth block."
+                        ),
+                    })
+                block_start = mini_cut_end + timedelta(days=1)
+        else:
+            calendar.append({
+                "phase": "offseason",
+                "start_date": start_anchor.isoformat(),
+                "end_date": offseason_end.isoformat(),
+                "weeks": offseason_weeks,
+                "recommended_meso_weeks": 6,
+                "description": "Building phase. Focus on strength, size, and structural improvements.",
+            })
 
     # 2. Lean bulk: start at max(ref, 20w out), end at 12w out
     lb_start = max(ref, comp - timedelta(weeks=20))

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Engine 3 — Nutrition Controller: Rate-of-Change (Kinetic) Module
 
@@ -230,15 +232,30 @@ def compute_rate_of_change(
     return detailed["rate_kg_per_week"]
 
 
-def target_rate(phase: str, weight_kg: float) -> float:
-    """Return the midpoint target rate of weight change for a phase.
+def target_rate(
+    phase: str,
+    weight_kg: float,
+    weeks_in_deficit: int = 0,
+) -> float:
+    """Return the metabolic-adaptation-adjusted target rate of weight change.
+
+    Rates are expressed as a fraction of body weight per week. For extended
+    cuts, metabolic adaptation progressively reduces TDEE, meaning the same
+    caloric deficit produces a slower rate of loss. Rather than masking this
+    as a "stall", this function adapts the target rate downward so the
+    coaching system doesn't over-prescribe cardio or caloric restriction when
+    the body has simply adapted.
 
     Parameters
     ----------
     phase : str
         One of ``"bulk"``, ``"cut"``, ``"maintain"``, ``"peak"``.
     weight_kg : float
-        Current body weight in kg (rates are expressed as % of BW).
+        Current body weight in kg.
+    weeks_in_deficit : int
+        Weeks spent in the current deficit phase. Every 4 weeks of sustained
+        deficit, the target rate drops ~5% to account for metabolic adaptation
+        (Trexler et al. 2014). Cap at -20% (8 weeks blocks of 4).
 
     Returns
     -------
@@ -258,6 +275,14 @@ def target_rate(phase: str, weight_kg: float) -> float:
 
     lo, hi = _TARGET_RATE_RANGES[phase_lower]
     midpoint_fraction = (lo + hi) / 2.0
+
+    # Metabolic adaptation downward scaling for extended deficits
+    # Every 4 weeks, reduce the target rate by 5%, capping at 20% reduction
+    if weeks_in_deficit > 4 and phase_lower in ("cut", "peak"):
+        adaptation_blocks = min(4, weeks_in_deficit // 4)  # max 4 blocks = -20%
+        adaptation_factor = 1.0 - 0.05 * adaptation_blocks
+        midpoint_fraction *= adaptation_factor
+
     return round(midpoint_fraction * weight_kg, 3)
 
 

@@ -42,9 +42,12 @@ export default function LoginPage() {
             </p>
           )}
           <div>
-            <label className="label-field">Username</label>
+            <label htmlFor="username" className="label-field">Username</label>
             <input
+              id="username"
+              name="username"
               type="text"
+              autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -53,9 +56,12 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="label-field">Password</label>
+            <label htmlFor="password" className="label-field">Password</label>
             <input
+              id="password"
+              name="password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

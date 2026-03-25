@@ -19,6 +19,7 @@ interface TrainingSet {
   actual_weight_kg: number | null;
   rpe: number | null;
   is_warmup?: boolean;
+  equipment?: string;
   last_actual_reps?: number;
   last_actual_weight_kg?: number;
 }
@@ -64,17 +65,18 @@ interface StrengthEntry {
 
 function rpeClass(rpe: string): string {
   const val = parseFloat(rpe);
-  if (!rpe || isNaN(val) || val <= 6) return "input-field text-sm py-1.5";
-  if (val <= 8) return "input-field text-sm py-1.5 border-yellow-500/50 bg-yellow-500/5";
-  if (val < 9.5) return "input-field text-sm py-1.5 border-orange-500/50 bg-orange-500/5";
-  return "input-field text-sm py-1.5 border-red-500/50 bg-red-500/5";
+  if (!rpe || isNaN(val) || val <= 6) return "input-field text-sm py-2.5";
+  if (val <= 8) return "input-field text-sm py-2.5 border-yellow-500/50 bg-yellow-500/5";
+  if (val < 9.5) return "input-field text-sm py-2.5 border-orange-500/50 bg-orange-500/5";
+  return "input-field text-sm py-2.5 border-red-500/50 bg-red-500/5";
 }
 
-// ─── Plate Calculator sub-component ──────────────────────────────────────────
+// ─── Plate Calculator ────────────────────────────────────────────────────────
 
-const PLATE_SIZES = [25, 20, 15, 10, 5, 2.5, 1.25];
+const PLATE_SIZES_KG = [25, 20, 15, 10, 5, 2.5, 1.25];
+const PLATE_SIZES_LBS = [45, 35, 25, 10, 5, 2.5];
 
-const PLATE_COLOURS: Record<number, string> = {
+const PLATE_COLOURS_KG: Record<number, string> = {
   25: "bg-red-600 text-white",
   20: "bg-blue-600 text-white",
   15: "bg-yellow-500 text-black",
@@ -84,28 +86,34 @@ const PLATE_COLOURS: Record<number, string> = {
   1.25: "bg-gray-400 text-black",
 };
 
-const PLATE_WIDTHS: Record<number, string> = {
-  25: "w-10",
-  20: "w-9",
-  15: "w-8",
-  10: "w-7",
-  5: "w-6",
-  2.5: "w-5",
-  1.25: "w-4",
+const PLATE_COLOURS_LBS: Record<number, string> = {
+  45: "bg-blue-600 text-white",
+  35: "bg-yellow-500 text-black",
+  25: "bg-green-600 text-white",
+  10: "bg-white text-black",
+  5: "bg-red-400 text-white",
+  2.5: "bg-gray-400 text-black",
 };
 
 function PlateCalculator({
   targetWeight,
   onClose,
+  useLbs,
 }: {
   targetWeight: number;
   onClose: () => void;
+  useLbs: boolean;
 }) {
-  const [barWeight, setBarWeight] = useState(20);
+  const plateSizes = useLbs ? PLATE_SIZES_LBS : PLATE_SIZES_KG;
+  const plateColours = useLbs ? PLATE_COLOURS_LBS : PLATE_COLOURS_KG;
+  const unit = useLbs ? "lbs" : "kg";
+  const defaultBar = useLbs ? 45 : 20;
+  const altBar = useLbs ? 35 : 15;
+  const [barWeight, setBarWeight] = useState(defaultBar);
 
   const plates: number[] = [];
   let remaining = Math.max(0, (targetWeight - barWeight) / 2);
-  for (const plate of PLATE_SIZES) {
+  for (const plate of plateSizes) {
     while (remaining >= plate - 0.001) {
       plates.push(plate);
       remaining -= plate;
@@ -116,7 +124,7 @@ function PlateCalculator({
   const totalLoaded = barWeight + plates.reduce((s, p) => s + p, 0) * 2;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
       <div
         className="w-full max-w-lg mx-auto bg-jungle-card border border-jungle-border rounded-t-2xl p-5 space-y-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -130,34 +138,34 @@ function PlateCalculator({
         {/* Bar toggle */}
         <div className="flex gap-2">
           <button
-            onClick={() => setBarWeight(20)}
+            onClick={() => setBarWeight(defaultBar)}
             className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              barWeight === 20
+              barWeight === defaultBar
                 ? "bg-jungle-accent text-jungle-dark"
                 : "bg-jungle-deeper border border-jungle-border text-jungle-muted"
             }`}
           >
-            Men's bar (20 kg)
+            Men&apos;s bar ({defaultBar} {unit})
           </button>
           <button
-            onClick={() => setBarWeight(15)}
+            onClick={() => setBarWeight(altBar)}
             className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              barWeight === 15
+              barWeight === altBar
                 ? "bg-jungle-accent text-jungle-dark"
                 : "bg-jungle-deeper border border-jungle-border text-jungle-muted"
             }`}
           >
-            Women's bar (15 kg)
+            Women&apos;s bar ({altBar} {unit})
           </button>
         </div>
 
         {/* Target display */}
         <div className="text-center">
           <p className="text-jungle-dim text-xs uppercase tracking-wider">Target</p>
-          <p className="text-2xl font-bold text-jungle-text">{targetWeight} kg</p>
+          <p className="text-2xl font-bold text-jungle-text">{targetWeight} {unit}</p>
           {Math.abs(totalLoaded - targetWeight) > 0.01 && (
             <p className="text-jungle-warning text-xs mt-0.5">
-              Closest loadable: {totalLoaded} kg
+              Closest loadable: {totalLoaded} {unit}
             </p>
           )}
         </div>
@@ -172,7 +180,7 @@ function PlateCalculator({
               {plates.map((plate, i) => (
                 <div
                   key={i}
-                  className={`${PLATE_COLOURS[plate]} ${PLATE_WIDTHS[plate]} h-12 flex items-center justify-center rounded text-xs font-bold shadow`}
+                  className={`${plateColours[plate] || "bg-gray-500 text-white"} px-3 h-12 flex items-center justify-center rounded text-xs font-bold shadow`}
                 >
                   {plate}
                 </div>
@@ -182,7 +190,7 @@ function PlateCalculator({
         </div>
 
         <p className="text-jungle-dim text-xs text-center">
-          Bar {barWeight} kg + {plates.reduce((s, p) => s + p, 0) * 2} kg plates = {totalLoaded} kg total
+          Bar {barWeight} {unit} + {plates.reduce((s, p) => s + p, 0) * 2} {unit} plates = {totalLoaded} {unit} total
         </p>
       </div>
 
@@ -196,7 +204,7 @@ function PlateCalculator({
   );
 }
 
-// ─── Rest Timer sub-component ─────────────────────────────────────────────────
+// ─── Rest Timer ──────────────────────────────────────────────────────────────
 
 function RestTimer({
   seconds,
@@ -213,22 +221,19 @@ function RestTimer({
   const isDone = seconds <= 0;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-center pb-safe">
-      <div className="w-full max-w-lg mx-auto bg-jungle-card border-t border-jungle-border px-5 py-3 flex items-center justify-between shadow-2xl">
+    <div className="fixed bottom-16 left-0 right-0 z-40 flex justify-center px-3">
+      <div className="w-full max-w-lg mx-auto bg-jungle-card border border-jungle-border rounded-xl px-4 py-2.5 flex items-center justify-between shadow-2xl">
         <div>
           <p className="text-[10px] text-jungle-dim uppercase tracking-wider">
             {isCompound ? "Compound rest" : "Isolation rest"}
           </p>
           {isDone ? (
-            <p className="text-green-400 font-semibold text-sm">Rest complete — begin next set</p>
+            <p className="text-green-400 font-semibold text-sm">Rest complete — go!</p>
           ) : (
-            <p className="text-2xl font-bold font-mono text-jungle-accent">{display}</p>
+            <p className="text-xl font-bold font-mono text-jungle-accent">{display}</p>
           )}
         </div>
-        <button
-          onClick={onSkip}
-          className="btn-secondary text-sm px-4 py-1.5"
-        >
+        <button onClick={onSkip} className="btn-secondary text-sm px-4 py-1.5">
           Skip
         </button>
       </div>
@@ -261,18 +266,31 @@ export default function TrainingPage() {
   const [sLogging, setSLogging] = useState(false);
   const [sLogged, setSLogged] = useState(false);
 
-  // ── Set-by-set logging ──
-  const [activeSetIndex, setActiveSetIndex] = useState(0);
-  const [completedSets, setCompletedSets] = useState<Record<string, { reps: string; weight: string; rpe: string }>>({});
+  // ── Set completion (no sequential locking — any set, any order) ──
+  // Persisted to localStorage so in-progress workout survives logout/phone-off
+  const [completedSets, setCompletedSets] = useState<Record<string, { reps: string; weight: string; rpe: string }>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("cpos_workout_completed");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          // Only restore if saved today
+          if (parsed._date === new Date().toISOString().split("T")[0]) {
+            const { _date, ...rest } = parsed;
+            return rest;
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    return {};
+  });
 
   // ── Previous session ghosts ──
   const [previousSets, setPreviousSets] = useState<Record<string, { reps: number; weight: number }>>({});
 
   // ── Rest timer ──
   const [restTimer, setRestTimer] = useState<{ active: boolean; seconds: number; isCompound: boolean }>({
-    active: false,
-    seconds: 0,
-    isCompound: true,
+    active: false, seconds: 0, isCompound: true,
   });
 
   // ── Plate calculator ──
@@ -286,21 +304,70 @@ export default function TrainingPage() {
   const [machineTaken, setMachineTaken] = useState<Set<string>>(new Set());
   const [altLog, setAltLog] = useState<Record<string, { name: string; weight: string; reps: string; rpe: string; logged: boolean }>>({});
 
-  // ── Gym mode ──
+  // ── Gym mode & Unit ──
   const [gymMode, setGymMode] = useState(false);
+  const [useLbs, setUseLbs] = useState(false);
+
+  // ── Accordion ──
+  const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
+  const [expandedWarmups, setExpandedWarmups] = useState<Set<string>>(new Set());
+
+  // ── Now Playing mode ──
+  const [nowPlaying, setNowPlaying] = useState(false);
+  const [currentSetIndex, setCurrentSetIndex] = useState(0);
+  const [showHistory, setShowHistory] = useState(false);
+  const [exerciseHistory, setExerciseHistory] = useState<StrengthEntry[]>([]);
+  const [historyExercise, setHistoryExercise] = useState<string>("");
+  const [progressToast, setProgressToast] = useState<string | null>(null);
+  const [pendingAdvance, setPendingAdvance] = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
 
-  // Initialise gym mode from localStorage
+  // Auto-save workout progress to localStorage (survives logout/phone-off)
   useEffect(() => {
-    const stored = localStorage.getItem("gymMode");
-    if (stored === "true") setGymMode(true);
+    if (Object.keys(completedSets).length > 0) {
+      localStorage.setItem("cpos_workout_completed", JSON.stringify({ _date: today, ...completedSets }));
+    }
+  }, [completedSets, today]);
+
+  useEffect(() => {
+    if (Object.keys(sets).length > 0) {
+      localStorage.setItem("cpos_workout_sets", JSON.stringify({ _date: today, ...sets }));
+    }
+  }, [sets, today]);
+
+  // Initialise gym mode and unit from localStorage
+  useEffect(() => {
+    const storedGym = localStorage.getItem("gymMode");
+    if (storedGym === "true") setGymMode(true);
+    const storedLbs = localStorage.getItem("useLbs");
+    if (storedLbs === "true") setUseLbs(true);
   }, []);
 
   const toggleGymMode = () => {
     const next = !gymMode;
     setGymMode(next);
     localStorage.setItem("gymMode", String(next));
+  };
+
+  const toggleUnit = () => {
+    const nextLbs = !useLbs;
+    setUseLbs(nextLbs);
+    localStorage.setItem("useLbs", String(nextLbs));
+
+    // Map current active string inputs to new unit
+    setSets((prev) => {
+      const next = { ...prev };
+      for (const k in next) {
+        if (next[k].weight) {
+          const w = parseFloat(next[k].weight);
+          if (!isNaN(w)) {
+            next[k].weight = nextLbs ? (w * 2.20462).toFixed(1) : (w / 2.20462).toFixed(1);
+          }
+        }
+      }
+      return next;
+    });
   };
 
   // ── Auth + data fetch ──
@@ -312,21 +379,48 @@ export default function TrainingPage() {
       api.get<TrainingSession>(`/engine2/session/${today}`)
         .then((s) => {
           setSession(s);
+          const lbs = localStorage.getItem("useLbs") === "true";
+          const m = lbs ? 2.20462 : 1;
+
           const initial: Record<string, { reps: string; weight: string; rpe: string }> = {};
           const prevData: Record<string, { reps: number; weight: number }> = {};
           s.sets.forEach((set) => {
+            let weightStr = "";
+            if (set.actual_weight_kg) weightStr = (set.actual_weight_kg * m).toFixed(1);
+            else if (set.prescribed_weight_kg) weightStr = (set.prescribed_weight_kg * m).toFixed(1);
+
             initial[set.id] = {
               reps: set.actual_reps?.toString() || set.prescribed_reps.toString(),
-              weight: set.actual_weight_kg?.toString() || set.prescribed_weight_kg?.toString() || "",
+              weight: weightStr,
               rpe: set.rpe?.toString() || "",
             };
-            // Populate previous session ghost values if backend returns them
             if (set.last_actual_reps != null && set.last_actual_weight_kg != null) {
-              prevData[set.id] = { reps: set.last_actual_reps, weight: set.last_actual_weight_kg };
+              prevData[set.id] = { reps: set.last_actual_reps, weight: Number((set.last_actual_weight_kg * m).toFixed(1)) };
             }
           });
+          // Merge with any in-progress data saved to localStorage
+          try {
+            const savedSets = localStorage.getItem("cpos_workout_sets");
+            if (savedSets) {
+              const parsed = JSON.parse(savedSets);
+              if (parsed._date === today) {
+                const { _date, ...restored } = parsed;
+                // Override API defaults with user's in-progress edits
+                for (const [id, data] of Object.entries(restored)) {
+                  if (initial[id]) {
+                    initial[id] = data as { reps: string; weight: string; rpe: string };
+                  }
+                }
+              }
+            }
+          } catch { /* ignore */ }
+
           setSets(initial);
           setPreviousSets(prevData);
+
+          // Auto-expand first exercise
+          const firstEx = s.sets.find((st) => !st.is_warmup);
+          if (firstEx) setExpandedExercise(firstEx.exercise_name);
         })
         .catch(() => {});
     }
@@ -339,7 +433,6 @@ export default function TrainingPage() {
       setRestTimer((prev) => {
         if (prev.seconds <= 1) {
           clearInterval(interval);
-          // Auto-dismiss after 3 s when timer hits 0
           setTimeout(() => setRestTimer({ active: false, seconds: 0, isCompound: true }), 3000);
           return { ...prev, seconds: 0 };
         }
@@ -351,10 +444,11 @@ export default function TrainingPage() {
 
   if (loading || !user) return null;
 
-  // ── Group sets by exercise (preserving order), separating warmup vs working ──
+  // ── Group sets by exercise ──
   const exerciseGroups: {
     name: string;
     muscle: string;
+    equipment: string;
     warmupSets: TrainingSet[];
     workingSets: TrainingSet[];
   }[] = [];
@@ -363,7 +457,13 @@ export default function TrainingPage() {
   session?.sets.forEach((set) => {
     if (!(set.exercise_name in seenExercises)) {
       seenExercises[set.exercise_name] = exerciseGroups.length;
-      exerciseGroups.push({ name: set.exercise_name, muscle: set.muscle_group, warmupSets: [], workingSets: [] });
+      exerciseGroups.push({
+        name: set.exercise_name,
+        muscle: set.muscle_group,
+        equipment: set.equipment || "weight",
+        warmupSets: [],
+        workingSets: [],
+      });
     }
     const idx = seenExercises[set.exercise_name];
     if (set.is_warmup) {
@@ -373,11 +473,13 @@ export default function TrainingPage() {
     }
   });
 
-  // Ordered list of working sets only (for active set index tracking)
   const allWorkingSets: TrainingSet[] = exerciseGroups.flatMap((g) => g.workingSets);
-  const allWorkingSetsComplete = allWorkingSets.length > 0 && allWorkingSets.every((s) => completedSets[s.id]);
+  const completedCount = Object.keys(completedSets).length;
+  const totalCount = allWorkingSets.length;
+  const allWorkingSetsComplete = totalCount > 0 && completedCount === totalCount;
+  const unit = useLbs ? "lbs" : "kg";
+  const m = useLbs ? 2.20462 : 1;
 
-  // Determine if an exercise is "compound" (first in its group = position 0 in exerciseGroups)
   const isCompoundExercise = (exerciseName: string): boolean => {
     return exerciseGroups.length > 0 && exerciseGroups[0].name === exerciseName;
   };
@@ -390,16 +492,80 @@ export default function TrainingPage() {
 
   const markSetDone = (set: TrainingSet) => {
     const data = sets[set.id] || { reps: "", weight: "", rpe: "" };
-    setCompletedSets((prev) => ({ ...prev, [set.id]: data }));
-    setActiveSetIndex((prev) => prev + 1);
-
-    // Start rest timer
-    const compound = isCompoundExercise(set.exercise_name);
-    setRestTimer({ active: true, seconds: compound ? 180 : 90, isCompound: compound });
+    if (completedSets[set.id]) {
+      // Undo — remove from completed
+      setCompletedSets((prev) => {
+        const next = { ...prev };
+        delete next[set.id];
+        return next;
+      });
+    } else {
+      setCompletedSets((prev) => ({ ...prev, [set.id]: data }));
+      const compound = isCompoundExercise(set.exercise_name);
+      setRestTimer({ active: true, seconds: compound ? 180 : 90, isCompound: compound });
+    }
   };
 
   const dismissTimer = () => {
     setRestTimer({ active: false, seconds: 0, isCompound: true });
+    if (pendingAdvance) {
+      setPendingAdvance(false);
+      // Auto-advance to next incomplete set in Now Playing mode
+      setCurrentSetIndex((prev) => {
+        const next = prev + 1;
+        // Find next incomplete starting from next index
+        for (let i = next; i < allWorkingSets.length; i++) {
+          return i; // advance regardless — let user decide to mark done or skip
+        }
+        return prev; // last set — stay
+      });
+    }
+  };
+
+  // Find first incomplete set index
+  const findFirstIncomplete = (): number => {
+    for (let i = 0; i < allWorkingSets.length; i++) {
+      if (!completedSets[allWorkingSets[i].id]) return i;
+    }
+    return 0;
+  };
+
+  const startNowPlaying = () => {
+    setCurrentSetIndex(findFirstIncomplete());
+    setNowPlaying(true);
+    setShowHistory(false);
+  };
+
+  const markSetDoneNowPlaying = (set: TrainingSet) => {
+    const data = sets[set.id] || { reps: "", weight: "", rpe: "" };
+    // Progressive overload toast — compare to last session
+    const prev = previousSets[set.id];
+    if (prev && data.weight) {
+      const currentW = parseFloat(data.weight);
+      const prevW = prev.weight;
+      if (!isNaN(currentW) && currentW > prevW) {
+        setProgressToast(`${set.exercise_name} — Leveled up! 🎯`);
+        setTimeout(() => setProgressToast(null), 2500);
+      }
+    }
+    setCompletedSets((p) => ({ ...p, [set.id]: data }));
+    const compound = isCompoundExercise(set.exercise_name);
+    setRestTimer({ active: true, seconds: compound ? 180 : 90, isCompound: compound });
+    setPendingAdvance(true);
+  };
+
+  // Fetch exercise history for quick history panel in Now Playing
+  const fetchExerciseHistory = (exerciseName: string) => {
+    if (exerciseName === historyExercise) {
+      setShowHistory((p) => !p);
+      return;
+    }
+    setHistoryExercise(exerciseName);
+    setShowHistory(true);
+    setExerciseHistory([]);
+    api.get<StrengthEntry[]>(`/engine2/strength-log?exercise=${encodeURIComponent(exerciseName)}&limit=5`)
+      .then(setExerciseHistory)
+      .catch(() => {});
   };
 
   const toggleMachineTaken = (exerciseName: string) => {
@@ -412,20 +578,6 @@ export default function TrainingPage() {
       ...prev,
       [exerciseName]: prev[exerciseName] ?? { name: "", weight: "", reps: "", rpe: "", logged: false },
     }));
-  };
-
-  const logAlternative = async (exerciseName: string) => {
-    const alt = altLog[exerciseName];
-    if (!alt || !alt.name || !alt.weight || !alt.reps) return;
-    try {
-      await api.post("/engine2/strength-log", {
-        exercise_name: alt.name,
-        weight_kg: parseFloat(alt.weight),
-        reps: parseInt(alt.reps),
-        rpe: alt.rpe ? parseFloat(alt.rpe) : null,
-      });
-      setAltLog((prev) => ({ ...prev, [exerciseName]: { ...prev[exerciseName], logged: true } }));
-    } catch { /* silent */ }
   };
 
   const logStrengthTest = async () => {
@@ -453,364 +605,589 @@ export default function TrainingPage() {
   const generateProgram = async () => {
     setGenerating(true);
     try {
-      const p = await api.post<Program & { sessions_created: number; message: string }>(
-        "/engine2/program/generate"
-      );
+      const p = await api.post<Program & { sessions_created: number; message: string }>("/engine2/program/generate");
       setProgram(p);
-    } catch {
-      //
-    } finally {
-      setGenerating(false);
-    }
+    } catch { /* */ } finally { setGenerating(false); }
   };
 
   const saveSession = async () => {
     if (!session) return;
     setSaving(true);
     try {
-      const loggedSets = Object.entries(sets).map(([id, data]) => ({
-        set_id: id,
-        actual_reps: data.reps ? parseInt(data.reps) : null,
-        actual_weight_kg: data.weight ? parseFloat(data.weight) : null,
-        rpe: data.rpe ? parseFloat(data.rpe) : null,
-      }));
+      const loggedSets = Object.entries(sets).map(([id, data]) => {
+        const setObj = session.sets.find(s => s.id === id);
+        const exName = setObj?.exercise_name || "";
+        const isTaken = machineTaken.has(exName);
+        const altName = isTaken ? altLog[exName]?.name : undefined;
+
+        return {
+          set_id: id,
+          actual_reps: data.reps ? parseInt(data.reps) : null,
+          actual_weight_kg: data.weight ? parseFloat(data.weight) / (useLbs ? 2.20462 : 1) : null,
+          rpe: data.rpe ? parseFloat(data.rpe) : null,
+          actual_exercise_name: altName || exName,
+        };
+      });
       const result = await api.post<{ message: string; progressions: Progression[] }>(
         `/engine2/session/${session.id}/log`,
         { sets: loggedSets, notes: sessionNotes || undefined }
       );
       setProgressions(result.progressions || []);
       setSaved(true);
+      // Clear localStorage after successful save — workout is persisted to server
+      localStorage.removeItem("cpos_workout_completed");
+      localStorage.removeItem("cpos_workout_sets");
       setTimeout(() => setSaved(false), 3000);
-    } catch {
-      //
-    } finally {
-      setSaving(false);
-    }
+    } catch { /* */ } finally { setSaving(false); }
+  };
+
+  // ── Helpers ──
+
+  const exerciseCompletedCount = (exName: string) => {
+    const group = exerciseGroups.find((g) => g.name === exName);
+    if (!group) return 0;
+    return group.workingSets.filter((s) => completedSets[s.id]).length;
   };
 
   // ── Render ──
   return (
-    <div className="min-h-screen bg-jungle-dark">
+    <div className="min-h-screen">
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
-      <main className="container-app py-6">
-        <div className="max-w-3xl mx-auto space-y-6">
+      <main className="px-3 py-4 pb-24">
+        <div className="max-w-lg mx-auto space-y-4">
 
           {/* Header */}
-          <div className="flex flex-col sm:flex-row justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold">
+          <div className="flex items-start justify-between">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-bold">
                 <span className="text-jungle-accent">Training</span>
               </h1>
               {program ? (
-                <p className="text-jungle-muted text-sm mt-1">
-                  {program.name} — Week {program.current_week}/{program.mesocycle_weeks} —{" "}
-                  {program.split_type.replace("_", "/")} · {program.days_per_week} days/week
+                <p className="text-jungle-muted text-xs mt-0.5 truncate">
+                  {program.name} — Wk {program.current_week}/{program.mesocycle_weeks} · {program.split_type} · {program.days_per_week}d/wk
                 </p>
               ) : (
-                <p className="text-jungle-muted text-sm mt-1">No active program</p>
+                <p className="text-jungle-muted text-xs mt-0.5">No active program</p>
               )}
             </div>
-            {!program && (
+            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
               <button
-                onClick={generateProgram}
-                disabled={generating}
-                className="btn-primary disabled:opacity-50"
+                onClick={toggleUnit}
+                className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-colors ${
+                  useLbs
+                    ? "bg-jungle-accent text-jungle-dark"
+                    : "bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent"
+                }`}
               >
-                {generating ? "Generating..." : "Generate Program"}
+                {useLbs ? "LBS" : "KG"}
               </button>
-            )}
+              <button
+                onClick={toggleGymMode}
+                className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold tracking-wide transition-colors ${
+                  gymMode
+                    ? "bg-jungle-accent text-jungle-dark"
+                    : "bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent"
+                }`}
+              >
+                {gymMode ? "GYM ✓" : "GYM"}
+              </button>
+            </div>
           </div>
 
-          {/* No session today */}
-          {!session ? (
-            <div className="card text-center py-12">
-              <p className="text-jungle-muted text-lg">Rest day</p>
-              <p className="text-jungle-dim text-sm mt-2">
-                {program
-                  ? "No session scheduled for today — enjoy your recovery"
-                  : "Generate a program to get started"}
-              </p>
-              {!program && (
-                <button
-                  onClick={generateProgram}
-                  disabled={generating}
-                  className="btn-primary mt-4 disabled:opacity-50"
-                >
-                  {generating ? "Generating..." : "Generate Program"}
-                </button>
-              )}
+          {/* No program */}
+          {!program && (
+            <div className="card text-center py-10">
+              <p className="text-jungle-muted">No active program</p>
+              <button onClick={generateProgram} disabled={generating} className="btn-primary mt-4 disabled:opacity-50">
+                {generating ? "Generating..." : "Generate Program"}
+              </button>
             </div>
-          ) : (
-            <>
-              {/* Stale baseline warning */}
-              {session.stale_baselines && (
-                <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
-                  ⚠️ Strength baselines are 90+ days old. Prescribed weights may be inaccurate — consider re-testing.
-                </div>
-              )}
+          )}
 
-              {/* Session header */}
-              <div className={`card ${gymMode ? "gym-mode" : ""}`}>
+          {/* No session today */}
+          {program && !session && (
+            <div className="card text-center py-10">
+              <p className="text-jungle-muted text-lg">Rest Day 💤</p>
+              <p className="text-jungle-dim text-sm mt-1">No session scheduled — enjoy recovery</p>
+            </div>
+          )}
+
+          {/* Session */}
+          {session && (
+            <>
+              {/* Session info bar */}
+              <div className={`card py-3 ${gymMode ? "gym-mode" : ""}`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="font-semibold capitalize text-lg">
+                    <h2 className="font-semibold capitalize text-base">
                       {session.session_type.replace(/_/g, " ")} Day
                     </h2>
-                    <p className="text-jungle-muted text-xs">
-                      Week {session.week_number} • Day {session.day_number} • {allWorkingSets.length} working sets
+                    <p className="text-jungle-dim text-[11px]">
+                      Wk {session.week_number} · Day {session.day_number} · {totalCount} working sets
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {/* Gym mode toggle */}
-                    <button
-                      onClick={toggleGymMode}
-                      title={gymMode ? "Gym Mode ON" : "Gym Mode OFF"}
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-colors ${
-                        gymMode
-                          ? "bg-jungle-accent text-jungle-dark"
-                          : "bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent"
-                      }`}
-                    >
-                      {gymMode ? "✓" : "💪"}
-                    </button>
                     <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium ${
                         session.completed
                           ? "bg-green-500/20 text-green-400"
                           : "bg-jungle-accent/20 text-jungle-accent"
                       }`}
                     >
-                      {session.completed ? "Completed" : "In Progress"}
+                      {session.completed ? "Done" : `${completedCount}/${totalCount}`}
                     </span>
+                    {!session.completed && totalCount > 0 && (
+                      <button
+                        onClick={nowPlaying ? () => setNowPlaying(false) : startNowPlaying}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          nowPlaying
+                            ? "bg-jungle-deeper border border-jungle-border text-jungle-dim"
+                            : "bg-jungle-accent text-jungle-dark"
+                        }`}
+                      >
+                        {nowPlaying ? "Overview" : "▶ Start"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Exercise blocks */}
-              <div className={gymMode ? "gym-mode" : ""}>
-                {exerciseGroups.map(({ name, muscle, warmupSets, workingSets }) => {
-                  const isMachineTaken = machineTaken.has(name);
-                  const alt = altLog[name] ?? { name: "", weight: "", reps: "", rpe: "", logged: false };
-                  return (
-                  <div key={name} className={`card mb-4 ${isMachineTaken ? "opacity-60 border-yellow-500/30" : ""}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h3 className={`font-semibold ${isMachineTaken ? "line-through text-jungle-dim" : "text-jungle-accent"}`}>{name}</h3>
-                        <span className="text-[10px] text-jungle-dim uppercase tracking-wide capitalize">
-                          {muscle.replace(/_/g, " ")}
-                        </span>
+              {/* Stale baseline warning */}
+              {session.stale_baselines && (
+                <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-300">
+                  ⚠️ Strength baselines are 90+ days old — weights may be approximate.
+                </div>
+              )}
+
+              {/* Progressive Overload Toast */}
+              {progressToast && (
+                <div className="rounded-xl border border-jungle-accent/40 bg-jungle-accent/10 px-4 py-2.5 text-sm font-semibold text-jungle-accent text-center animate-pulse">
+                  {progressToast}
+                </div>
+              )}
+
+              {/* ── Now Playing Card ── */}
+              {nowPlaying && allWorkingSets.length > 0 && (() => {
+                const currentSet = allWorkingSets[currentSetIndex] ?? allWorkingSets[0];
+                if (!currentSet) return null;
+                const exGroup = exerciseGroups.find((g) => g.name === currentSet.exercise_name);
+                const isCompleted = !!completedSets[currentSet.id];
+                const prev = previousSets[currentSet.id];
+                const isBarbell = (currentSet.equipment || "").toLowerCase().includes("barbell");
+                const currentWeight = sets[currentSet.id]?.weight || "";
+                const totalForEx = exGroup?.workingSets.length || 0;
+                const setIdxInEx = (exGroup?.workingSets.findIndex((s) => s.id === currentSet.id) ?? 0) + 1;
+                const compound = isCompoundExercise(currentSet.exercise_name);
+
+                return (
+                  <div className="space-y-3">
+                    {/* Exercise overview dots */}
+                    <div className="flex gap-1 overflow-x-auto pb-1">
+                      {allWorkingSets.map((s, idx) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setCurrentSetIndex(idx)}
+                          className={`shrink-0 w-2.5 h-2.5 rounded-full transition-all ${
+                            idx === currentSetIndex
+                              ? "bg-jungle-accent scale-125"
+                              : completedSets[s.id]
+                              ? "bg-green-500/60"
+                              : "bg-jungle-deeper border border-jungle-border"
+                          }`}
+                          title={`${s.exercise_name} set ${idx + 1}`}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Main card */}
+                    <div className={`rounded-2xl border-2 p-5 space-y-4 transition-all ${
+                      isCompleted
+                        ? "border-green-500/40 bg-green-500/5"
+                        : "border-jungle-accent/40 bg-jungle-card"
+                    }`}>
+                      {/* Exercise header */}
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-[10px] text-jungle-dim uppercase tracking-widest mb-0.5">
+                            {currentSet.muscle_group.replace(/_/g, " ")} · {compound ? "Compound" : "Isolation"}
+                          </p>
+                          <h2 className="text-xl font-bold text-jungle-text leading-tight">
+                            {currentSet.exercise_name}
+                          </h2>
+                          <p className="text-jungle-accent text-sm font-semibold mt-0.5">
+                            Set {setIdxInEx} of {totalForEx}
+                            <span className="text-jungle-dim font-normal ml-2">
+                              ({currentSetIndex + 1}/{allWorkingSets.length} total)
+                            </span>
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => fetchExerciseHistory(currentSet.exercise_name)}
+                          className={`text-xs px-2.5 py-1 rounded-lg border transition-colors shrink-0 ${
+                            showHistory && historyExercise === currentSet.exercise_name
+                              ? "border-jungle-accent/50 bg-jungle-accent/10 text-jungle-accent"
+                              : "border-jungle-border text-jungle-dim hover:border-jungle-accent/50"
+                          }`}
+                        >
+                          History
+                        </button>
                       </div>
+
+                      {/* Quick history panel */}
+                      {showHistory && historyExercise === currentSet.exercise_name && (
+                        <div className="bg-jungle-deeper rounded-xl p-3 space-y-1.5">
+                          <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1">Last sessions</p>
+                          {exerciseHistory.length === 0 ? (
+                            <p className="text-jungle-dim text-xs">No history yet</p>
+                          ) : (
+                            exerciseHistory.map((e, i) => (
+                              <div key={i} className="flex justify-between text-xs">
+                                <span className="text-jungle-dim">{e.date}</span>
+                                <span className="text-jungle-muted font-medium">
+                                  {useLbs ? (e.weight_kg * 2.20462).toFixed(1) : e.weight_kg}{unit} × {e.reps}
+                                  {e.rpe && <span className="text-jungle-dim ml-1">@ RPE {e.rpe}</span>}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+
+                      {/* Prescribed target */}
+                      {currentSet.prescribed_weight_kg && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-jungle-dim uppercase tracking-wide">Target:</span>
+                          <span className="text-sm font-semibold text-jungle-muted">
+                            {useLbs ? (currentSet.prescribed_weight_kg * 2.20462).toFixed(1) : currentSet.prescribed_weight_kg.toFixed(1)} {unit} × {currentSet.prescribed_reps}
+                          </span>
+                          {prev && (
+                            <span className="text-[10px] text-jungle-dim ml-auto">
+                              Last: {prev.weight}{unit} × {prev.reps}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Inputs */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[10px] text-jungle-dim uppercase tracking-wider block mb-1">
+                            Weight ({unit})
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            inputMode="decimal"
+                            value={sets[currentSet.id]?.weight || ""}
+                            onChange={(e) => logSet(currentSet.id, "weight", e.target.value)}
+                            className="input-field text-base py-3 text-center font-semibold"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-jungle-dim uppercase tracking-wider block mb-1">
+                            Reps
+                          </label>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={sets[currentSet.id]?.reps || ""}
+                            onChange={(e) => logSet(currentSet.id, "reps", e.target.value)}
+                            className="input-field text-base py-3 text-center font-semibold"
+                            placeholder={String(currentSet.prescribed_reps)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-jungle-dim uppercase tracking-wider block mb-1">
+                            RPE
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="1"
+                            max="10"
+                            inputMode="decimal"
+                            value={sets[currentSet.id]?.rpe || ""}
+                            onChange={(e) => logSet(currentSet.id, "rpe", e.target.value)}
+                            className={`${rpeClass(sets[currentSet.id]?.rpe || "")} text-base py-3 text-center font-semibold`}
+                            placeholder="RPE"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Plates link */}
+                      {isBarbell && currentWeight && (
+                        <button
+                          onClick={() => setPlateCalc({ open: true, weight: parseFloat(currentWeight) || 0 })}
+                          className="text-xs text-jungle-dim hover:text-jungle-accent transition-colors"
+                        >
+                          🏋️ View plates
+                        </button>
+                      )}
+
+                      {/* Set Done button */}
                       <button
-                        onClick={() => toggleMachineTaken(name)}
-                        className={`text-[10px] px-2 py-1 rounded-lg border transition-colors ${
-                          isMachineTaken
-                            ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400"
-                            : "border-jungle-border text-jungle-dim hover:border-yellow-500/40 hover:text-yellow-400"
+                        onClick={() => isCompleted ? markSetDone(currentSet) : markSetDoneNowPlaying(currentSet)}
+                        className={`w-full py-4 rounded-xl text-base font-bold transition-all ${
+                          isCompleted
+                            ? "bg-green-500/20 text-green-400 border-2 border-green-500/30"
+                            : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent/90 active:scale-95"
                         }`}
                       >
-                        {isMachineTaken ? "Machine Taken" : "Machine Taken?"}
+                        {isCompleted ? "✓ Set Done — Tap to Undo" : "Set Done ▶"}
                       </button>
                     </div>
 
-                    {/* Alternative exercise form when machine is taken */}
-                    {isMachineTaken && (
-                      <div className="mb-3 p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
-                        <p className="text-[10px] text-yellow-400 uppercase tracking-wide mb-2">Log Alternative Exercise</p>
-                        <div className="grid grid-cols-2 gap-2 mb-2">
-                          <div className="col-span-2">
+                    {/* Nav buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCurrentSetIndex(Math.max(0, currentSetIndex - 1))}
+                        disabled={currentSetIndex === 0}
+                        className="flex-1 btn-secondary text-sm disabled:opacity-30"
+                      >
+                        ← Prev
+                      </button>
+                      <button
+                        onClick={() => setCurrentSetIndex(Math.min(allWorkingSets.length - 1, currentSetIndex + 1))}
+                        disabled={currentSetIndex >= allWorkingSets.length - 1}
+                        className="flex-1 btn-secondary text-sm disabled:opacity-30"
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Exercise Accordion (hidden in now playing mode) */}
+              <div className={`space-y-2 ${gymMode ? "gym-mode" : ""} ${nowPlaying ? "hidden" : ""}`}>
+                {exerciseGroups.map(({ name, muscle, equipment, warmupSets, workingSets }) => {
+                  const isExpanded = expandedExercise === name;
+                  const isMachineTaken = machineTaken.has(name);
+                  const completedForEx = exerciseCompletedCount(name);
+                  const totalForEx = workingSets.length;
+                  const allDoneForEx = completedForEx === totalForEx && totalForEx > 0;
+                  const showWarmups = expandedWarmups.has(name);
+
+                  return (
+                    <div key={name} className={`rounded-xl border transition-colors ${
+                      isMachineTaken ? "border-yellow-500/30 bg-jungle-card" :
+                      allDoneForEx ? "border-green-500/20 bg-jungle-card/80" :
+                      isExpanded ? "border-jungle-accent/30 bg-jungle-card" :
+                      "border-jungle-border bg-jungle-card/60"
+                    }`}>
+
+                      {/* Exercise header — always visible, tap to expand */}
+                      <button
+                        onClick={() => setExpandedExercise(isExpanded ? null : name)}
+                        className="w-full text-left px-4 py-3 flex items-center gap-3"
+                      >
+                        {/* Completion indicator */}
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${
+                          allDoneForEx ? "bg-green-500/20 text-green-400" :
+                          completedForEx > 0 ? "bg-jungle-accent/20 text-jungle-accent" :
+                          "bg-jungle-deeper text-jungle-dim"
+                        }`}>
+                          {allDoneForEx ? "✓" : `${completedForEx}/${totalForEx}`}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          {isMachineTaken ? (
                             <input
                               type="text"
-                              value={alt.name}
+                              value={altLog[name]?.name || ""}
+                              onClick={(e) => e.stopPropagation()}
                               onChange={(e) => setAltLog((prev) => ({ ...prev, [name]: { ...prev[name], name: e.target.value } }))}
-                              placeholder="Alternative exercise name"
-                              className="input-field text-sm py-1.5 w-full"
+                              placeholder={`Sub for ${name}...`}
+                              className="bg-transparent text-yellow-400 font-semibold text-sm w-full outline-none border-b border-yellow-500/30 focus:border-yellow-500 placeholder-yellow-500/30"
                             />
+                          ) : (
+                            <p className={`font-semibold text-sm truncate ${allDoneForEx ? "text-jungle-dim" : "text-jungle-text"}`}>
+                              {name}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-jungle-dim uppercase tracking-wide mt-0.5">
+                            {muscle.replace(/_/g, " ")} · {equipment}
+                          </p>
+                        </div>
+
+                        {/* Chevron */}
+                        <svg
+                          className={`w-4 h-4 text-jungle-dim transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+
+                      {/* Expanded content */}
+                      {isExpanded && (
+                        <div className="px-4 pb-4 space-y-2">
+                          {/* Machine taken toggle */}
+                          <div className="flex gap-2 mb-1">
+                            <button
+                              onClick={() => toggleMachineTaken(name)}
+                              className={`text-[10px] px-2.5 py-1 rounded-lg border transition-colors ${
+                                isMachineTaken
+                                  ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400"
+                                  : "border-jungle-border text-jungle-dim hover:border-yellow-500/40"
+                              }`}
+                            >
+                              {isMachineTaken ? "Cancel Sub" : "Machine Taken?"}
+                            </button>
                           </div>
-                          <input
-                            type="number" step="0.5" value={alt.weight}
-                            onChange={(e) => setAltLog((prev) => ({ ...prev, [name]: { ...prev[name], weight: e.target.value } }))}
-                            placeholder="Weight (kg)" className="input-field text-sm py-1.5"
-                          />
-                          <input
-                            type="number" value={alt.reps}
-                            onChange={(e) => setAltLog((prev) => ({ ...prev, [name]: { ...prev[name], reps: e.target.value } }))}
-                            placeholder="Reps" className="input-field text-sm py-1.5"
-                          />
-                        </div>
-                        <button
-                          onClick={() => logAlternative(name)}
-                          disabled={!alt.name || !alt.weight || !alt.reps || alt.logged}
-                          className="btn-secondary text-xs py-1 px-3 disabled:opacity-40"
-                        >
-                          {alt.logged ? "Logged!" : "Log Alternative"}
-                        </button>
-                      </div>
-                    )}
 
-                    {/* Column headers */}
-                    <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 text-xs text-jungle-muted px-1 mb-2">
-                      <span className="w-16">Set</span>
-                      <span>Weight (kg)</span>
-                      <span>Reps</span>
-                      <span>RPE</span>
-                      <span />
-                    </div>
-
-                    <div className="space-y-2">
-                      {/* Warm-up sets (display only) */}
-                      {warmupSets.map((set) => (
-                        <div
-                          key={set.id}
-                          className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-center opacity-50 bg-jungle-deeper/50 rounded-lg px-2 py-1.5"
-                        >
-                          <span className="w-16 text-xs text-jungle-dim font-medium uppercase tracking-wide">
-                            Warm-up
-                          </span>
-                          <span className="text-xs text-jungle-dim">{set.prescribed_weight_kg ?? "—"} kg</span>
-                          <span className="text-xs text-jungle-dim">{set.prescribed_reps} reps</span>
-                          <span className="text-xs text-jungle-dim">—</span>
-                          <span />
-                        </div>
-                      ))}
-
-                      {/* Working sets */}
-                      {workingSets.map((set) => {
-                        const globalIdx = allWorkingSets.findIndex((s) => s.id === set.id);
-                        const isCompleted = !!completedSets[set.id];
-                        const isActive = globalIdx === activeSetIndex;
-                        const isPending = globalIdx > activeSetIndex;
-                        const prev = previousSets[set.id];
-                        const currentWeight = sets[set.id]?.weight || "";
-
-                        return (
-                          <div
-                            key={set.id}
-                            className={`grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-start rounded-lg transition-all ${
-                              isCompleted
-                                ? "opacity-50"
-                                : isPending
-                                ? "opacity-60"
-                                : ""
-                            }`}
-                          >
-                            {/* Set label */}
-                            <div className="w-16 pt-1.5">
-                              <span className="text-sm text-jungle-muted pl-1 block">
-                                {set.set_number}
-                              </span>
-                              <span className="text-jungle-dim text-xs ml-1 block">
-                                ({set.prescribed_weight_kg ?? "—"}×{set.prescribed_reps})
-                              </span>
-                            </div>
-
-                            {isCompleted ? (
-                              /* Completed row — show greyed values */
-                              <>
-                                <span className="text-jungle-dim text-sm pt-1.5">{completedSets[set.id].weight || "—"} kg</span>
-                                <span className="text-jungle-dim text-sm pt-1.5">{completedSets[set.id].reps || "—"}</span>
-                                <span className="text-jungle-dim text-sm pt-1.5">RPE {completedSets[set.id].rpe || "—"}</span>
-                                {/* Green checkmark */}
-                                <div className="flex items-center justify-center pt-1.5">
-                                  <span className="w-7 h-7 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-sm">✓</span>
+                          {/* Compact warmup summary */}
+                          {warmupSets.length > 0 && (
+                            <div>
+                              <button
+                                onClick={() => setExpandedWarmups((prev) => {
+                                  const next = new Set(prev);
+                                  next.has(name) ? next.delete(name) : next.add(name);
+                                  return next;
+                                })}
+                                className="w-full text-left text-[11px] text-jungle-dim bg-jungle-deeper/60 rounded-lg px-3 py-1.5 flex items-center justify-between"
+                              >
+                                <span>
+                                  {warmupSets.length} warm-up set{warmupSets.length > 1 ? "s" : ""} →{" "}
+                                  {warmupSets.map((ws) =>
+                                    ws.prescribed_weight_kg ? `${(ws.prescribed_weight_kg * m).toFixed(0)}` : "—"
+                                  ).join(" → ")} {unit}
+                                </span>
+                                <svg className={`w-3 h-3 transition-transform ${showWarmups ? "rotate-180" : ""}`}
+                                  fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                              {showWarmups && (
+                                <div className="mt-1 space-y-1">
+                                  {warmupSets.map((ws) => (
+                                    <div key={ws.id} className="text-[11px] text-jungle-dim bg-jungle-deeper/40 rounded-lg px-3 py-1 flex justify-between">
+                                      <span>Warm-up</span>
+                                      <span>{ws.prescribed_weight_kg ? (ws.prescribed_weight_kg * m).toFixed(1) : "—"} {unit} × {ws.prescribed_reps}</span>
+                                    </div>
+                                  ))}
                                 </div>
-                              </>
-                            ) : (
-                              /* Active / pending row — show inputs */
-                              <>
-                                {/* Weight input + plate calc button */}
-                                <div>
-                                  <div className="flex gap-1">
+                              )}
+                            </div>
+                          )}
+
+                          {/* Working sets — mobile cards */}
+                          {workingSets.map((set, setIdx) => {
+                            const isCompleted = !!completedSets[set.id];
+                            const prev = previousSets[set.id];
+                            const currentWeight = sets[set.id]?.weight || "";
+                            const prescribedDisplay = set.prescribed_weight_kg
+                              ? `${(set.prescribed_weight_kg * m).toFixed(1)} ${unit} × ${set.prescribed_reps}`
+                              : `— × ${set.prescribed_reps}`;
+
+                            return (
+                              <div
+                                key={set.id}
+                                className={`rounded-lg border p-3 transition-all ${
+                                  isCompleted
+                                    ? "border-green-500/20 bg-green-500/5"
+                                    : "border-jungle-border/50 bg-jungle-deeper/30"
+                                }`}
+                              >
+                                {/* Set header */}
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-xs font-bold ${isCompleted ? "text-green-400" : "text-jungle-muted"}`}>
+                                      Set {setIdx + 1}/{totalForEx}
+                                    </span>
+                                    <span className="text-[10px] text-jungle-dim">
+                                      Target: {prescribedDisplay}
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => markSetDone(set)}
+                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                      isCompleted
+                                        ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                        : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent/90"
+                                    }`}
+                                  >
+                                    {isCompleted ? "Undo" : "Done"}
+                                  </button>
+                                </div>
+
+                                {/* Inputs — 3 columns, big tap targets */}
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div>
+                                    <label className="text-[9px] text-jungle-dim uppercase tracking-wider block mb-0.5">
+                                      Weight ({unit})
+                                    </label>
+                                    <div className="flex gap-1">
+                                      <input
+                                        type="number"
+                                        step="0.5"
+                                        inputMode="decimal"
+                                        value={sets[set.id]?.weight || ""}
+                                        onChange={(e) => logSet(set.id, "weight", e.target.value)}
+                                        className="input-field text-sm py-2.5 flex-1 min-w-0"
+                                        placeholder={unit}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] text-jungle-dim uppercase tracking-wider block mb-0.5">
+                                      Reps
+                                    </label>
+                                    <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      value={sets[set.id]?.reps || ""}
+                                      onChange={(e) => logSet(set.id, "reps", e.target.value)}
+                                      className="input-field text-sm py-2.5"
+                                      placeholder="reps"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] text-jungle-dim uppercase tracking-wider block mb-0.5">
+                                      RPE
+                                    </label>
                                     <input
                                       type="number"
                                       step="0.5"
-                                      value={sets[set.id]?.weight || ""}
-                                      onChange={(e) => logSet(set.id, "weight", e.target.value)}
-                                      className="input-field text-sm py-1.5 flex-1 min-w-0"
-                                      placeholder="kg"
-                                      disabled={isPending}
+                                      min="1"
+                                      max="10"
+                                      inputMode="decimal"
+                                      value={sets[set.id]?.rpe || ""}
+                                      onChange={(e) => logSet(set.id, "rpe", e.target.value)}
+                                      className={rpeClass(sets[set.id]?.rpe || "")}
+                                      placeholder="RPE"
                                     />
-                                    <button
-                                      onClick={() =>
-                                        setPlateCalc({
-                                          open: true,
-                                          weight: parseFloat(currentWeight) || 0,
-                                        })
-                                      }
-                                      className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent hover:text-jungle-accent transition-colors text-sm"
-                                      title="Plate calculator"
-                                      disabled={isPending}
-                                    >
-                                      🏋️
-                                    </button>
                                   </div>
-                                  {prev && (
-                                    <p className="text-jungle-dim text-xs mt-0.5 pl-0.5">
-                                      Last: {prev.weight}kg × {prev.reps}
-                                    </p>
-                                  )}
                                 </div>
 
-                                {/* Reps input */}
-                                <div>
-                                  <input
-                                    type="number"
-                                    value={sets[set.id]?.reps || ""}
-                                    onChange={(e) => logSet(set.id, "reps", e.target.value)}
-                                    className="input-field text-sm py-1.5"
-                                    placeholder="reps"
-                                    disabled={isPending}
-                                  />
-                                  {prev && (
-                                    <p className="text-jungle-dim text-xs mt-0.5 pl-0.5 invisible">
-                                      &nbsp;
-                                    </p>
-                                  )}
-                                </div>
-
-                                {/* RPE input with live colour */}
-                                <div>
-                                  <input
-                                    type="number"
-                                    step="0.5"
-                                    min="1"
-                                    max="10"
-                                    value={sets[set.id]?.rpe || ""}
-                                    onChange={(e) => logSet(set.id, "rpe", e.target.value)}
-                                    className={rpeClass(sets[set.id]?.rpe || "")}
-                                    placeholder="RPE"
-                                    disabled={isPending}
-                                  />
-                                  {prev && (
-                                    <p className="text-jungle-dim text-xs mt-0.5 pl-0.5 invisible">
-                                      &nbsp;
-                                    </p>
-                                  )}
-                                </div>
-
-                                {/* Done button */}
-                                <div className="flex items-start pt-0.5">
-                                  {isActive ? (
+                                {/* Bottom row: plates + last session */}
+                                <div className="flex items-center justify-between mt-1.5">
+                                  {(equipment === "barbell" || equipment === "machine") && currentWeight ? (
                                     <button
-                                      onClick={() => markSetDone(set)}
-                                      className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap"
+                                      onClick={() => setPlateCalc({ open: true, weight: parseFloat(currentWeight) || 0 })}
+                                      className="text-[10px] text-jungle-dim hover:text-jungle-accent transition-colors flex items-center gap-1"
                                     >
-                                      Done
+                                      <span>Plates →</span>
                                     </button>
-                                  ) : (
-                                    <div className="w-14" />
+                                  ) : <span />}
+                                  {prev && (
+                                    <span className="text-[10px] text-jungle-dim">
+                                      Last: {prev.weight}{unit} × {prev.reps}
+                                    </span>
                                   )}
                                 </div>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
                   );
                 })}
               </div>
+              {/* End accordion */}
 
               {/* Session Notes (collapsible) */}
               <div className="card">
@@ -822,7 +1199,7 @@ export default function TrainingPage() {
                     <h3 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider">
                       Session Notes
                     </h3>
-                    <p className="text-[10px] text-jungle-dim mt-0.5">Add free-form notes for this session</p>
+                    <p className="text-[10px] text-jungle-dim mt-0.5">How did the session feel?</p>
                   </div>
                   <svg
                     className={`w-4 h-4 text-jungle-dim transition-transform ${showNotes ? "rotate-180" : ""}`}
@@ -832,12 +1209,12 @@ export default function TrainingPage() {
                   </svg>
                 </button>
                 {showNotes && (
-                  <div className="mt-4 pt-4 border-t border-jungle-border">
+                  <div className="mt-3 pt-3 border-t border-jungle-border">
                     <textarea
                       value={sessionNotes}
                       onChange={(e) => setSessionNotes(e.target.value)}
-                      rows={4}
-                      placeholder="How did the session feel? Any observations…"
+                      rows={3}
+                      placeholder="Observations, energy levels, pump quality…"
                       className="input-field text-sm resize-none"
                     />
                   </div>
@@ -847,48 +1224,17 @@ export default function TrainingPage() {
               {/* Progression readouts */}
               {progressions.length > 0 && (
                 <div className="card border-jungle-accent/40">
-                  <h3 className="text-xs font-semibold text-jungle-accent uppercase tracking-wider mb-3">
+                  <h3 className="text-xs font-semibold text-jungle-accent uppercase tracking-wider mb-2">
                     Progression Unlocked
                   </h3>
                   {progressions.map((p) => (
-                    <div key={p.exercise} className="flex justify-between items-center py-1.5 text-sm border-b border-jungle-border last:border-0">
-                      <span className="text-jungle-muted">{p.exercise}</span>
-                      <span className="text-green-400 font-semibold">
-                        → {p.next_weight_kg}kg × {p.next_reps} reps
+                    <div key={p.exercise} className="flex justify-between items-center py-1 text-sm border-b border-jungle-border last:border-0">
+                      <span className="text-jungle-muted text-xs">{p.exercise}</span>
+                      <span className="text-green-400 font-semibold text-xs">
+                        → {useLbs ? (p.next_weight_kg * 2.20462).toFixed(1) : p.next_weight_kg}{unit} × {p.next_reps}
                       </span>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {/* Progress indicator + Log Session (always visible) */}
-              {allWorkingSets.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-jungle-accent rounded-full transition-all"
-                        style={{
-                          width: `${(Object.keys(completedSets).length / allWorkingSets.length) * 100}%`,
-                        }}
-                      />
-                    </div>
-                    <span className="text-jungle-dim text-xs shrink-0">
-                      {Object.keys(completedSets).length}/{allWorkingSets.length} sets
-                    </span>
-                  </div>
-                  {!allWorkingSetsComplete && (
-                    <p className="text-jungle-dim text-[10px]">
-                      Missing sets will use prescribed values — machine-taken exercises are excluded.
-                    </p>
-                  )}
-                  <button
-                    onClick={saveSession}
-                    disabled={saving}
-                    className={`w-full disabled:opacity-50 ${allWorkingSetsComplete ? "btn-primary" : "btn-secondary"}`}
-                  >
-                    {saved ? "Session Saved!" : saving ? "Saving..." : allWorkingSetsComplete ? "Log Session" : "Log Session (Partial)"}
-                  </button>
                 </div>
               )}
             </>
@@ -912,32 +1258,31 @@ export default function TrainingPage() {
             </button>
 
             {showStrengthForm && (
-              <div className="mt-4 space-y-4 pt-4 border-t border-jungle-border">
+              <div className="mt-4 space-y-3 pt-4 border-t border-jungle-border">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <label className="label-field">Exercise Name</label>
-                    <input
-                      type="text"
-                      value={sExercise}
-                      onChange={(e) => setSExercise(e.target.value)}
-                      placeholder="e.g. Barbell Back Squat"
-                      className="input-field mt-1 text-sm"
-                    />
+                    <input type="text" value={sExercise} onChange={(e) => setSExercise(e.target.value)}
+                      placeholder="e.g. Barbell Back Squat" className="input-field mt-1 text-sm" />
                   </div>
                   <div>
-                    <label className="label-field">Weight (kg)</label>
-                    <input type="number" step="0.5" value={sWeight} onChange={(e) => setSWeight(e.target.value)} className="input-field mt-1 text-sm" placeholder="e.g. 120" />
+                    <label className="label-field">Weight ({unit})</label>
+                    <input type="number" step="0.5" value={sWeight} onChange={(e) => setSWeight(e.target.value)}
+                      className="input-field mt-1 text-sm" placeholder="e.g. 120" />
                   </div>
                   <div>
                     <label className="label-field">Reps</label>
-                    <input type="number" value={sReps} onChange={(e) => setSReps(e.target.value)} className="input-field mt-1 text-sm" placeholder="e.g. 3" />
+                    <input type="number" value={sReps} onChange={(e) => setSReps(e.target.value)}
+                      className="input-field mt-1 text-sm" placeholder="e.g. 3" />
                   </div>
                   <div>
                     <label className="label-field">RPE (optional)</label>
-                    <input type="number" step="0.5" min="1" max="10" value={sRpe} onChange={(e) => setSRpe(e.target.value)} className="input-field mt-1 text-sm" placeholder="e.g. 9" />
+                    <input type="number" step="0.5" min="1" max="10" value={sRpe} onChange={(e) => setSRpe(e.target.value)}
+                      className="input-field mt-1 text-sm" placeholder="e.g. 9" />
                   </div>
                   <div className="flex items-end">
-                    <button onClick={logStrengthTest} disabled={sLogging || !sExercise || !sWeight || !sReps} className="btn-primary w-full text-sm disabled:opacity-50">
+                    <button onClick={logStrengthTest} disabled={sLogging || !sExercise || !sWeight || !sReps}
+                      className="btn-primary w-full text-sm disabled:opacity-50">
                       {sLogged ? "Logged!" : sLogging ? "Saving..." : "Log Test"}
                     </button>
                   </div>
@@ -977,7 +1322,39 @@ export default function TrainingPage() {
         </div>
       </main>
 
-      {/* Rest Timer (fixed bottom) */}
+      {/* ── Sticky bottom bar: progress + save ── */}
+      {session && totalCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-jungle-card/95 backdrop-blur-md border-t border-jungle-border safe-bottom">
+          <div className="max-w-lg mx-auto px-4 py-2.5 flex items-center gap-3">
+            {/* Progress bar */}
+            <div className="flex-1">
+              <div className="h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-jungle-accent rounded-full transition-all"
+                  style={{ width: `${(completedCount / totalCount) * 100}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-jungle-dim mt-0.5">
+                {completedCount}/{totalCount} sets
+              </p>
+            </div>
+            {/* Save button */}
+            <button
+              onClick={saveSession}
+              disabled={saving}
+              className={`px-5 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50 ${
+                allWorkingSetsComplete
+                  ? "bg-jungle-accent text-jungle-dark"
+                  : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:border-jungle-accent"
+              }`}
+            >
+              {saved ? "Saved ✓" : saving ? "Saving..." : allWorkingSetsComplete ? "Log Session" : "Save Partial"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rest Timer (above sticky bar) */}
       {restTimer.active && (
         <RestTimer
           seconds={restTimer.seconds}
@@ -991,10 +1368,9 @@ export default function TrainingPage() {
         <PlateCalculator
           targetWeight={plateCalc.weight}
           onClose={() => setPlateCalc({ open: false, weight: 0 })}
+          useLbs={useLbs}
         />
       )}
-
-      <div className="md:hidden h-16" />
     </div>
   );
 }

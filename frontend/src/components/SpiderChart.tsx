@@ -17,10 +17,16 @@ export default function SpiderChart({ data, size = 220, color = "#c8a84e" }: Spi
 
   const angle = (i: number) => (i * 2 * Math.PI) / n - Math.PI / 2;
 
-  const toXY = (i: number, value: number) => ({
-    x: cx + maxRadius * (value / 100) * Math.cos(angle(i)),
-    y: cy + maxRadius * (value / 100) * Math.sin(angle(i)),
-  });
+  // Normalize visual radius: cap at 110% to prevent auto-scale distortion.
+  // Without this, a 130% chest would crush 70% calves toward the center.
+  const maxVisual = 110;
+  const toXY = (i: number, value: number) => {
+    const clamped = Math.min(value, maxVisual);
+    return {
+      x: cx + maxRadius * (clamped / maxVisual) * Math.cos(angle(i)),
+      y: cy + maxRadius * (clamped / maxVisual) * Math.sin(angle(i)),
+    };
+  };
 
   const outerXY = (i: number) => ({
     x: cx + (maxRadius + 18) * Math.cos(angle(i)),
@@ -110,15 +116,24 @@ export default function SpiderChart({ data, size = 220, color = "#c8a84e" }: Spi
         );
       })}
 
-      {/* 50% ring label */}
+      {/* Ring labels */}
       <text
         x={cx + 3}
-        y={cy - maxRadius * 0.5 + 3}
+        y={cy - maxRadius * (50 / maxVisual) + 3}
         fill="#5a7a62"
         fontSize="7"
         textAnchor="start"
       >
         50%
+      </text>
+      <text
+        x={cx + 3}
+        y={cy - maxRadius * (100 / maxVisual) + 3}
+        fill="#5a7a62"
+        fontSize="7"
+        textAnchor="start"
+      >
+        100%
       </text>
     </svg>
   );

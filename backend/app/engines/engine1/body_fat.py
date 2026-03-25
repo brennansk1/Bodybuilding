@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Body Fat Estimation — Jackson-Pollock 7-Site Formula
 

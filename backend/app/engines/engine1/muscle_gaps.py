@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Muscle Gaps Engine — Raw Size Gap Analysis
 
@@ -127,7 +129,12 @@ def compute_avg_pct_of_ideal(
     total_weight = 0.0
     weighted_sum = 0.0
     for site, data in site_data.items():
-        pct = data["pct_of_ideal"]
+        # Handle both dict-of-dicts (MuscleGaps structure) and dict-of-floats (HQILog/PDSLog structure)
+        if isinstance(data, dict):
+            pct = data.get("pct_of_ideal", 0.0)
+        else:
+            pct = float(data)
+            
         w = visibility.get(site, 1.0)
         weighted_sum += pct * w
         total_weight += w
@@ -135,38 +142,81 @@ def compute_avg_pct_of_ideal(
     return round(weighted_sum / total_weight, 1) if total_weight > 0 else 0.0
 
 
-def rank_sites_by_gap(site_data: dict[str, dict]) -> list[dict]:
+def rank_sites_by_gap(
+    site_data: dict[str, dict],
+    division: str | None = None,
+) -> list[dict]:
     """
-    Return sites sorted by gap_cm descending — the primary coaching output.
-    Only includes sites where muscle needs to be added (gap_cm > 0).
+    Return sites sorted by weighted_gap descending — the primary coaching output.
+    weighted_gap = raw_gap_cm * division_visibility_weight.
+
+    Only includes sites where muscle needs to be added (gap_cm > 0)
+    and where visibility > 0 (judged sites).
     """
-    gaps = [
-        {"site": site, **data}
-        for site, data in site_data.items()
-        if data.get("gap_cm", 0) > 0
-    ]
-    return sorted(gaps, key=lambda x: -x["gap_cm"])
+    visibility = _DIVISION_VISIBILITY.get(
+        (division or "").lower().replace(" ", "_"),
+        _DEFAULT_VISIBILITY,
+    )
+
+    gaps = []
+    for site, data in site_data.items():
+        gap_cm = data.get("gap_cm", 0)
+        weight = visibility.get(site, 1.0)
+        
+        # Only rank if there's a positive gap and the site is actually judged/visible
+        if gap_cm > 0 and weight > 0:
+            weighted_gap = round(gap_cm * weight, 2)
+            gaps.append({
+                "site": site,
+                "weighted_gap": weighted_gap,
+                "visibility_weight": weight,
+                **data
+            })
+
+    # Sort by weighted gap (priority) first, then raw gap as tie-breaker
+    return sorted(gaps, key=lambda x: (-x["weighted_gap"], -x["gap_cm"]))
 
 
 # ---------------------------------------------------------------------------
 # Division visibility weights — sites hidden by stage attire are down-weighted
 # ---------------------------------------------------------------------------
 _DIVISION_VISIBILITY: dict[str, dict[str, float]] = {
+    "mens_open": {
+        # All muscle groups visible and judged equally — no hiding anything
+        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
+        "forearm": 1.0, "waist": 1.0, "hips": 0.9, "thigh": 1.0, "calf": 1.0,
+        "back_width": 1.0,
+    },
+    "classic_physique": {
+        # Same full body as open; waist judged critically (vacuum)
+        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
+        "forearm": 1.0, "waist": 1.0, "hips": 0.9, "thigh": 1.0, "calf": 1.0,
+        "back_width": 1.0,
+    },
     "mens_physique": {
+        # Board shorts — thighs hidden, calves barely visible
         "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
         "forearm": 1.0, "waist": 1.0,
         "hips": 0.15, "thigh": 0.0, "calf": 0.25,
         "back_width": 1.0,  # back pose is judged — V-taper is a primary criterion
     },
     "womens_bikini": {
+        # Glutes primary; upper body secondary; calves rarely judged
         "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 0.6,
         "forearm": 0.3, "waist": 1.0,
         "hips": 1.0, "thigh": 0.5, "calf": 0.2,
         "back_width": 0.7,  # back pose judged but less emphasis than open
     },
     "womens_figure": {
+        # Full body; shoulder-to-waist ratio is primary criterion
         "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
         "forearm": 0.8, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 0.8,
+        "back_width": 1.0,
+    },
+    "womens_physique": {
+        # Similar to figure; fuller development expected; calves judged
+        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
+        "forearm": 0.9, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
         "back_width": 1.0,
     },
 }

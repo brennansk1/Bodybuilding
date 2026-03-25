@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Autonomic Readiness Index (ARI)
 
@@ -5,7 +7,7 @@ Quantifies daily training readiness on a 0-100 scale from HRV, sleep, and
 perceived soreness.  Drives autoregulated volume scaling so that programming
 adapts to the athlete's recovery state each session.
 
-ARI = 0.40 * hrv_component + 0.30 * sleep_component + 0.30 * soreness_component
+ARI = 0.35 * hrv_component + 0.25 * sleep_component + 0.25 * soreness_component + 0.15 * hr_component
 
 Zones:
     Green  (70-100) — full or enhanced volume

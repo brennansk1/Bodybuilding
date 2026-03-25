@@ -243,10 +243,13 @@ def _elliptical_cylinder_volume(
         # Fall back: derive both axes from circumference assuming 1.5:1 ratio.
         # C = π(3(1.5b + b) - √((4.5b+b)(1.5b+3b)))
         #   = πb(7.5 - √(24.75)) ≈ πb × 2.525
+        # NOTE: This fallback overrides the back_width value; the caller should
+        # check the `torso_fallback_used` key in run_ghost_pipeline() output.
         b = chest_relaxed_cm / (math.pi * 2.525)
         a = 1.5 * b
+        return math.pi * a * b * length_cm, True  # (volume, fallback_used)
 
-    return math.pi * a * b * length_cm
+    return math.pi * a * b * length_cm, False  # (volume, fallback_used)
 
 
 def compute_hanavan_volume(ghost_shape: dict[str, float], height_cm: float) -> dict[str, float]:
@@ -300,12 +303,14 @@ def compute_hanavan_volume(ghost_shape: dict[str, float], height_cm: float) -> d
     # Torso — elliptical cylinder
     back_width = ghost_shape.get("back_width", 0.0)
     chest_relaxed = ghost_shape.get("chest_relaxed", 0.0)
+    torso_fallback_used = False
     if back_width > 0 and chest_relaxed > 0:
-        v_torso = _elliptical_cylinder_volume(back_width, chest_relaxed, seg["torso"])
+        v_torso, torso_fallback_used = _elliptical_cylinder_volume(back_width, chest_relaxed, seg["torso"])
     else:
         # Fallback: circular cylinder from chest
         chest = ghost_shape.get("chest_expanded", chest_relaxed or 0.0)
         v_torso = _cylinder_volume(chest, seg["torso"])
+        torso_fallback_used = True
 
     total = v_upper_arms + v_forearms + v_thighs + v_calves + v_torso
     total_after_lung = total - _LUNG_CORRECTION_CM3
@@ -318,6 +323,7 @@ def compute_hanavan_volume(ghost_shape: dict[str, float], height_cm: float) -> d
         "torso": round(v_torso, 1),
         "total": round(total, 1),
         "total_after_lung": round(total_after_lung, 1),
+        "torso_fallback_used": torso_fallback_used,
     }
 
 
@@ -435,19 +441,16 @@ def _map_ghost_to_standard_sites(scaled_ghost: dict[str, float]) -> dict[str, fl
       chest_expanded  → chest    (competition measurement)
       proximal_thigh  → thigh    (standard tape site = fullest part)
       All others      → pass through (neck, shoulders, bicep, etc.)
-
-    chest_relaxed, distal_thigh are kept for advanced analysis
-    but are NOT included in the standard gap comparison.
     """
     standard: dict[str, float] = {}
     # waist/hips excluded — they use DIVISION_VECTORS stay-small targets
-    skip = {"chest_relaxed", "chest_expanded", "proximal_thigh", "distal_thigh", "waist", "hips"}
+    skip = {"waist", "hips"}
 
     for site, value in scaled_ghost.items():
         if site not in skip:
             standard[site] = value
 
-    # Map expanded sites to standard names
+    # Explicit mapping for standard keys to ensure backward compatibility
     if "chest_expanded" in scaled_ghost:
         standard["chest"] = scaled_ghost["chest_expanded"]
     if "proximal_thigh" in scaled_ghost:
@@ -514,6 +517,8 @@ def run_ghost_pipeline(
     # Phase 6: Scoring
     site_scores = score_all_sites(lean_measurements, ideal_circs)
 
+    torso_fallback = volumes.get("torso_fallback_used", False)
+
     return {
         "weight_cap_kg": weight_cap,
         "target_lbm_kg": target_lbm,
@@ -524,4 +529,91 @@ def run_ghost_pipeline(
         "scaled_ghost": scaled_ghost,
         "ideal_circumferences": ideal_circs,
         "site_scores": site_scores,
+        # Transparency flags — callers should surface these in the UI
+        "torso_geometry_fallback": torso_fallback,
+        "torso_fallback_note": (
+            "Torso geometry used 1.5:1 width:depth fallback ratio. "
+            "Provide a chest_relaxed measurement for more accurate torso volumes."
+            if torso_fallback else None
+        ),
     }
+
+
+# ===================================================================
+# Weight Cap Proximity Management (Classic Physique)
+# ===================================================================
+
+_CAP_STRICT_DIVISIONS = {"classic_physique", "mens_physique"}
+
+
+def check_weight_cap_proximity(
+    current_lean_mass_kg: float,
+    height_cm: float,
+    division: str,
+    body_fat_pct: float = 12.0,
+) -> dict:
+    """
+    Check if the athlete's projected stage weight is approaching or
+    exceeding their division weight cap.
+
+    For cap-strict divisions (Classic Physique, Men's Physique), if the
+    projected lean mass exceeds the cap, the engine flags an atrophy
+    protocol: reduce protein to ~1.6 g/kg and drop volume on
+    over-developed muscles below MEV.
+
+    Args:
+        current_lean_mass_kg: Current lean body mass.
+        height_cm: Height in cm.
+        division: Competition division.
+        body_fat_pct: Current body fat percentage.
+
+    Returns:
+        Dict with proximity info and optional atrophy protocol flag.
+    """
+    div_key = division.lower().replace(" ", "_")
+    cap_kg = lookup_weight_cap(height_cm, division)
+    target_lbm = lookup_target_lbm(height_cm, division, stage_bf_pct=5.0)
+
+    # Project stage weight: current LBM at 5% BF
+    projected_stage_weight = current_lean_mass_kg / 0.95
+
+    proximity_pct = round((projected_stage_weight / cap_kg) * 100, 1)
+    over_cap = projected_stage_weight > cap_kg
+
+    result = {
+        "weight_cap_kg": cap_kg,
+        "target_lbm_kg": target_lbm,
+        "current_lbm_kg": round(current_lean_mass_kg, 1),
+        "projected_stage_weight_kg": round(projected_stage_weight, 1),
+        "proximity_pct": proximity_pct,
+        "over_cap": over_cap,
+        "atrophy_protocol": False,
+        "message": "",
+    }
+
+    if over_cap and div_key in _CAP_STRICT_DIVISIONS:
+        excess_kg = round(projected_stage_weight - cap_kg, 1)
+        result["atrophy_protocol"] = True
+        result["atrophy_recommendations"] = {
+            "protein_per_kg": 1.6,  # reduce from 2.0+ to slow growth
+            "volume_reduction": "below_mev",  # drop over-developed muscles below MEV
+            "excess_kg": excess_kg,
+        }
+        result["message"] = (
+            f"Projected stage weight ({projected_stage_weight:.1f} kg) exceeds "
+            f"{division.replace('_', ' ').title()} cap of {cap_kg} kg by {excess_kg} kg. "
+            "Atrophy protocol activated: reduce protein to 1.6 g/kg and drop "
+            "training volume on over-developed muscles below MEV."
+        )
+    elif proximity_pct > 95 and div_key in _CAP_STRICT_DIVISIONS:
+        result["message"] = (
+            f"Approaching weight cap ({proximity_pct:.0f}%). Monitor closely. "
+            "Consider maintaining current muscle mass rather than pursuing growth."
+        )
+    else:
+        result["message"] = (
+            f"Within weight cap ({proximity_pct:.0f}% of {cap_kg} kg). "
+            "Continue current program."
+        )
+
+    return result

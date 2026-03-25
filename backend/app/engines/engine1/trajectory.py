@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Trajectory Predictor
 
@@ -62,7 +64,10 @@ def compute_goal_weeks(
     else:
         k = 0.008
 
-    gap_ratio = (ceiling_pds - target_pds) / (ceiling_pds - current_pds)
+    denominator = ceiling_pds - current_pds
+    if denominator <= 0:
+        return None
+    gap_ratio = (ceiling_pds - target_pds) / denominator
     if gap_ratio <= 0:
         return None
 
@@ -82,7 +87,10 @@ def _k_for_experience(training_experience_years: int) -> float:
         return 0.008
 
 
-def compute_response_ratio(pds_history: list[dict]) -> dict:
+def compute_response_ratio(
+    pds_history: list[dict],
+    training_experience_years: int | None = None,
+) -> dict:
     """
     Compute an individual's response ratio by comparing actual PDS
     progression to the predicted rate for their experience tier.
@@ -90,6 +98,11 @@ def compute_response_ratio(pds_history: list[dict]) -> dict:
     Args:
         pds_history: List of ``{"date": str, "pds_score": float}`` entries,
                      sorted chronologically.  At least 3 entries required.
+        training_experience_years: Actual years of serious resistance training.
+            When provided, this overrides the PDS-back-calculated experience tier
+            (which is unreliable for genetic outliers — a 2-year beginner with
+            elite genetics could score PDS 75+ early, but shouldn't be treated
+            as a 12-year veteran for rate predictions).
 
     Returns:
         Dict with keys:
@@ -98,6 +111,7 @@ def compute_response_ratio(pds_history: list[dict]) -> dict:
           "low_responder" (<0.8)
         - ``actual_rate``: observed weekly PDS gain
         - ``predicted_rate``: expected weekly PDS gain based on experience tier
+        - ``experience_source``: ``"provided"`` | ``"inferred"``
 
     Raises:
         ValueError: If fewer than 3 history entries are provided.
@@ -125,17 +139,23 @@ def compute_response_ratio(pds_history: list[dict]) -> dict:
     total_weeks = total_days / 7.0
     actual_rate = (last_pds - first_pds) / total_weeks
 
-    # Infer experience tier from first entry's PDS level:
-    #   <40 → beginner (<2 yr), 40-60 → intermediate (2-5 yr),
-    #   60-75 → advanced (5-10 yr), 75+ → elite (10+ yr)
-    if first_pds < 40:
-        exp_years = 1
-    elif first_pds < 60:
-        exp_years = 3
-    elif first_pds < 75:
-        exp_years = 7
+    if training_experience_years is not None:
+        # Use the athlete's actual training history — much more reliable
+        exp_years = max(0, int(training_experience_years))
+        experience_source = "provided"
     else:
-        exp_years = 12
+        # Fallback: infer from PDS level (unreliable for genetic outliers)
+        # <40 → beginner (<2 yr), 40-60 → intermediate (2-5 yr),
+        # 60-75 → advanced (5-10 yr), 75+ → elite (10+ yr)
+        if first_pds < 40:
+            exp_years = 1
+        elif first_pds < 60:
+            exp_years = 3
+        elif first_pds < 75:
+            exp_years = 7
+        else:
+            exp_years = 12
+        experience_source = "inferred"
 
     k = _k_for_experience(exp_years)
 
@@ -162,6 +182,8 @@ def compute_response_ratio(pds_history: list[dict]) -> dict:
         "category": category,
         "actual_rate": round(actual_rate, 4),
         "predicted_rate": round(predicted_rate, 4),
+        "experience_years_used": exp_years,
+        "experience_source": experience_source,
     }
 
 

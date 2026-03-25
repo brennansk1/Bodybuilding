@@ -109,11 +109,32 @@ async def submit_daily(
     )
     ari_zone = get_ari_zone(ari_score)
 
+    # 4. Engine 2 — Daily session autoregulation for morning soreness
+    from app.models.training import TrainingSession
+    from app.services.training import autoregulate_session_for_soreness
+    
+    session_res = await db.execute(
+        select(TrainingSession)
+        .where(
+            TrainingSession.user_id == user.id, 
+            TrainingSession.session_date == today, 
+            TrainingSession.completed == False
+        )
+    )
+    active_session = session_res.scalar_one_or_none()
+    autoreg_msg = None
+    if active_session and hrv.sore_muscles:
+        dropped, affected = await autoregulate_session_for_soreness(db, user.id, active_session, hrv.sore_muscles)
+        if dropped > 0:
+            autoreg_msg = f"Autoregulated {len(affected)} exercise(s), reduced local volume by {dropped} sets."
+            await db.flush()
+
     return {
         "message": "Daily check-in saved",
         "weight_kg": weight_kg,
         "ari_score": ari_score,
         "zone": ari_zone,
+        "autoregulation": autoreg_msg,
     }
 
 
@@ -143,7 +164,7 @@ async def submit_weekly(
         tape = TapeMeasurement(user_id=user.id, recorded_date=today, **tape_data)
         db.add(tape)
 
-    # Save Skinfolds
+    # Save Skinfolds (JP7 caliper sites)
     sf_map = {
         "sf_chest": "chest", "sf_midaxillary": "midaxillary", "sf_tricep": "tricep",
         "sf_subscapular": "subscapular", "sf_abdominal": "abdominal",
@@ -151,9 +172,10 @@ async def submit_weekly(
         "sf_bicep": "bicep", "sf_lower_back": "lower_back", "sf_calf": "calf",
     }
     sf_data = {sf_map[f]: getattr(data, f) for f in sf_map if getattr(data, f) is not None}
-    if sf_data:
-        body_fat_pct = None
-        if len(sf_data) == 7:
+    direct_bf = data.body_fat_pct  # from Fit3D / DEXA / InBody
+    if sf_data or direct_bf is not None:
+        body_fat_pct = direct_bf  # prefer direct scan value
+        if body_fat_pct is None and len(sf_data) == 7:
             profile_result = await db.execute(
                 select(UserProfile).where(UserProfile.user_id == user.id)
             )
@@ -169,6 +191,16 @@ async def submit_weekly(
             user_id=user.id, recorded_date=today, body_fat_pct=body_fat_pct, **sf_data,
         )
         db.add(skinfold)
+
+        # Sync scan-provided BF% to UserProfile so all engines see it immediately
+        if direct_bf is not None:
+            profile_result = await db.execute(
+                select(UserProfile).where(UserProfile.user_id == user.id)
+            )
+            profile = profile_result.scalar_one_or_none()
+            if profile:
+                profile.manual_body_fat_pct = direct_bf
+
     await db.flush()
 
     # Week number

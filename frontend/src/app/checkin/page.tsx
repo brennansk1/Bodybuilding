@@ -18,7 +18,7 @@ const MUSCLE_GROUPS = ["Chest", "Back", "Quads", "Hamstrings", "Delts", "Arms", 
 export default function CheckinPage() {
   const router = useRouter();
   const { user, loading, logout } = useAuth();
-  const [mode, setMode] = useState<"quick" | "full" | null>(null);
+  const [mode, setMode] = useState<"quick" | "full" | "fit3d" | null>(null);
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -63,6 +63,16 @@ export default function CheckinPage() {
   const [trainingAdherence, setTrainingAdherence] = useState("90");
   const [notes, setNotes] = useState("");
 
+  // Fit3D-specific state (all in original Fit3D units: lbs + inches)
+  const [fit3dWeightLbs, setFit3dWeightLbs] = useState("");
+  const [fit3dBodyFatPct, setFit3dBodyFatPct] = useState("");
+  const [fit3dLeanMassLbs, setFit3dLeanMassLbs] = useState("");
+  const [fit3dFatMassLbs, setFit3dFatMassLbs] = useState("");
+  const [fit3dInch, setFit3dInch] = useState<Record<string, string>>({});
+  const [fit3dShouldersCm, setFit3dShouldersCm] = useState(""); // not measured by Fit3D
+  const [lastShouldersCm, setLastShouldersCm] = useState<number | null>(null);
+  const [fit3dDone, setFit3dDone] = useState(false);
+
   const toggleSoreMuscle = (m: string) => {
     if (mode === "quick") {
       setQuickSoreMuscles(p => p.includes(m) ? p.filter(x => x !== m) : [...p, m]);
@@ -76,6 +86,13 @@ export default function CheckinPage() {
   }, [user, loading, router]);
 
   useEffect(() => {
+    if (mode === "fit3d") {
+      api.get<{tape: Record<string, number>}>("/checkin/weekly/previous")
+        .then(res => {
+          if (res.tape?.shoulders) setLastShouldersCm(res.tape.shoulders);
+        })
+        .catch(() => {});
+    }
     if (mode === "full") {
       api.get<{tape: Record<string, number>; skinfolds: Record<string, number>}>("/checkin/weekly/previous")
         .then(res => {
@@ -101,12 +118,34 @@ export default function CheckinPage() {
     }
   }, [mode]);
 
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("cpos_showAdvancedMeasurements");
+    if (saved) setShowAdvanced(saved === "true");
+  }, []);
+
   if (loading || !user) return null;
 
   const tapeSites = [
     "neck", "shoulders", "chest", "left_bicep", "right_bicep",
     "left_forearm", "right_forearm", "waist", "hips",
     "left_thigh", "right_thigh", "left_calf", "right_calf",
+  ];
+
+  const FIT3D_SITES = [
+    { key: "neck", label: "Neck" },
+    { key: "chest", label: "Chest" },
+    { key: "waist", label: "Waist" },
+    { key: "hips", label: "Hips" },
+    { key: "left_bicep", label: "Left Biceps" },
+    { key: "right_bicep", label: "Right Biceps" },
+    { key: "left_forearm", label: "Left Forearm" },
+    { key: "right_forearm", label: "Right Forearm" },
+    { key: "left_thigh", label: "Left Thigh" },
+    { key: "right_thigh", label: "Right Thigh" },
+    { key: "left_calf", label: "Left Calf" },
+    { key: "right_calf", label: "Right Calf" },
   ];
 
   const advancedTapeSites = [
@@ -125,13 +164,6 @@ export default function CheckinPage() {
     { key: "lower_back", label: "Lower back", hint: "2 in. lateral to spine" },
     { key: "calf", label: "Calf", hint: "Medial aspect at max girth" },
   ];
-
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("cpos_showAdvancedMeasurements");
-    if (saved) setShowAdvanced(saved === "true");
-  }, []);
 
   const toggleAdvanced = () => {
     const next = !showAdvanced;
@@ -163,43 +195,80 @@ export default function CheckinPage() {
     setSubmitting(true);
     setError("");
     try {
-      // 1. Submit Daily touchpoint (weight + HRV + adherence)
-      await api.post("/checkin/daily", {
-        body_weight_kg: bodyWeight ? parseFloat(bodyWeight) : undefined,
-        rmssd: rmssd ? parseFloat(rmssd) : undefined,
-        resting_hr: restingHr ? parseFloat(restingHr) : undefined,
-        sleep_quality: parseFloat(sleepQuality),
-        soreness_score: parseFloat(soreness),
-        sore_muscles: soreMuscles,
-        nutrition_adherence_pct: parseFloat(nutritionAdherence),
-        training_adherence_pct: parseFloat(trainingAdherence),
-        notes,
-      });
+      if (mode === "fit3d") {
+        // ── Fit3D scan submission ──
+        const IN_TO_CM = 2.54;
+        const LBS_TO_KG = 0.453592;
+        const weightKg = fit3dWeightLbs ? parseFloat(fit3dWeightLbs) * LBS_TO_KG : undefined;
 
-      // 2. Submit Weekly touchpoint (tape, skinfolds, photos)
-      const tapeNums: Record<string, number | null> = {};
-      for (const [k, v] of Object.entries(tape)) {
-        tapeNums[k] = v ? parseFloat(v) : null;
-      }
-      const sfNums: Record<string, number | null> = {};
-      for (const [k, v] of Object.entries(skinfolds)) {
-        sfNums[`sf_${k}`] = v ? parseFloat(v) : null;
-      }
+        // Submit daily with weight only
+        if (weightKg) {
+          await api.post("/checkin/daily", { body_weight_kg: Math.round(weightKg * 10) / 10 });
+        }
 
-      const res = await api.post<Record<string, unknown>>("/checkin/weekly", {
-        ...tapeNums,
-        ...sfNums,
-        front_photo_url: frontPhoto || undefined,
-        back_photo_url: backPhoto || undefined,
-        side_left_photo_url: sideLeftPhoto || undefined,
-        side_right_photo_url: sideRightPhoto || undefined,
-        front_pose_photo_url: frontPosePhoto || undefined,
-        back_pose_photo_url: backPosePhoto || undefined,
-        notes,
-      });
-      
-      setResult(res);
-      setStep(5);
+        // Convert inch circumferences to cm
+        const tapeNums: Record<string, number | null> = {};
+        for (const [k, v] of Object.entries(fit3dInch)) {
+          if (v) tapeNums[k] = Math.round(parseFloat(v) * IN_TO_CM * 10) / 10;
+        }
+        // Shoulders: manual entry (cm), fallback to last measurement, then estimate from chest
+        if (fit3dShouldersCm) {
+          tapeNums.shoulders = parseFloat(fit3dShouldersCm);
+        } else if (lastShouldersCm) {
+          tapeNums.shoulders = lastShouldersCm;
+        } else if (tapeNums.chest) {
+          // Coaching heuristic: shoulder girth ≈ chest × 1.18 for typical male physiques
+          tapeNums.shoulders = Math.round(tapeNums.chest * 1.18 * 10) / 10;
+        }
+
+        const res = await api.post<Record<string, unknown>>("/checkin/weekly", {
+          ...tapeNums,
+          body_fat_pct: fit3dBodyFatPct ? parseFloat(fit3dBodyFatPct) : undefined,
+          lean_mass_kg: fit3dLeanMassLbs ? Math.round(parseFloat(fit3dLeanMassLbs) * LBS_TO_KG * 10) / 10 : undefined,
+          fat_mass_kg: fit3dFatMassLbs ? Math.round(parseFloat(fit3dFatMassLbs) * LBS_TO_KG * 10) / 10 : undefined,
+          scan_source: "fit3d",
+        });
+        setResult(res);
+        setFit3dDone(true);
+      } else {
+        // ── Standard full check-in ──
+        // 1. Submit Daily touchpoint (weight + HRV + adherence)
+        await api.post("/checkin/daily", {
+          body_weight_kg: bodyWeight ? parseFloat(bodyWeight) : undefined,
+          rmssd: rmssd ? parseFloat(rmssd) : undefined,
+          resting_hr: restingHr ? parseFloat(restingHr) : undefined,
+          sleep_quality: parseFloat(sleepQuality),
+          soreness_score: parseFloat(soreness),
+          sore_muscles: soreMuscles,
+          nutrition_adherence_pct: parseFloat(nutritionAdherence),
+          training_adherence_pct: parseFloat(trainingAdherence),
+          notes,
+        });
+
+        // 2. Submit Weekly touchpoint (tape, skinfolds, photos)
+        const tapeNums: Record<string, number | null> = {};
+        for (const [k, v] of Object.entries(tape)) {
+          tapeNums[k] = v ? parseFloat(v) : null;
+        }
+        const sfNums: Record<string, number | null> = {};
+        for (const [k, v] of Object.entries(skinfolds)) {
+          sfNums[`sf_${k}`] = v ? parseFloat(v) : null;
+        }
+
+        const res = await api.post<Record<string, unknown>>("/checkin/weekly", {
+          ...tapeNums,
+          ...sfNums,
+          front_photo_url: frontPhoto || undefined,
+          back_photo_url: backPhoto || undefined,
+          side_left_photo_url: sideLeftPhoto || undefined,
+          side_right_photo_url: sideRightPhoto || undefined,
+          front_pose_photo_url: frontPosePhoto || undefined,
+          back_pose_photo_url: backPosePhoto || undefined,
+          notes,
+        });
+        setResult(res);
+        setStep(5);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Check-in failed");
     } finally {
@@ -226,7 +295,7 @@ export default function CheckinPage() {
   };
 
   return (
-    <div className="min-h-screen bg-jungle-dark">
+    <div className="min-h-screen">
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
       <main className="container-app py-6">
@@ -241,7 +310,7 @@ export default function CheckinPage() {
                 </h1>
                 <p className="text-jungle-muted text-sm mt-1">Choose your check-in mode</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <button
                   onClick={() => setMode("quick")}
                   className="card text-left hover:border-jungle-accent transition-colors border border-jungle-border group"
@@ -276,13 +345,35 @@ export default function CheckinPage() {
                     </div>
                     <div>
                       <p className="font-semibold text-sm group-hover:text-jungle-accent transition-colors">
-                        Weekly Check-In
+                        Weekly Micro Check-In
                       </p>
-                      <p className="text-[10px] text-jungle-dim">~15 min</p>
+                      <p className="text-[10px] text-jungle-dim">~5 min</p>
                     </div>
                   </div>
                   <p className="text-xs text-jungle-muted">
-                    Complete biological, photos, tape, skinfold, HRV, and adherence data. Recalibrates all three engines.
+                    Weight, adherence, HRV, and recovery data. Engine 3 autoregulates macros from trends. No measurements.
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => setMode("fit3d")}
+                  className="card text-left hover:border-blue-400 transition-colors border border-jungle-border group"
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
+                      <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm group-hover:text-blue-400 transition-colors">
+                        Fit 3D Scan Upload
+                      </p>
+                      <p className="text-[10px] text-blue-400/70">Twice per mesocycle</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-jungle-muted">
+                    Upload Fit 3D scan results (circumferences, body composition). Hard-recalibrates all three engines.
                   </p>
                 </button>
               </div>
@@ -831,6 +922,190 @@ export default function CheckinPage() {
                   </div>
                 )}
               </div>
+            </>
+          )}
+
+          {/* Fit 3D Scan Upload mode */}
+          {mode === "fit3d" && (
+            <>
+              <div className="flex items-center gap-3">
+                <button onClick={() => { setMode(null); setFit3dDone(false); }} className="text-jungle-muted hover:text-jungle-accent transition-colors">
+                  ←
+                </button>
+                <div>
+                  <h2 className="text-xl font-bold">
+                    <span className="text-blue-400">Fit 3D</span> Scan Upload
+                  </h2>
+                  <p className="text-jungle-muted text-xs mt-0.5">
+                    Paste your Fit 3D report values (inches & lbs) — we convert automatically
+                  </p>
+                </div>
+              </div>
+
+              {fit3dDone && result ? (
+                <div className="card space-y-5 py-4">
+                  <div className="text-center">
+                    <div className="w-14 h-14 mx-auto rounded-full bg-green-500/20 flex items-center justify-center mb-3">
+                      <svg className="w-7 h-7 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <h2 className="text-lg font-semibold text-green-400">Scan Processed</h2>
+                    <p className="text-jungle-muted text-sm mt-1">All three engines recalibrated from Fit 3D data</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {!!result.pds && (
+                      <div className="card text-center col-span-2">
+                        <p className="text-[10px] text-jungle-muted uppercase tracking-wider">Physique Development Score</p>
+                        <p className="text-4xl font-bold text-jungle-accent mt-1">
+                          {(result.pds as { score: number }).score}
+                        </p>
+                        <p className="text-xs text-jungle-fern capitalize mt-1">
+                          {(result.pds as { tier: string }).tier} tier
+                        </p>
+                      </div>
+                    )}
+                    <div className="card text-center">
+                      <p className="text-[10px] text-jungle-muted uppercase tracking-wider mb-1">Body Weight</p>
+                      <p className="text-2xl font-bold text-jungle-accent">{fit3dWeightLbs} lbs</p>
+                      <p className="text-[10px] text-jungle-dim">{(parseFloat(fit3dWeightLbs || "0") * 0.453592).toFixed(1)} kg</p>
+                    </div>
+                    <div className="card text-center">
+                      <p className="text-[10px] text-jungle-muted uppercase tracking-wider mb-1">Body Fat</p>
+                      <p className="text-2xl font-bold text-jungle-accent">{fit3dBodyFatPct}%</p>
+                      <p className="text-[10px] text-jungle-dim">{fit3dLeanMassLbs ? `${(parseFloat(fit3dLeanMassLbs) * 0.453592).toFixed(1)} kg lean` : ""}</p>
+                    </div>
+                  </div>
+
+                  {result.calorie_adjustment !== undefined && (
+                    <div className="card text-center">
+                      <p className="text-[10px] text-jungle-muted uppercase tracking-wider mb-1">Calorie Adjustment</p>
+                      <p className={`text-2xl font-bold ${(result.calorie_adjustment as number) > 0 ? "text-red-400" : "text-green-400"}`}>
+                        {(result.calorie_adjustment as number) > 0 ? "+" : ""}{result.calorie_adjustment as number} kcal/day
+                      </p>
+                    </div>
+                  )}
+
+                  <a href="/dashboard" className="btn-primary w-full text-center block">View Dashboard</a>
+                </div>
+              ) : (
+              <div className="card space-y-4">
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                  <p className="text-xs text-blue-400 font-medium">Scan Timing</p>
+                  <p className="text-[10px] text-jungle-muted mt-1">
+                    Upload twice per mesocycle: Scan 1 at MEV baseline (Week 1) and Scan 2 at MRV peak (deload week).
+                    This measures the exact hypertrophic yield of each training block.
+                  </p>
+                </div>
+
+                {/* Body Composition */}
+                <div>
+                  <p className="text-xs text-jungle-dim uppercase tracking-wide mb-2">Body Composition</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label-field">Weight (lbs)</label>
+                      <input type="number" step="0.1" value={fit3dWeightLbs} onChange={e => setFit3dWeightLbs(e.target.value)} className="input-field mt-1" placeholder="e.g. 206.2" />
+                      {fit3dWeightLbs && <p className="text-[9px] text-jungle-dim mt-0.5">{(parseFloat(fit3dWeightLbs) * 0.453592).toFixed(1)} kg</p>}
+                    </div>
+                    <div>
+                      <label className="label-field">Body Fat %</label>
+                      <input type="number" step="0.01" value={fit3dBodyFatPct} onChange={e => setFit3dBodyFatPct(e.target.value)} className="input-field mt-1" placeholder="e.g. 22.71" />
+                    </div>
+                    <div>
+                      <label className="label-field">Lean Mass (lbs)</label>
+                      <input type="number" step="0.1" value={fit3dLeanMassLbs} onChange={e => setFit3dLeanMassLbs(e.target.value)} className="input-field mt-1" placeholder="e.g. 159.4" />
+                      {fit3dLeanMassLbs && <p className="text-[9px] text-jungle-dim mt-0.5">{(parseFloat(fit3dLeanMassLbs) * 0.453592).toFixed(1)} kg</p>}
+                    </div>
+                    <div>
+                      <label className="label-field">Fat Mass (lbs)</label>
+                      <input type="number" step="0.1" value={fit3dFatMassLbs} onChange={e => setFit3dFatMassLbs(e.target.value)} className="input-field mt-1" placeholder="e.g. 46.8" />
+                      {fit3dFatMassLbs && <p className="text-[9px] text-jungle-dim mt-0.5">{(parseFloat(fit3dFatMassLbs) * 0.453592).toFixed(1)} kg</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Circumferences in inches */}
+                <div>
+                  <p className="text-xs text-jungle-dim uppercase tracking-wide mb-2">Circumferences (inches → auto-converted to cm)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {FIT3D_SITES.map(({ key, label }) => (
+                      <div key={key}>
+                        <label className="label-field">{label} (in)</label>
+                        <input
+                          type="number" step="0.1"
+                          value={fit3dInch[key] || ""}
+                          onChange={e => setFit3dInch(p => ({...p, [key]: e.target.value}))}
+                          className="input-field mt-1"
+                          placeholder="inches"
+                        />
+                        {fit3dInch[key] && <p className="text-[9px] text-jungle-dim mt-0.5">{(parseFloat(fit3dInch[key]) * 2.54).toFixed(1)} cm</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Shoulders — not measured by Fit3D */}
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs text-yellow-400 font-medium">Shoulders (Manual)</p>
+                    {lastShouldersCm && !fit3dShouldersCm && (
+                      <button
+                        onClick={() => setFit3dShouldersCm(String(lastShouldersCm))}
+                        className="text-[10px] text-jungle-accent hover:text-jungle-accent/80 font-medium transition-colors"
+                      >
+                        Use Last ({lastShouldersCm} cm)
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-jungle-muted mb-2">
+                    Not measured by Fit 3D. Measure at the widest point of your deltoids for V-taper analysis.
+                  </p>
+                  <input
+                    type="number" step="0.1"
+                    value={fit3dShouldersCm}
+                    onChange={e => setFit3dShouldersCm(e.target.value)}
+                    className="input-field"
+                    placeholder="Shoulder circumference (cm)"
+                  />
+                  {fit3dShouldersCm && lastShouldersCm && (
+                    <p className="text-[9px] text-jungle-dim mt-1">
+                      {parseFloat(fit3dShouldersCm) > lastShouldersCm ? "+" : ""}{(parseFloat(fit3dShouldersCm) - lastShouldersCm).toFixed(1)} cm vs last
+                    </p>
+                  )}
+                </div>
+
+                {/* Lean adjustment info */}
+                <div className="bg-jungle-deeper rounded-lg p-3 border border-jungle-border">
+                  <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1">Lean Girth Normalization</p>
+                  <p className="text-[10px] text-jungle-muted">
+                    Fit 3D measures total circumferences including fat tissue. The engine applies a global lean adjustment
+                    using your scan BF%: <span className="text-jungle-accent font-mono">C_lean = C_raw × √(1 − BF%)</span>.
+                    For site-specific corrections, add caliper skinfolds via a Full Check-In.
+                  </p>
+                </div>
+
+                {/* Engine recalibration summary */}
+                <div className="bg-jungle-deeper rounded-lg p-3 border border-jungle-border">
+                  <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1">What happens next</p>
+                  <ul className="text-[10px] text-jungle-muted space-y-1">
+                    <li><span className="text-jungle-accent font-medium">Engine 1:</span> PDS recalibrated. Muscle gaps updated against lean Ghost Model ideals.</li>
+                    <li><span className="text-jungle-accent font-medium">Engine 2:</span> Volume re-routed based on new gap priorities.</li>
+                    <li><span className="text-jungle-accent font-medium">Engine 3:</span> Katch-McArdle BMR recalculated from scan LBM. Macros adjusted.</li>
+                  </ul>
+                </div>
+
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+
+                <button
+                  onClick={submitCheckin}
+                  disabled={submitting || !fit3dWeightLbs}
+                  className="btn-primary w-full disabled:opacity-50"
+                >
+                  {submitting ? "Recalibrating Engines..." : "Upload Scan & Recalibrate"}
+                </button>
+              </div>
+              )}
             </>
           )}
         </div>

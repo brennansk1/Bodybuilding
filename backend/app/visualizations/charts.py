@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Plotly chart generators — return Plotly JSON dicts for frontend rendering.
 """

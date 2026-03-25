@@ -125,20 +125,35 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
             )}
           </div>
 
-          {/* Mobile hamburger */}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 text-jungle-muted hover:text-jungle-accent"
-            aria-label="Toggle menu"
-          >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              {mobileOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          {/* Mobile: avatar + hamburger */}
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-jungle-border hover:border-jungle-accent transition-colors"
+            >
+              {profilePicUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profilePicUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <span className="w-full h-full flex items-center justify-center bg-jungle-accent/20 text-jungle-accent text-sm font-bold">
+                  {firstLetter}
+                </span>
               )}
-            </svg>
-          </button>
+            </button>
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="p-2 text-jungle-muted hover:text-jungle-accent"
+              aria-label="Toggle menu"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {mobileOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Mobile menu */}
@@ -150,8 +165,8 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
                 <a
                   key={link.href}
                   href={link.href}
-                  className={`block px-3 py-2.5 hover:bg-jungle-card rounded-lg transition-colors ${
-                    active ? "text-jungle-accent font-medium" : "text-jungle-muted hover:text-jungle-accent"
+                  className={`block px-3 py-2.5 hover:bg-jungle-card rounded-lg transition-colors text-base ${
+                    active ? "text-jungle-accent font-medium bg-jungle-accent/10" : "text-jungle-muted hover:text-jungle-accent"
                   }`}
                   onClick={() => setMobileOpen(false)}
                 >
@@ -159,30 +174,20 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
                 </a>
               );
             })}
-            <div className="border-t border-jungle-border mt-2 pt-2 px-3">
-              <div className="flex items-center gap-3 mb-3">
-                {/* Mobile avatar */}
-                <button
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-jungle-border hover:border-jungle-accent transition-colors"
-                >
-                  {profilePicUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={profilePicUrl} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="w-full h-full flex items-center justify-center bg-jungle-accent/20 text-jungle-accent text-sm font-bold">
-                      {firstLetter}
-                    </span>
-                  )}
-                </button>
-                {username && (
-                  <p className="text-jungle-dim text-sm">{username}</p>
-                )}
-              </div>
+            <div className="border-t border-jungle-border mt-2 pt-3 px-3 space-y-2">
+              <a
+                href="/settings"
+                onClick={() => setMobileOpen(false)}
+                className={`block py-2.5 px-3 rounded-lg text-base transition-colors ${
+                  pathname === "/settings" ? "text-jungle-accent font-medium bg-jungle-accent/10" : "text-jungle-muted hover:text-jungle-accent hover:bg-jungle-card"
+                }`}
+              >
+                Settings
+              </a>
               {onLogout && (
                 <button
-                  onClick={onLogout}
-                  className="w-full py-2 text-sm text-jungle-danger bg-jungle-card border border-jungle-border rounded-lg"
+                  onClick={() => { setMobileOpen(false); onLogout(); }}
+                  className="w-full py-2.5 text-base text-jungle-danger bg-jungle-card border border-jungle-border rounded-lg"
                 >
                   Logout
                 </button>

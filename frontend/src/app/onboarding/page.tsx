@@ -58,6 +58,8 @@ export default function OnboardingPage() {
   const [competitionDate, setCompetitionDate] = useState("");
   const [wrist, setWrist] = useState("");
   const [ankle, setAnkle] = useState("");
+  const [manualBodyFatPct, setManualBodyFatPct] = useState("");
+  const [currentPhase, setCurrentPhase] = useState("");
 
   // Step 2
   const [bodyWeight, setBodyWeight] = useState("");
@@ -92,6 +94,27 @@ export default function OnboardingPage() {
 
   const submitStep = async () => {
     setError("");
+
+    // Step-specific validation
+    if (step === 1) {
+      if (!heightCm || parseFloat(heightCm) < 100 || parseFloat(heightCm) > 250) {
+        setError("Please enter a valid height between 100–250 cm.");
+        return;
+      }
+      if (age && (parseInt(age) < 14 || parseInt(age) > 80)) {
+        setError("Age must be between 14 and 80.");
+        return;
+      }
+      if (manualBodyFatPct && (parseFloat(manualBodyFatPct) < 3 || parseFloat(manualBodyFatPct) > 50)) {
+        setError("Body fat % must be between 3 and 50.");
+        return;
+      }
+    }
+    if (step === 2 && (!bodyWeight || parseFloat(bodyWeight) < 30)) {
+      setError("Please enter your body weight (minimum 30 kg).");
+      return;
+    }
+
     setLoading(true);
     try {
       if (step === 1) {
@@ -104,6 +127,8 @@ export default function OnboardingPage() {
           training_experience_years: parseInt(experience) || 0,
           wrist_circumference_cm: wrist ? parseFloat(wrist) : null,
           ankle_circumference_cm: ankle ? parseFloat(ankle) : null,
+          manual_body_fat_pct: manualBodyFatPct ? parseFloat(manualBodyFatPct) : null,
+          current_phase: currentPhase || null,
         });
       } else if (step === 2) {
         const tapeNums: Record<string, number | null> = {};
@@ -223,6 +248,21 @@ export default function OnboardingPage() {
                 <label className="label-field">Ankle Circumference (cm)</label>
                 <input type="number" step="0.1" value={ankle} onChange={(e) => setAnkle(e.target.value)} className="input-field" placeholder="23.0" />
               </div>
+              <div>
+                <label className="label-field">Body Fat % <span className="text-jungle-dim font-normal">(optional — if you know it)</span></label>
+                <input type="number" step="0.5" min="3" max="50" value={manualBodyFatPct} onChange={(e) => setManualBodyFatPct(e.target.value)} className="input-field" placeholder="e.g. 15" />
+                <p className="text-[10px] text-jungle-dim mt-1">Leave blank — the engine will estimate from your measurements.</p>
+              </div>
+              <div>
+                <label className="label-field">Current Phase <span className="text-jungle-dim font-normal">(optional)</span></label>
+                <select value={currentPhase} onChange={(e) => setCurrentPhase(e.target.value)} className="input-field">
+                  <option value="">Auto-detect from competition date</option>
+                  <option value="bulk">Bulk (Off-Season)</option>
+                  <option value="lean_bulk">Lean Bulk</option>
+                  <option value="cut">Cut (Contest Prep)</option>
+                  <option value="maintain">Maintain</option>
+                </select>
+              </div>
             </div>
           )}
 
@@ -241,14 +281,27 @@ export default function OnboardingPage() {
                   </div>
                 ))}
               </div>
-              <h3 className="text-sm font-semibold text-jungle-accent uppercase tracking-wide pt-2">Skinfolds (mm) — optional, can add later via check-in</h3>
+              <h3 className="text-sm font-semibold text-jungle-accent uppercase tracking-wide pt-2">Skinfolds (mm) — optional</h3>
+              <p className="text-xs text-jungle-dim -mt-2">Use a caliper. Pinch skin + subcutaneous fat (not muscle). Measure on right side of body.</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {SF_SITES.map((site) => (
-                  <div key={site}>
-                    <label className="block text-xs text-jungle-muted mb-1 capitalize">{site}</label>
-                    <input type="number" step="0.1" value={skinfolds[site] || ""} onChange={(e) => setSkinfolds({ ...skinfolds, [site]: e.target.value })} className="input-field text-sm" />
-                  </div>
-                ))}
+                {SF_SITES.map((site) => {
+                  const guides: Record<string, string> = {
+                    chest: "Diagonal fold midway between nipple and armpit",
+                    midaxillary: "Vertical fold on mid-axillary line at xiphoid level",
+                    tricep: "Vertical fold on back of arm, halfway between shoulder and elbow",
+                    subscapular: "Diagonal fold 1–2 cm below right shoulder blade",
+                    abdominal: "Vertical fold 2 cm to the right of navel",
+                    suprailiac: "Diagonal fold just above iliac crest at mid-axillary line",
+                    thigh: "Vertical fold on front of thigh, midway between hip and knee",
+                  };
+                  return (
+                    <div key={site}>
+                      <label className="block text-xs text-jungle-muted mb-0.5 capitalize">{site.replace(/_/g, " ")}</label>
+                      {guides[site] && <p className="text-[9px] text-jungle-dim mb-1 leading-tight">{guides[site]}</p>}
+                      <input type="number" step="0.1" value={skinfolds[site] || ""} onChange={(e) => setSkinfolds({ ...skinfolds, [site]: e.target.value })} className="input-field text-sm" placeholder="mm" />
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}

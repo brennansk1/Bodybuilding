@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import CalendarMonth from "@/components/CalendarMonth";
 import { api } from "@/lib/api";
+
+// ─── Interfaces ──────────────────────────────────────────────────────────────
 
 interface Program {
   id: string;
@@ -46,11 +49,10 @@ interface ScheduleResponse {
   sessions: ScheduledSession[];
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function formatSessionType(type: string): string {
-  return type
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
+  return type.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
 function formatShortDate(dateStr: string): string {
@@ -60,12 +62,9 @@ function formatShortDate(dateStr: string): string {
 
 function sessionDotColor(session: ScheduledSession, today: string): string {
   if (session.completed) return "bg-green-400";
-  const isPast = session.session_date < today;
-  if (isPast) return "bg-jungle-dim";
-  return "bg-jungle-accent";
+  return session.session_date < today ? "bg-jungle-dim" : "bg-jungle-accent";
 }
 
-// Determine phase color for macro cycle boxes
 function getPhaseColor(phase: string): string {
   switch (phase) {
     case "offseason": return "bg-blue-500";
@@ -90,34 +89,70 @@ function getPhaseLabel(phase: string): string {
   }
 }
 
-// Tooltip component
-function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative inline-flex items-center">
-      {children}
-      <button
-        onClick={() => setOpen(!open)}
-        className="ml-1.5 w-4 h-4 rounded-full bg-jungle-border/40 text-jungle-dim text-[10px] flex items-center justify-center hover:bg-jungle-accent/20 hover:text-jungle-accent transition-colors"
-      >
-        i
-      </button>
-      {open && (
-        <div className="absolute left-0 top-6 z-20 w-64 bg-jungle-deeper border border-jungle-border rounded-xl p-3 shadow-xl">
-          <p className="text-xs text-jungle-muted leading-relaxed">{text}</p>
-          <button
-            onClick={() => setOpen(false)}
-            className="mt-2 text-[10px] text-jungle-dim hover:text-jungle-accent"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-    </div>
-  );
+// ─── Mesocycle phase config (mirrors backend MESO_PHASE_MAP) ─────────────────
+
+interface MesoPhase {
+  label: string;
+  name: string;
+  description: string;
+  color: string;
+  textColor: string;
 }
 
+const MESO_PHASES: Record<number, MesoPhase & { coachingDescription: string }> = {
+  1: { 
+    label: "MEV", 
+    name: "Minimum Effective Volume", 
+    description: "3 working sets · 2 RIR · Moderate FST-7", 
+    coachingDescription: "This phase targets the lowest volume needed to stimulate growth, typically 3 sets per muscle. We prioritize perfect execution and a 2 RIR (Reps In Reserve) buffer to solidify movement patterns and prime the CNS for the heavier loading to come. It's the foundation of the mesocycle.",
+    color: "bg-emerald-500/20 border-emerald-500/40", 
+    textColor: "text-emerald-400" 
+  },
+  2: { 
+    label: "MEV", 
+    name: "Minimum Effective Volume", 
+    description: "3 working sets · 2 RIR · Moderate FST-7", 
+    coachingDescription: "Maintaining MEV while increasing absolute intensity. We continue with 3 sets but focus on progressive overload via weight increases. The goal is maximum tension with zero systemic fatigue accumulation before we ramp volume in the MAV phase.",
+    color: "bg-emerald-500/20 border-emerald-500/40", 
+    textColor: "text-emerald-400" 
+  },
+  3: { 
+    label: "MAV", 
+    name: "Maximum Adaptive Volume", 
+    description: "+1 set · Loads ↑ · 1 RIR · Aggressive FST-7 (45s rest)", 
+    coachingDescription: "The 'Sweet Spot' of hypertrophy. Volume increments by 1 set as we drop the buffer to 1 RIR. We introduce aggressive FST-7 finishers with strict 45-second rests to maximize fascial stretch and blood flow. This is where the most significant tissue adaptation occurs.",
+    color: "bg-yellow-500/20 border-yellow-500/40", 
+    textColor: "text-yellow-400" 
+  },
+  4: { 
+    label: "MAV", 
+    name: "Maximum Adaptive Volume", 
+    description: "+1 set · Loads ↑ · 1 RIR · Aggressive FST-7 (45s rest)", 
+    coachingDescription: "Pushing the upper limit of adaptive volume. We maintain the +1 set increase and 1 RIR intensity. The training focus shifts to maintaining performance under higher metabolic stress, preparing the body for the final MRV push.",
+    color: "bg-yellow-500/20 border-yellow-500/40", 
+    textColor: "text-yellow-400" 
+  },
+  5: { 
+    label: "MRV", 
+    name: "Maximum Recoverable Volume", 
+    description: "All sets to failure · 0 RIR · Forced reps + negatives", 
+    coachingDescription: "The Overreach Phase. Every set is taken to absolute muscular failure (0 RIR) with advanced intensity techniques like forced repetitions and assisted negatives. This phase pushes your recovery capacity to its limit to trigger a massive supercompensation effect.",
+    color: "bg-red-500/20 border-red-500/40", 
+    textColor: "text-red-400" 
+  },
+  6: { 
+    label: "DELOAD", 
+    name: "Deload & Recovery", 
+    description: "50% volume · 60% loads · No FST-7 · Supercompensation", 
+    coachingDescription: "Strategic Recovery. Volume is slashed by 50% and intensity reduced to a RPE 6. We remove FST-7 and all failure-training to allow systemic fatigue and connective tissue inflammation to dissipate. This enables you to start the next mesocycle with a higher baseline.",
+    color: "bg-blue-500/20 border-blue-500/40", 
+    textColor: "text-blue-400" 
+  },
+};
+
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ProgramPage() {
   const router = useRouter();
@@ -126,28 +161,50 @@ export default function ProgramPage() {
   const [sessions, setSessions] = useState<ScheduledSession[]>([]);
   const [fetching, setFetching] = useState(true);
   const [generating, setGenerating] = useState(false);
-
   const [calendar, setCalendar] = useState<AnnualCalendarResponse | null>(null);
+  const [expandedWeek, setExpandedWeek] = useState<number | null>(null);
+  const [selectedMesoWeek, setSelectedMesoWeek] = useState<number | null>(null);
+  const [muscleGaps, setMuscleGaps] = useState<any>(null);
+  const [trainingStartTime, setTrainingStartTime] = useState("10:00");
+  const [trainingDuration, setTrainingDuration] = useState(75);
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
     if (!loading && !user) { router.push("/auth/login"); return; }
     if (user) {
+      // Reset state to prevent bleedthrough from previous user
+      setProgram(null);
+      setSessions([]);
+      setMuscleGaps(null);
+      setFetching(true);
       Promise.all([
         api.get<ScheduleResponse>("/engine2/program/schedule").catch(() => null),
         api.get<Program>("/engine2/program/current").catch(() => null),
         api.get<AnnualCalendarResponse>("/engine1/annual-calendar").catch(() => null),
-      ]).then(([scheduleRes, programRes, calendarRes]) => {
+        api.get<any>("/engine1/muscle-gaps").catch(() => null),
+      ]).then(([scheduleRes, programRes, calendarRes, gapsRes]) => {
         if (scheduleRes) {
           setProgram(scheduleRes.program);
           setSessions(scheduleRes.sessions);
+          setSelectedMesoWeek(scheduleRes.program.current_week);
         } else if (programRes) {
           setProgram(programRes);
+          setSelectedMesoWeek(programRes.current_week);
         }
-        if (calendarRes) {
-          setCalendar(calendarRes);
-        }
+        if (calendarRes) setCalendar(calendarRes);
+        if (gapsRes) setMuscleGaps(gapsRes);
+        
+        // Fetch profile for training preferences
+        api.get<any>("/onboarding/profile").then((p) => {
+          if (p.training_start_time) setTrainingStartTime(p.training_start_time);
+          if (p.training_duration_min) setTrainingDuration(p.training_duration_min);
+        }).catch(() => {});
+
+        // Auto-expand the current week
+        const current = scheduleRes?.program?.current_week ?? programRes?.current_week ?? 1;
+        setExpandedWeek(current);
       }).finally(() => setFetching(false));
     }
   }, [user, loading, router]);
@@ -155,178 +212,175 @@ export default function ProgramPage() {
   const generateProgram = async () => {
     setGenerating(true);
     try {
-      const p = await api.post<Program & { sessions_created: number; message: string }>(
-        "/engine2/program/generate"
-      );
+      const p = await api.post<Program & { sessions_created: number }>("/engine2/program/generate");
       setProgram(p);
-      // Re-fetch schedule
       const scheduleRes = await api.get<ScheduleResponse>("/engine2/program/schedule").catch(() => null);
-      if (scheduleRes) {
-        setProgram(scheduleRes.program);
-        setSessions(scheduleRes.sessions);
-      }
-    } catch {
-      // silent
-    } finally {
-      setGenerating(false);
-    }
+      if (scheduleRes) { setProgram(scheduleRes.program); setSessions(scheduleRes.sessions); }
+    } catch { /* */ } finally { setGenerating(false); }
+  };
+
+  const savePreferences = async () => {
+    setSavingPrefs(true);
+    try {
+      await api.patch("/onboarding/profile", {
+        training_start_time: trainingStartTime,
+        training_duration_min: trainingDuration,
+      });
+    } catch { /* */ } finally { setSavingPrefs(false); }
   };
 
   if (loading || !user) return null;
 
-  // Group sessions by week_number
+  // Group sessions by week
   const byWeek: Record<number, ScheduledSession[]> = {};
   sessions.forEach((s) => {
     if (!byWeek[s.week_number]) byWeek[s.week_number] = [];
     byWeek[s.week_number].push(s);
   });
-  const weeks = Object.keys(byWeek).map(Number).sort((a, b) => a - b);
 
-  const totalWeeks = program?.mesocycle_weeks ?? weeks.length;
+  const totalWeeks = program?.mesocycle_weeks ?? 6;
   const currentWeek = program?.current_week ?? 1;
   const progressPct = totalWeeks > 0 ? Math.round((currentWeek / totalWeeks) * 100) : 0;
 
-  const splitLabel = program
-    ? program.split_type.replace(/_/g, "/").replace(/\b\w/g, (c) => c.toUpperCase())
-    : "";
-
-  // Macro cycle: derived from actual calendar
-  const macroPhases = calendar?.calendar.flatMap(block => 
+  // Macro cycle weeks
+  const macroPhases = calendar?.calendar.flatMap(block =>
     Array(block.weeks).fill(block.phase)
-  ) ?? Array(16).fill("offseason"); // Fallback
+  ) ?? Array(16).fill("offseason");
 
-  const MACRO_WEEKS = macroPhases.length;
-  // If we are far into the future, we might need a way to find where "today" is in macroPhases.
-  // For now, assume currentWeek is the offset into the first phase or similar.
-  // Better: find how many weeks since the start of the calendar.
-  // Calculate current week relative to anchored start (52w out)
   const startAnchor = calendar?.calendar[0]?.start_date;
   let macroCurrentWeek = 1;
   if (startAnchor) {
     const start = new Date(startAnchor + "T00:00:00");
     const now = new Date();
-    const diffDays = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    macroCurrentWeek = Math.max(1, Math.floor(diffDays / 7) + 1);
+    macroCurrentWeek = Math.max(1, Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1);
   }
-  
-  // Clamp to max weeks in calendar
   macroCurrentWeek = Math.min(macroCurrentWeek, macroPhases.length);
   const currentPhaseName = macroPhases[macroCurrentWeek - 1] || "offseason";
 
-  // Current mesocycle sessions (current week)
+  // Current week sessions for microcycle
   const currentWeekSessions = byWeek[currentWeek] ?? [];
-
-  // Micro cycle: sessions for this week, mapped to day slots
   const microDaySessions: (ScheduledSession | null)[] = DAY_LABELS.map((_, idx) => {
     return currentWeekSessions.find((s) => {
       const d = new Date(s.session_date + "T00:00:00");
-      // getDay(): 0=Sun,1=Mon,...6=Sat; idx 0=Mon so shift
       return (d.getDay() + 6) % 7 === idx;
     }) ?? null;
   });
 
   return (
-    <div className="min-h-screen bg-jungle-dark">
+    <div className="min-h-screen">
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
-      <main className="container-app py-6">
-        <div className="max-w-3xl mx-auto space-y-6">
+      <main className="px-3 py-4">
+        <div className="max-w-lg mx-auto space-y-4">
 
           {/* Header */}
           <div className="flex items-center gap-3">
-            <a
-              href="/training"
-              className="text-jungle-muted hover:text-jungle-accent transition-colors"
-              aria-label="Back to Training"
-            >
+            <a href="/training" className="text-jungle-muted hover:text-jungle-accent transition-colors" aria-label="Back">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </a>
-            <div>
-              <h1 className="text-2xl font-bold">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-bold">
                 <span className="text-jungle-accent">Program</span> Schedule
               </h1>
               {program && (
-                <p className="text-jungle-muted text-sm mt-0.5">
-                  {program.name} &mdash; {splitLabel} &middot; {program.days_per_week} days/week
+                <p className="text-jungle-muted text-xs mt-0.5 truncate">
+                  {program.name} · {program.split_type} · {program.days_per_week}d/wk
                 </p>
               )}
             </div>
+            
+            <div className="flex gap-2">
+              <div className="bg-jungle-deeper border border-jungle-border rounded-xl p-2 flex-1 flex items-center gap-2">
+                <input
+                  type="time"
+                  value={trainingStartTime}
+                  onChange={(e) => setTrainingStartTime(e.target.value)}
+                  className="bg-transparent text-jungle-accent font-bold text-sm outline-none"
+                />
+                <span className="text-jungle-dim text-[10px] uppercase tracking-tighter">Start</span>
+              </div>
+              <div className="bg-jungle-deeper border border-jungle-border rounded-xl p-2 flex-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  value={trainingDuration}
+                  onChange={(e) => setTrainingDuration(parseInt(e.target.value))}
+                  className="bg-transparent text-jungle-accent font-bold text-sm outline-none w-8"
+                />
+                <span className="text-jungle-dim text-[10px] uppercase tracking-tighter">Min</span>
+              </div>
+              <button 
+                onClick={savePreferences}
+                disabled={savingPrefs}
+                className="btn-secondary text-[10px] px-3 py-1.5 h-auto transition-all active:scale-95 disabled:opacity-50"
+              >
+                {savingPrefs ? "..." : "Save"}
+              </button>
+            </div>
           </div>
 
-          {/* Loading state */}
+          {/* Loading */}
           {fetching && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="card animate-pulse space-y-3">
-                  <div className="h-4 bg-jungle-deeper rounded w-24" />
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4].map((j) => (
-                      <div key={j} className="flex-1 h-16 bg-jungle-deeper rounded-lg" />
-                    ))}
-                  </div>
+                <div key={i} className="card animate-pulse space-y-2">
+                  <div className="h-4 bg-jungle-deeper rounded w-20" />
+                  <div className="h-12 bg-jungle-deeper rounded-lg" />
                 </div>
               ))}
             </div>
           )}
 
-          {/* No program state */}
+          {/* No program */}
           {!fetching && !program && (
-            <div className="card text-center py-16">
+            <div className="card text-center py-12">
               <p className="text-jungle-muted text-lg font-medium">No active program</p>
-              <p className="text-jungle-dim text-sm mt-2">
-                Generate a program to see your full mesocycle schedule here.
-              </p>
-              <button
-                onClick={generateProgram}
-                disabled={generating}
-                className="btn-primary mt-5 disabled:opacity-50"
-              >
+              <p className="text-jungle-dim text-sm mt-1">Generate a program to see your mesocycle here.</p>
+              <button onClick={generateProgram} disabled={generating} className="btn-primary mt-4 disabled:opacity-50">
                 {generating ? "Generating..." : "Generate Program"}
               </button>
             </div>
           )}
 
-          {/* Program overview */}
+          {/* Program content */}
           {!fetching && program && (
             <>
               {/* ── MACRO CYCLE ── */}
-              <div className="card space-y-3">
-                <div className="flex items-center">
-                  <h3 className="font-semibold text-sm">Macro Cycle</h3>
-                  <Tooltip text="The full competition prep plan spanning months — bulk, cut, and peak phases.">
-                    <span />
-                  </Tooltip>
+              <div className="card space-y-3 py-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-xs uppercase tracking-wider text-jungle-muted">Macro Cycle</h3>
+                  <span className="text-[10px] text-jungle-dim">
+                    Wk {macroCurrentWeek} · {getPhaseLabel(currentPhaseName)}
+                  </span>
                 </div>
 
                 {/* Phase legend */}
-                <div className="flex gap-x-4 gap-y-1.5 text-[10px] text-jungle-dim flex-wrap">
-                  <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" /> Bulk</div>
-                  <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-500 inline-block" /> Lean Bulk</div>
-                  <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-orange-500 inline-block" /> Cut</div>
-                  <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500 inline-block" /> Peak</div>
-                  <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500 inline-block" /> Restoration</div>
+                <div className="flex gap-x-3 gap-y-1 text-[9px] text-jungle-dim flex-wrap">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" /> Bulk</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-500 inline-block" /> Lean Bulk</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-orange-500 inline-block" /> Cut</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500 inline-block" /> Peak</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500 inline-block" /> Restore</span>
                 </div>
 
                 {/* Week boxes */}
-                <div className="flex gap-1 flex-wrap">
+                <div className="flex gap-0.5 flex-wrap">
                   {macroPhases.map((phase, i) => {
                     const weekNum = i + 1;
                     const isCurrent = weekNum === macroCurrentWeek;
                     const isPast = weekNum < macroCurrentWeek;
                     const color = getPhaseColor(phase);
-                    const label = getPhaseLabel(phase);
                     return (
                       <div
                         key={weekNum}
-                        title={`Week ${weekNum} — ${label}`}
-                        className={`relative flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-[9px] font-bold transition-all ${
+                        title={`Week ${weekNum} — ${getPhaseLabel(phase)}`}
+                        className={`flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[8px] font-bold ${
                           isCurrent
-                            ? `${color} text-white ring-2 ring-white/60 shadow-lg shadow-white/20`
+                            ? `${color} text-white ring-2 ring-white/60 shadow-lg`
                             : isPast
-                            ? `${color}/40 text-white/40`
-                            : `${color}/50 text-white/60`
+                            ? `${color}/30 text-white/30`
+                            : `${color}/50 text-white/50`
                         }`}
                       >
                         {weekNum}
@@ -334,93 +388,111 @@ export default function ProgramPage() {
                     );
                   })}
                 </div>
-                <p className="text-[10px] text-jungle-dim">
-                  Week {macroCurrentWeek} &mdash; {getPhaseLabel(currentPhaseName)} phase
-                </p>
               </div>
 
-              {/* ── MESOCYCLE ── */}
-              <div className="card space-y-3">
+              {/* ── MESOCYCLE with phase labels ── */}
+              <div className="card space-y-3 py-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <h3 className="font-semibold text-sm">Mesocycle</h3>
-                    <Tooltip text="A 4-week training block with progressive volume overload, ending in a deload week.">
-                      <span />
-                    </Tooltip>
-                  </div>
-                  <span className="text-xs text-jungle-accent font-bold">
-                    Week {currentWeek} of {totalWeeks}
-                  </span>
+                  <h3 className="font-semibold text-xs uppercase tracking-wider text-jungle-muted">Mesocycle</h3>
+                  <span className="text-xs text-jungle-accent font-bold">Week {currentWeek}/{totalWeeks}</span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2">
+                {/* 6-week grid with phase labels */}
+                <div className="grid grid-cols-6 gap-1.5">
                   {Array.from({ length: totalWeeks }, (_, i) => {
                     const weekNum = i + 1;
                     const isCurrent = weekNum === currentWeek;
+                    const isSelected = weekNum === selectedMesoWeek;
                     const isPast = weekNum < currentWeek;
-                    const isDeloadWeek = byWeek[weekNum]?.some((s) => s.is_deload) ?? (weekNum === totalWeeks);
+                    const phase = MESO_PHASES[weekNum] ?? MESO_PHASES[6];
                     const completedInWeek = byWeek[weekNum]?.filter((s) => s.completed).length ?? 0;
                     const totalInWeek = byWeek[weekNum]?.length ?? 0;
 
                     return (
-                      <div
+                      <button
                         key={weekNum}
-                        className={`rounded-lg p-3 text-center space-y-1 transition-all ${
-                          isCurrent
-                            ? "bg-jungle-accent/15 border border-jungle-accent/50"
-                            : isDeloadWeek
-                            ? "bg-blue-500/10 border border-blue-500/20"
-                            : "bg-jungle-deeper border border-jungle-border"
+                        onClick={() => setSelectedMesoWeek(weekNum)}
+                        className={`rounded-xl p-2 text-center border transition-all active:scale-95 ${
+                          isSelected 
+                            ? `${phase.color} ring-1 ring-white/20 border-white/40 shadow-lg shadow-black/20` 
+                            : isPast 
+                              ? "bg-jungle-deeper/50 border-jungle-border/50 text-jungle-dim" 
+                              : "bg-jungle-deeper border-jungle-border"
                         }`}
                       >
-                        <p className={`text-xs font-bold ${isCurrent ? "text-jungle-accent" : "text-jungle-muted"}`}>
+                        <p className={`text-[10px] font-bold ${isSelected ? phase.textColor : isPast ? "text-jungle-dim" : "text-jungle-muted"}`}>
                           Wk {weekNum}
                         </p>
-                        {isDeloadWeek && (
-                          <p className="text-[9px] text-blue-400 font-semibold">DELOAD</p>
-                        )}
+                        <p className={`text-[9px] font-bold mt-0.5 ${isSelected ? phase.textColor : "text-jungle-dim"}`}>
+                          {phase.label}
+                        </p>
                         {totalInWeek > 0 && (
-                          <p className="text-[9px] text-jungle-dim">
-                            {completedInWeek}/{totalInWeek}
-                          </p>
+                          <p className="text-[8px] text-jungle-dim mt-0.5">{completedInWeek}/{totalInWeek}</p>
                         )}
-                        {/* Volume indicator dots */}
-                        <div className="flex justify-center gap-0.5 mt-1">
-                          {Array.from({ length: isDeloadWeek ? 2 : Math.min(weekNum, 4) }, (_, j) => (
-                            <div
-                              key={j}
-                              className={`w-1 h-1 rounded-full ${
-                                isPast || isCurrent ? "bg-jungle-accent" : "bg-jungle-border"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
 
-                {/* Mesocycle progress bar */}
+                {/* Selected Phase Details */}
+                {(() => {
+                  const weekToShow = selectedMesoWeek || currentWeek || 1;
+                  const phase = MESO_PHASES[weekToShow] ?? MESO_PHASES[1];
+                  const isCurrent = weekToShow === currentWeek;
+
+                  return (
+                    <div className={`rounded-xl border p-4 ${phase.color} transition-all shadow-sm`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-black tracking-tight ${phase.textColor}`}>{phase.label}</span>
+                          <span className="text-xs font-bold text-white/90">{phase.name}</span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isCurrent ? 'bg-white/20 text-white' : 'bg-black/20 text-jungle-dim'}`}>
+                          {isCurrent ? "Active Week" : `Week ${weekToShow}`}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[11px] text-jungle-muted font-bold uppercase tracking-wider mb-1">Coaching Strategy</p>
+                          <p className="text-[12px] text-white/80 leading-relaxed">
+                            {phase.coachingDescription}
+                          </p>
+                        </div>
+                        
+                        <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-jungle-muted uppercase font-bold">Prescription</span>
+                            <span className="text-[11px] text-white/70 font-medium">{phase.description}</span>
+                          </div>
+                          {isCurrent && (
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-jungle-accent/20 rounded-lg border border-jungle-accent/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-jungle-accent animate-pulse" />
+                              <span className="text-[10px] text-jungle-accent font-bold uppercase">Tracking</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Progress bar */}
                 <div>
                   <div className="h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-jungle-accent rounded-full transition-all"
-                      style={{ width: `${progressPct}%` }}
-                    />
+                    <div className="h-full bg-jungle-accent rounded-full transition-all" style={{ width: `${progressPct}%` }} />
                   </div>
-                  <p className="text-[10px] text-jungle-dim text-right mt-1">{progressPct}% complete</p>
+                  <p className="text-[10px] text-jungle-dim text-right mt-0.5">{progressPct}%</p>
                 </div>
               </div>
 
-              {/* ── MICROCYCLE ── */}
-              <div className="card space-y-3">
-                <div className="flex items-center">
-                  <h3 className="font-semibold text-sm">Microcycle — Week {currentWeek}</h3>
-                  <Tooltip text="Your weekly training schedule — individual sessions and their focus.">
-                    <span />
-                  </Tooltip>
-                </div>
+              {/* ── MICROCYCLE (current week) ── */}
+              <div className="card space-y-3 py-3">
+                <h3 className="font-semibold text-xs uppercase tracking-wider text-jungle-muted">
+                  This Week — {(() => { const p = MESO_PHASES[currentWeek]; return p ? p.label : ""; })()}
+                </h3>
 
+                {/* Day grid */}
                 <div className="grid grid-cols-7 gap-1">
                   {DAY_LABELS.map((dayLabel, idx) => {
                     const session = microDaySessions[idx];
@@ -428,164 +500,205 @@ export default function ProgramPage() {
                     return (
                       <div
                         key={dayLabel}
-                        className={`rounded-lg p-2 text-center space-y-1 ${
+                        className={`rounded-lg p-1.5 text-center ${
                           session
-                            ? isToday
-                              ? "bg-jungle-accent/15 border border-jungle-accent/50"
-                              : "bg-jungle-deeper border border-jungle-border"
-                            : "bg-jungle-deeper/40 border border-jungle-border/30"
+                            ? isToday ? "bg-jungle-accent/15 border border-jungle-accent/50" : "bg-jungle-deeper border border-jungle-border"
+                            : "bg-jungle-deeper/30 border border-jungle-border/20"
                         }`}
                       >
-                        <p className={`text-[9px] font-semibold uppercase ${isToday ? "text-jungle-accent" : "text-jungle-dim"}`}>
+                        <p className={`text-[8px] font-semibold uppercase ${isToday ? "text-jungle-accent" : "text-jungle-dim"}`}>
                           {dayLabel}
                         </p>
                         {session ? (
                           <>
-                            <div className={`w-1.5 h-1.5 rounded-full mx-auto ${sessionDotColor(session, today)}`} />
-                            <p className="text-[8px] text-jungle-muted leading-tight">
-                              {formatSessionType(session.session_type)}
-                            </p>
-                            {session.completed && (
-                              <p className="text-[8px] text-green-400 font-bold">Done</p>
-                            )}
+                            <div className={`w-1.5 h-1.5 rounded-full mx-auto my-0.5 ${sessionDotColor(session, today)}`} />
+                            <p className="text-[7px] text-jungle-muted leading-tight">{formatSessionType(session.session_type)}</p>
                           </>
                         ) : (
-                          <p className="text-[8px] text-jungle-dim/50">Rest</p>
+                          <p className="text-[7px] text-jungle-dim/40 mt-1">Rest</p>
                         )}
                       </div>
                     );
                   })}
                 </div>
 
+                {/* Session list */}
                 {currentWeekSessions.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-jungle-border">
-                    {currentWeekSessions
-                      .sort((a, b) => a.day_number - b.day_number)
-                      .map((session) => {
-                        const dotColor = sessionDotColor(session, today);
-                        const isToday = session.session_date === today;
-                        return (
-                          <div
-                            key={session.id}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${
-                              isToday ? "bg-jungle-accent/10 border border-jungle-accent/30" : "bg-jungle-deeper"
-                            }`}
-                          >
-                            <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-xs font-semibold ${isToday ? "text-jungle-accent" : "text-jungle-muted"}`}>
-                                {formatSessionType(session.session_type)}
-                                {isToday && <span className="ml-1.5 text-[9px] bg-jungle-accent/20 text-jungle-accent px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wide">Today</span>}
+                  <div className="space-y-1.5 pt-2 border-t border-jungle-border">
+                    {currentWeekSessions.sort((a, b) => a.day_number - b.day_number).map((session) => {
+                      const isToday = session.session_date === today;
+                      return (
+                        <div
+                          key={session.id}
+                          className={`flex items-center gap-3 px-3 py-2 rounded-lg ${
+                            isToday ? "bg-jungle-accent/10 border border-jungle-accent/30" : "bg-jungle-deeper"
+                          }`}
+                        >
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${sessionDotColor(session, today)}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-semibold ${isToday ? "text-jungle-accent" : "text-jungle-muted"}`}>
+                              {formatSessionType(session.session_type)}
+                              {isToday && <span className="ml-1.5 text-[8px] bg-jungle-accent/20 text-jungle-accent px-1.5 py-0.5 rounded-full uppercase">Today</span>}
+                            </p>
+                            {session.primary_muscles?.length > 0 && (
+                              <p className="text-[10px] text-jungle-dim mt-0.5 capitalize truncate">
+                                {session.primary_muscles.join(", ")}
                               </p>
-                              {session.primary_muscles?.length > 0 && (
-                                <p className="text-[10px] text-jungle-dim mt-0.5 capitalize">
-                                  {session.primary_muscles.join(", ")}
-                                </p>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-jungle-dim shrink-0">{formatShortDate(session.session_date)}</p>
-                            {session.completed && (
-                              <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
                             )}
                           </div>
-                        );
+                          <p className="text-[10px] text-jungle-dim shrink-0">{formatShortDate(session.session_date)}</p>
+                          {session.completed && (
+                            <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      );
                     })}
                   </div>
                 )}
               </div>
 
-              {/* Split reason banner */}
-              <div className="card flex items-start gap-3 border border-jungle-accent/20">
-                <svg className="w-4 h-4 text-jungle-accent mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 110 20A10 10 0 0112 2z" />
-                </svg>
-                <p className="text-xs text-jungle-muted leading-relaxed">
-                  Split selected based on your physique gaps
-                </p>
-              </div>
+              {/* ── MONTH CALENDAR ── */}
+              {sessions.length > 0 && (
+                <div className="card space-y-3 py-3">
+                  <h3 className="font-semibold text-xs uppercase tracking-wider text-jungle-muted">
+                    Calendar View
+                  </h3>
+                  <CalendarMonth sessions={sessions} today={today} />
+                </div>
+              )}
 
-              {/* Week cards */}
-              {weeks.map((week) => {
-                const weekSessions = byWeek[week];
-                const isDeload = weekSessions.some((s) => s.is_deload);
-                const totalSets = weekSessions.reduce((acc, s) => {
-                  return acc + (s.primary_muscles?.length ?? 0);
-                }, 0);
+              {/* ── WEEKLY BREAKDOWN (accordion) ── */}
+              {Array.from({ length: totalWeeks }, (_, i) => i + 1).map((week) => {
+                const weekSessions = byWeek[week] ?? [];
+                const phase = MESO_PHASES[week] ?? MESO_PHASES[6];
+                const isExpanded = expandedWeek === week;
                 const completedCount = weekSessions.filter((s) => s.completed).length;
 
                 return (
-                  <div
-                    key={week}
-                    className={`card space-y-4 ${isDeload ? "border border-blue-500/30 bg-blue-500/5" : ""}`}
-                  >
-                    {/* Week header */}
-                    <div className="flex items-center justify-between">
+                  <div key={week} className={`rounded-xl border transition-colors ${
+                    week === currentWeek ? phase.color : "border-jungle-border bg-jungle-card/60"
+                  }`}>
+                    <button
+                      onClick={() => setExpandedWeek(isExpanded ? null : week)}
+                      className="w-full text-left px-4 py-3 flex items-center justify-between"
+                    >
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-sm">Week {week}</h3>
+                        <span className={`text-xs font-bold ${week === currentWeek ? phase.textColor : "text-jungle-muted"}`}>
+                          Wk {week}
+                        </span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${phase.color} ${phase.textColor}`}>
+                          {phase.label}
+                        </span>
                         {week === currentWeek && (
-                          <span className="px-2 py-0.5 rounded bg-jungle-accent/20 text-jungle-accent text-[10px] font-medium uppercase tracking-wide">
-                            Current
-                          </span>
-                        )}
-                        {isDeload && (
-                          <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-medium uppercase tracking-wide">
-                            Deload
-                          </span>
+                          <span className="text-[9px] bg-jungle-accent/20 text-jungle-accent px-1.5 py-0.5 rounded-full uppercase font-medium">Current</span>
                         )}
                       </div>
-                      <span className="text-xs text-jungle-dim">
-                        {completedCount}/{weekSessions.length} done
-                      </span>
-                    </div>
+                      <div className="flex items-center gap-2">
+                        {weekSessions.length > 0 && (
+                          <span className="text-[10px] text-jungle-dim">{completedCount}/{weekSessions.length}</span>
+                        )}
+                        <svg className={`w-4 h-4 text-jungle-dim transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </button>
 
-                    {/* Day cards row */}
-                    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${weekSessions.length}, minmax(0, 1fr))` }}>
-                      {weekSessions.sort((a, b) => a.day_number - b.day_number).map((session) => {
-                        const dotColor = sessionDotColor(session, today);
-                        const isToday = session.session_date === today;
-                        return (
-                          <div
-                            key={session.id}
-                            className={`rounded-lg p-2.5 text-center space-y-1.5 ${
-                              isDeload ? "bg-blue-950/40" : "bg-jungle-deeper"
-                            } ${isToday ? "ring-1 ring-jungle-accent/60" : ""}`}
-                          >
-                            <div className={`w-2 h-2 rounded-full ${dotColor} mx-auto`} />
-                            <p className="text-[10px] font-semibold leading-tight text-jungle-muted">
-                              {formatSessionType(session.session_type)}
-                            </p>
-                            <p className="text-[9px] text-jungle-dim">
-                              {formatShortDate(session.session_date)}
-                            </p>
+                    {isExpanded && (
+                      <div className="px-4 pb-3 space-y-2">
+                        {/* Phase info */}
+                        <p className="text-[10px] text-jungle-dim">{phase.description}</p>
+
+                        {/* Sessions */}
+                        {weekSessions.length > 0 ? (
+                          <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(weekSessions.length, 4)}, minmax(0, 1fr))` }}>
+                            {weekSessions.sort((a, b) => a.day_number - b.day_number).map((session) => {
+                              const isToday = session.session_date === today;
+                              return (
+                                <div
+                                  key={session.id}
+                                  className={`rounded-lg p-2 text-center bg-jungle-deeper ${isToday ? "ring-1 ring-jungle-accent/60" : ""}`}
+                                >
+                                  <div className={`w-1.5 h-1.5 rounded-full ${sessionDotColor(session, today)} mx-auto`} />
+                                  <p className="text-[9px] font-semibold text-jungle-muted mt-1 leading-tight">
+                                    {formatSessionType(session.session_type)}
+                                  </p>
+                                  <p className="text-[8px] text-jungle-dim">{formatShortDate(session.session_date)}</p>
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Weekly summary */}
-                    <div className="flex items-center justify-between text-xs text-jungle-dim pt-1 border-t border-jungle-border">
-                      <span>{weekSessions.length} sessions planned</span>
-                      {totalSets > 0 && <span>{totalSets} planned sets est.</span>}
-                    </div>
+                        ) : (
+                          <p className="text-[10px] text-jungle-dim">No sessions generated for this week yet.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
 
               {/* Regenerate */}
               {sessions.length === 0 && (
-                <button
-                  onClick={generateProgram}
-                  disabled={generating}
-                  className="btn-primary w-full disabled:opacity-50"
-                >
+                <button onClick={generateProgram} disabled={generating} className="btn-primary w-full disabled:opacity-50">
                   {generating ? "Generating..." : "Generate Program"}
                 </button>
               )}
+
+              {/* Physique Diagnostic Insights */}
+              <div className="card space-y-3 py-4 border-t-2 border-jungle-accent/30 rounded-t-none">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 bg-jungle-accent rounded-full" />
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-jungle-text">Physique Diagnostic</h3>
+                  </div>
+                  <span className="text-[10px] bg-jungle-deeper px-2 py-0.5 rounded-full text-jungle-dim border border-jungle-border font-bold">Engine 1 Analysis</span>
+                </div>
+                
+                <div className="p-3 bg-jungle-deeper/40 border border-jungle-border/50 rounded-xl space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-jungle-accent/10 flex items-center justify-center shrink-0 border border-jungle-accent/20">
+                      <svg className="w-4 h-4 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white mb-0.5">Split Logic: {program.split_type.replace(/_/g, " ").toUpperCase()}</p>
+                      <p className="text-[11px] text-jungle-muted leading-relaxed">
+                        This split was selected to prioritize your <span className="text-jungle-accent font-bold">Top 3 Physique Gaps</span> while managing systemic fatigue across the 6-week cycle.
+                      </p>
+                    </div>
+                  </div>
+
+                  {muscleGaps && (
+                    <div className="space-y-2.5 pt-2 border-t border-white/5">
+                      <p className="text-[10px] text-jungle-dim uppercase font-black tracking-widest">Ranked Priority Gaps</p>
+                      {muscleGaps.ranked_gaps?.slice(0, 3).map((g: any, i: number) => (
+                        <div key={g.site} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-jungle-dim w-3">{i+1}.</span>
+                            <span className="text-xs font-bold text-jungle-muted capitalize">{g.site}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-20 h-1.5 bg-jungle-deeper rounded-full overflow-hidden border border-white/5">
+                              <div className="h-full bg-red-500/80 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.4)]" style={{ width: `${Math.min(100, (g.gap_cm / 5) * 100)}%` }} />
+                            </div>
+                            <span className="text-[10px] font-black text-red-400">+{g.gap_cm}cm</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                <p className="text-[10px] text-jungle-dim italic text-center leading-tight px-4">
+                  Volume landmarks (MEV/MAV/MRV) are dynamically adjusted session-by-session based on these HQI metrics.
+                </p>
+              </div>
+
             </>
           )}
-
         </div>
       </main>
 
@@ -593,3 +706,4 @@ export default function ProgramPage() {
     </div>
   );
 }
+

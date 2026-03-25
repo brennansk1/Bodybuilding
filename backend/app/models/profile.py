@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime
 
@@ -27,6 +29,9 @@ class UserProfile(Base):
     available_equipment: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     disliked_exercises: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     injury_history: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    training_start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)  # "HH:MM" format
+    training_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)  # session length in minutes
+    days_per_week: Mapped[int | None] = mapped_column(Integer, nullable=True, default=5)
     cycle_tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

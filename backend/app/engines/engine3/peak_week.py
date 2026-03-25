@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Peak Week Protocol Engine
 
@@ -41,6 +43,7 @@ _WATER_REDUCED   = 2000
 def compute_peak_week_protocol(
     lean_mass_kg: float,
     show_date: date | None = None,
+    division: str = "mens_open",
 ) -> list[dict]:
     """
     Generate a 7-day peak-week protocol scaled to the athlete's lean mass.
@@ -66,6 +69,34 @@ def compute_peak_week_protocol(
     """
     lbm = max(40.0, lean_mass_kg)  # floor for safety
     protein_g = round(lbm * 2.2, 0)
+
+    # Division-specific peak week intensity
+    div_key = division.lower().replace(" ", "_")
+    _AGGRESSIVE_DIVISIONS = {"mens_open", "classic_physique", "womens_physique", "womens_figure"}
+    _GENTLE_DIVISIONS = {"womens_bikini", "mens_physique"}
+
+    aggressive = div_key in _AGGRESSIVE_DIVISIONS
+    gentle = div_key in _GENTLE_DIVISIONS
+
+    # Water loading protocol: aggressive divisions load heavily then cut;
+    # gentle divisions taper gradually and maintain moderate hydration
+    if aggressive:
+        # Saturday: minimum 2800 mL — joint lubrication, pump preservation, blood volume
+        # Cutting below 2.5L on stage day risks cramping and vasovagal events in hot staging areas
+        water_schedule = [8000, 8000, 6000, 3000, 2500, 2800, 4000]
+    elif gentle:
+        water_schedule = [5000, 5000, 4500, 4000, 3500, 3000, 4000]
+    else:
+        water_schedule = [6000, 6000, 5000, 3500, 3000, 2500, 4000]
+
+    # Sodium protocol: maintain sodium during carb load for SGLT1 glucose transport
+    # Ratio targets: 4:1 to 5:1 Na:K during carb load days
+    if aggressive:
+        sodium_schedule = [2000, 1500, 1000, 1500, 1200, 800, 2300]
+    elif gentle:
+        sodium_schedule = [2300, 2300, 2000, 1800, 1500, 1200, 2300]
+    else:
+        sodium_schedule = [2300, 2000, 1500, 1500, 1200, 1000, 2300]
 
     # Start Monday of peak week (6 days before show)
     if show_date:
@@ -166,6 +197,21 @@ def compute_peak_week_protocol(
         },
     ]
 
+    # Apply division-specific schedules to day configs
+    for i, config in enumerate(day_configs):
+        config["sodium_mg"] = sodium_schedule[i]
+        config["water_ml"] = water_schedule[i]
+        # Potassium: maintain Na:K ratio on load days
+        if config["protocol_day"] in ("load_1", "load_2", "show_day"):
+            config["potassium_mg"] = round(sodium_schedule[i] / 4.5)
+        else:
+            config["potassium_mg"] = 3500
+        # Division note for gentle divisions
+        if gentle and config["protocol_day"] in ("load_1", "load_2", "show_day"):
+            config["notes"] += (
+                " Division protocol: maintain fuller, softer appearance. Do not over-dry."
+            )
+
     protocol = []
     for i, (day_name, config) in enumerate(zip(days_of_week, day_configs)):
         carbs_g = round(lbm * config["carbs_factor"], 0)
@@ -180,8 +226,128 @@ def compute_peak_week_protocol(
             "fat_g": int(config["fat_g"]),
             "sodium_mg": config["sodium_mg"],
             "water_ml": config["water_ml"],
+            "potassium_mg": config["potassium_mg"],
             "total_calories": int(carbs_g * 4 + protein_g * 4 + config["fat_g"] * 9),
             "notes": config["notes"],
         })
 
     return protocol
+
+
+# ---------------------------------------------------------------------------
+# Reactive Peak Week Controller
+# ---------------------------------------------------------------------------
+# Pro coaches don't follow a static plan — they react to how the athlete
+# looks each morning. This controller takes a visual state check-in and
+# adjusts the remaining day's macros in real-time.
+
+_PEAK_WEEK_STATES = {"flat", "spilled", "peaked", "overshot"}
+
+
+def adjust_peak_day_for_condition(
+    day_protocol: dict,
+    condition: str,
+) -> dict:
+    """Reactively adjust a single peak-week day based on morning visual check-in.
+
+    This replaces the static Friday-only adjustment with a fully reactive
+    system that mirrors how elite coaches audible during peak week.
+
+    Args:
+        day_protocol: A single day dict from :func:`compute_peak_week_protocol`.
+        condition: Athlete's visual state — one of:
+            - ``"flat"``: Muscles lack volume, vascularity low, skin tight but
+              depleted. Action: increase carbs +25%, add sodium +400mg.
+            - ``"spilled"``: Blurry, holding subcutaneous water, distended.
+              Action: cut carbs 50%, hold water steady, add potassium +500mg.
+            - ``"peaked"``: Full, dry, vascular — the ideal state.
+              Action: freeze current intake, coast on maintenance.
+
+    Returns:
+        Adjusted day_protocol dict (new copy, original not mutated).
+    """
+    condition_key = condition.strip().lower()
+    if condition_key not in _PEAK_WEEK_STATES:
+        return dict(day_protocol)  # unknown state — return unchanged
+
+    result = dict(day_protocol)
+
+    if condition_key == "flat":
+        # Muscles are depleted — push more glycogen in
+        result["carbs_g"] = int(round(day_protocol["carbs_g"] * 1.25))
+        result["sodium_mg"] = day_protocol["sodium_mg"] + 400
+        result["notes"] = (
+            "REACTIVE ADJUSTMENT (FLAT): Carbs increased 25% to drive glycogen "
+            "into depleted muscles. Sodium bumped +400mg to facilitate SGLT1 "
+            "glucose co-transport across intestinal lumen. Monitor for filling "
+            "over next 4-6 hours."
+        )
+
+    elif condition_key == "spilled":
+        # Holding subcutaneous water — dry out
+        result["carbs_g"] = int(round(day_protocol["carbs_g"] * 0.50))
+        # Water stays steady — do NOT restrict further (dangerous)
+        result["potassium_mg"] = day_protocol.get("potassium_mg", 3500) + 500
+        result["notes"] = (
+            "REACTIVE ADJUSTMENT (SPILLED): Carbs slashed 50% to halt glycogen "
+            "overflow causing subcutaneous water retention. Potassium increased "
+            "+500mg to pull fluid intracellularly via Na/K-ATPase pump. Water "
+            "intake held steady — further restriction risks cramping and "
+            "dangerous dehydration."
+        )
+
+    elif condition_key == "peaked":
+        # Perfect condition — change nothing
+        result["notes"] = (
+            "REACTIVE ADJUSTMENT (PEAKED): Athlete is full, dry, and vascular. "
+            "Freezing current intake — coast on these exact macros until stage. "
+            "No further manipulation needed. Light pump work only."
+        )
+
+    elif condition_key == "overshot":
+        # So full that 3D roundness is lost — muscle looks bulbous, not peaked
+        # Slightly different from "spilled" — water needs to shift intracellularly
+        result["carbs_g"] = int(round(day_protocol["carbs_g"] * 0.60))
+        result["water_ml"] = day_protocol["water_ml"] + 500  # increase water to pull subcutaneous fluid in
+        result["potassium_mg"] = day_protocol.get("potassium_mg", 3500) + 800
+        result["sodium_mg"] = max(400, day_protocol["sodium_mg"] - 200)
+        result["notes"] = (
+            "REACTIVE ADJUSTMENT (OVERSHOT): Muscle appears bulbous/round — glycogen "
+            "has overflowed and is sitting interstitially rather than intracellularly. "
+            "Carbs reduced 40%. Water INCREASED +500mL + potassium +800mg to pull fluid "
+            "intracellularly via Na/K-ATPase pump. Reduce sodium slightly. "
+            "This is NOT the same as 'spilled' — do not restrict water."
+        )
+
+    # Recalculate calories
+    result["total_calories"] = int(
+        result["carbs_g"] * 4 + result["protein_g"] * 4 + result["fat_g"] * 9
+    )
+
+    return result
+
+
+def apply_reactive_peak_week(
+    protocol: list[dict],
+    daily_conditions: dict[str, str],
+) -> list[dict]:
+    """Apply reactive adjustments across a full peak week protocol.
+
+    Args:
+        protocol: 7-day protocol from :func:`compute_peak_week_protocol`.
+        daily_conditions: Mapping of date string (ISO) or day name to
+            condition state (``"flat"``, ``"spilled"``, ``"peaked"``).
+            Days not in this dict are left unchanged.
+
+    Returns:
+        Adjusted protocol (new list, originals not mutated).
+    """
+    adjusted = []
+    for day in protocol:
+        key = day.get("date") or day["day"]
+        condition = daily_conditions.get(key) or daily_conditions.get(day["day"])
+        if condition:
+            adjusted.append(adjust_peak_day_for_condition(day, condition))
+        else:
+            adjusted.append(dict(day))
+    return adjusted

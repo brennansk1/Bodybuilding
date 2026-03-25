@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Training Program Generation Service
 
@@ -34,14 +36,32 @@ from app.engines.engine2.periodization import (
 from app.engines.engine2.split_designer import design_split
 from app.engines.engine2.resistance import (
     compute_weight_from_1rm, weight_increment_for_equipment,
-    rep_range_for_load_type,
+    rep_range_for_load_type, estimate_seed_weight,
 )
 from app.engines.engine2.recovery import (
     get_recovery_window, can_train_muscle,
     compute_systemic_fatigue, check_daily_fatigue_budget,
 )
-from app.engines.engine2.biomechanical import ensure_pattern_diversity, classify_exercise_pattern
+from app.engines.engine2.biomechanical import (
+    ensure_pattern_diversity, classify_exercise_pattern,
+    classify_sub_region, REQUIRED_SUB_REGIONS,
+)
 from app.constants.exercise_priorities import get_exercise_priorities, gap_adjusted_cap
+
+
+# ---------------------------------------------------------------------------
+# Compound-before-isolation sequencing
+# ---------------------------------------------------------------------------
+
+# Enforce compound-before-isolation sequencing within each muscle
+# to optimize CNS freshness for heavy lifts
+def _compound_sort_key(exercise_entry):
+    pattern = exercise_entry.get("movement_pattern", "isolation")
+    # Compounds first (push, pull, squat, hinge), then isolation
+    compound_patterns = {"push", "pull", "squat", "hinge", "press", "row", "compound"}
+    if pattern.lower() in compound_patterns or "compound" in pattern.lower():
+        return 0
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +265,14 @@ def _allocate_sets(
 
     prev_ids = prev_mesocycle_ids or set()
 
+    # ----- Safety Patch: Olympic Lift Ban -------------------------------------
+    _OLYMPIC_LIFTS = ("clean", "snatch", "jerk", "clean and", "power clean", "hang clean", "push press", "push jerk")
+    candidates = [
+        ex for ex in exercises 
+        if not any(kw in ex.name.lower() for kw in _OLYMPIC_LIFTS)
+    ]
+
     # ----- Apply delt sub-role filtering first --------------------------------
-    candidates = list(exercises)
     if delt_role == "rear_delt":
         candidates = _filter_rear_delt(candidates)
     elif delt_role == "side_delt":
@@ -300,14 +326,36 @@ def _allocate_sets(
 
     # ----- Fallback: biomechanical-SFR sort for any remaining sets -----------
     # (exercises not covered by the priority list, or when no priority list exists)
+    
+    # ----- Equipment Ratio Enforcement ----------------------------------------
+    # For mens_open: if >40% of exercises already selected are barbell,
+    # heavily penalize additional barbells in the fallback sort.
+    barbell_count = sum(1 for ex, _, _, _ in result
+                        if (getattr(ex, "equipment", "") or "").lower() == "barbell")
+    total_ex_count = len(result)
+    barbell_saturated = (
+        division == "mens_open" 
+        and total_ex_count > 0 
+        and barbell_count / total_ex_count > 0.4
+    )
+    
     if remaining > 0:
         def _sort_key(e):
-            sfr = (e.biomechanical_efficiency / max(e.fatigue_ratio, 0.1)) * priority
+            eff = e.biomechanical_efficiency
+            # Open Division SFR Bias Fix: Massive athletes require inherently more 
+            # stabilization energy, drastically buffing the SFR of supported plates over barbells
+            if division == "mens_open" and getattr(e, "equipment", "").lower() in ("machine", "cable", "plate_loaded"):
+                eff = min(1.0, eff * 1.25)
+                
+            sfr = (eff / max(e.fatigue_ratio, 0.1)) * priority
             if e.id in prev_ids:
                 sfr *= 0.70
             tier = _equipment_tier(e.equipment)
             if prefer_unilateral and _is_unilateral(e):
                 tier = max(0, tier - 1)
+            # If barbell ratio is already saturated, push barbells to the back
+            if barbell_saturated and (getattr(e, "equipment", "") or "").lower() == "barbell":
+                tier += 3
             return (tier, -sfr)
 
         fallback = sorted(
@@ -323,6 +371,86 @@ def _allocate_sets(
             result.append((ex, n_sets, rep_min, rep_max))
             remaining -= n_sets
             used_ex_ids.add(ex.id)
+
+    # ----- Sort compounds before isolations within this muscle group ----------
+    result.sort(key=lambda entry: _compound_sort_key({
+        "movement_pattern": getattr(entry[0], "movement_pattern", "isolation") or "isolation",
+    }))
+
+    # ----- FST-7 Finisher Override --------------------------------------------
+    # Hany Rambod's FST-7 Protocol: The final exercise for the target muscle
+    # is executed for 7 sets to maximize fascial stretching and hyperemia.
+    # We apply this to muscles receiving adequate total volume (to avoid
+    # overtraining minor accessories accidentally).
+    _ELIGIBLE_FST7 = {"chest", "back", "quads", "hamstrings", "glutes", "shoulders", "biceps", "triceps", "calves"}
+    if result and muscle in _ELIGIBLE_FST7 and total_sets >= 6:
+        # Traverse backwards to find the best isolation finisher (exclude heavy barbell axials)
+        for idx in range(len(result) - 1, -1, -1):
+            ex_obj, ex_sets, r_min, r_max = result[idx]
+            eq = (getattr(ex_obj, "equipment", "") or "").lower()
+            name_l = ex_obj.name.lower()
+            # Must be a highly stable implement and EXCLUDE axial barbell compounds
+            if eq in ("machine", "cable", "dumbbell") and "squat" not in name_l and "deadlift" not in name_l:
+                fst_rmin, fst_rmax = (12, 15) if muscle == "calves" else (8, 12)
+                result[idx] = (ex_obj, 7, fst_rmin, fst_rmax)
+                break
+
+    # ----- Sub-Region Guarantee -----------------------------------------------
+    # For composite muscles (shoulders, chest, back), ensure all required
+    # anatomical sub-regions are covered. If a sub-region is missing,
+    # swap the lowest-priority duplicate-region exercise for the best
+    # candidate from the missing sub-region.
+    required_regions = REQUIRED_SUB_REGIONS.get(muscle, [])
+    if required_regions and len(result) >= 2:
+        # Classify current selections
+        covered_regions: dict[str, list[int]] = {}
+        for idx, (ex_obj, _, _, _) in enumerate(result):
+            region = classify_sub_region(muscle, ex_obj.name)
+            if region:
+                covered_regions.setdefault(region, []).append(idx)
+
+        missing = [r for r in required_regions if r not in covered_regions]
+        if missing:
+            # Find duplicate regions (regions with >1 exercise) to swap from
+            duplicates = [(r, idxs) for r, idxs in covered_regions.items()
+                          if len(idxs) > 1]
+            duplicates.sort(key=lambda x: -len(x[1]))  # most duplicates first
+
+            for missing_region in missing:
+                if not duplicates:
+                    break
+                # Find best candidate exercise for the missing sub-region
+                region_kws = {
+                    "lateral": _SIDE_DELT_KEYWORDS,
+                    "rear": _REAR_DELT_KEYWORDS,
+                    "front": {"press", "overhead", "military", "front raise"},
+                    "upper": {"incline"},
+                    "lower": {"decline", "dip"},
+                    "width": {"pulldown", "pull-up", "pullup", "lat"},
+                    "thickness": {"row", "t-bar"},
+                }.get(missing_region, set())
+
+                swap_candidate = None
+                for ex in candidates:
+                    if ex.id in used_ex_ids:
+                        continue
+                    if any(kw in ex.name.lower() for kw in region_kws):
+                        swap_candidate = ex
+                        break
+
+                if swap_candidate and duplicates:
+                    # Swap out the last exercise from the most-duplicated region
+                    dup_region, dup_idxs = duplicates[0]
+                    swap_idx = dup_idxs[-1]
+                    old_ex, old_sets, _, _ = result[swap_idx]
+                    pos = swap_idx
+                    rep_min, rep_max = _rep_range(pos, swap_candidate.equipment)
+                    result[swap_idx] = (swap_candidate, old_sets, rep_min, rep_max)
+                    used_ex_ids.discard(old_ex.id)
+                    used_ex_ids.add(swap_candidate.id)
+                    dup_idxs.pop()
+                    if len(dup_idxs) <= 1:
+                        duplicates.pop(0)
 
     return result
 
@@ -484,6 +612,15 @@ async def generate_program_sessions(
         if k not in baselines:
             baselines[k] = bl.one_rm_kg
 
+    # Load latest body weight for seed estimation (exercises without baselines)
+    from app.models.measurement import BodyWeightLog
+    bw_result = await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user_id)
+        .order_by(desc(BodyWeightLog.recorded_date)).limit(1)
+    )
+    latest_bw = bw_result.scalar_one_or_none()
+    user_body_weight_kg = latest_bw.weight_kg if latest_bw else 90.0  # fallback 90kg
+
     # Check if strength baselines are stale (>90 days old)
     # If stale, attempt to estimate current 1RM from recent training logs
     stale_baselines = False
@@ -631,6 +768,9 @@ async def generate_program_sessions(
     sessions_created = 0
     last_trained_date: dict[str, date] = {}
     this_mesocycle_exercise_ids: list[str] = []
+    
+    # Track systemic spillover (e.g. 35 sets of generated shoulders splits 12/12/11 across days)
+    global_spillover: dict[str, int] = {}
 
     for week in mesocycle:
         week_num = week["week"]
@@ -697,6 +837,21 @@ async def generate_program_sessions(
                 overflow_sets = math.floor(overflow_received.get(db_muscle, 0))
                 total_sets = max(2, base_sets - overflow_sets)
 
+                # Inject systemic spillover rolled over from previous sessions
+                if db_muscle in global_spillover and global_spillover[db_muscle] > 0:
+                    total_sets += global_spillover[db_muscle]
+                    global_spillover[db_muscle] = 0
+
+                # -------------------------------------------------------------------
+                # Rule 1 C: Hard Session Cap & Dynamic Spillover Routing
+                # If total volume for this single muscle exceeds ~12 sets in ONE day,
+                # forcefully cap it to 12. Take the remainder and carry it forward.
+                # -------------------------------------------------------------------
+                if total_sets > 12:
+                    excess = total_sets - 12
+                    global_spillover[db_muscle] = global_spillover.get(db_muscle, 0) + excess
+                    total_sets = 12
+
                 # Shoulder delt sub-role filtering
                 delt_role = (
                     roles[0] if (db_muscle == "shoulders" and len(roles) == 1) else None
@@ -748,6 +903,15 @@ async def generate_program_sessions(
                     if ex.name.lower() in baselines:
                         prescribed_weight = round(
                             compute_weight_from_1rm(baselines[ex.name.lower()], rep_target), 1
+                        )
+                    
+                    # Seed weight fallback: if no 1RM baseline, estimate from body weight
+                    if prescribed_weight is None and user_body_weight_kg > 0:
+                        prescribed_weight = estimate_seed_weight(
+                            user_body_weight_kg,
+                            getattr(ex, "equipment", "barbell"),
+                            db_muscle,
+                            rep_target,
                         )
 
                     # Warm-up sets for the first exercise per muscle group
@@ -801,7 +965,17 @@ async def generate_program_sessions(
                 if not fatigue_check["within_budget"] and fatigue_check.get("warnings"):
                     session.notes = "CNS: " + "; ".join(fatigue_check["warnings"])
 
+            # If there's spillover pending, ensure the NEXT day forces inclusion.
+            # We do this by adding the keys to the next Day's `day["muscles"]` dynamically
+            # if we have consecutive days left in the week.
             sessions_created += 1
+            if global_spillover and day_idx + 1 < len(week["days"]):
+                for pending_muscle, remaining_sets in global_spillover.items():
+                    if remaining_sets > 0:
+                        # Map db_muscle to peri_muscle representation if possible
+                        next_day_muscles = week["days"][day_idx + 1]["muscles"]
+                        if pending_muscle not in next_day_muscles:
+                            next_day_muscles.append(pending_muscle)
 
         week_start += timedelta(weeks=1)
 
@@ -815,3 +989,99 @@ async def generate_program_sessions(
         profile.preferences = prefs
 
     return sessions_created
+
+async def autoregulate_session_for_soreness(
+    db: AsyncSession,
+    user_id,
+    session: TrainingSession,
+    sore_muscles: list[str],
+) -> tuple[int, list[str]]:
+    """
+    Applies a ~25% volume reduction (minimum 1 set drop) dynamically to any exercise
+    targeting a muscle flagged as highly sore in today's HRVLog.
+    Returns: (number_of_sets_dropped, list_of_affected_exercises)
+    """
+    if not sore_muscles:
+        return 0, []
+
+    # Map the frontend muscle group names to DB primary_muscle names
+    form_to_db_map = {
+        "chest": "chest", "back": "back", "quads": "quads", "hamstrings": "hamstrings",
+        "delts": "shoulders", "arms": ["biceps", "triceps"], "calves": "calves", 
+        "abs": "abs", "glutes": "glutes", "lower back": "lower back"
+    }
+    
+    db_sore_muscles = set()
+    for m in sore_muscles:
+        mapped = form_to_db_map.get(m.lower())
+        if isinstance(mapped, list):
+            db_sore_muscles.update(mapped)
+        elif mapped:
+            db_sore_muscles.add(mapped)
+            
+    if not db_sore_muscles:
+        return 0, []
+
+    # Get sets for this session joined with Exercise
+    result = await db.execute(
+        select(TrainingSet, Exercise)
+        .join(Exercise, TrainingSet.exercise_id == Exercise.id)
+        .where(TrainingSet.session_id == session.id)
+        .order_by(TrainingSet.set_number)
+    )
+    
+    sets = result.all()
+    if not sets:
+        return 0, []
+        
+    sets_by_exercise = defaultdict(list)
+    for t_set, ex in sets:
+        sets_by_exercise[ex].append(t_set)
+        
+    total_dropped = 0
+    affected = []
+    
+    # 1) Calculate total scheduled working sets per sore muscle
+    muscle_working_sets = defaultdict(int)
+    for ex, ex_sets in sets_by_exercise.items():
+        if ex.primary_muscle in db_sore_muscles:
+            working_sets = [s for s in ex_sets if not s.is_warmup]
+            muscle_working_sets[ex.primary_muscle] += len(working_sets)
+            
+    # The dynamic volume cap applied to heavily sore muscles for a single session
+    _SORE_MUSCLE_SESSION_CAP = 6
+
+    # 2) Strip sets to enforce the cap or apply a fatigue baseline 25% drop
+    for ex, ex_sets in sets_by_exercise.items():
+        if ex.primary_muscle in db_sore_muscles:
+            working_sets = [s for s in ex_sets if not s.is_warmup]
+            current_total = muscle_working_sets[ex.primary_muscle]
+            
+            if len(working_sets) > 1:
+                drop_count = 0
+                if current_total > _SORE_MUSCLE_SESSION_CAP:
+                    # Strip sets to get below the session threshold (leave at least 1 set)
+                    excess = current_total - _SORE_MUSCLE_SESSION_CAP
+                    drop_count = min(excess, len(working_sets) - 1)
+                    muscle_working_sets[ex.primary_muscle] -= drop_count
+                
+                # If they were already below the hard cap, still run a fatigue reduction
+                if drop_count == 0:
+                    drop_count = max(1, math.floor(len(working_sets) * 0.25))
+                    muscle_working_sets[ex.primary_muscle] -= drop_count
+
+                if drop_count > 0:
+                    sets_to_drop = working_sets[-drop_count:]
+                    for s in sets_to_drop:
+                        await db.delete(s)
+                    total_dropped += len(sets_to_drop)
+                    affected.append(ex.name)
+                
+    if total_dropped > 0:
+        if session.notes:
+            session.notes += f"\n[Autoregulation] Dropped {total_dropped} sets due to soreness in: {', '.join(sore_muscles)}."
+        else:
+            session.notes = f"[Autoregulation] Dropped {total_dropped} sets due to soreness in: {', '.join(sore_muscles)}."
+            
+    await db.flush()
+    return total_dropped, list(set(affected))

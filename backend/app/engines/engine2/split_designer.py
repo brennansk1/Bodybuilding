@@ -42,7 +42,9 @@ _DIVISION_IMPORTANCE: dict[str, dict[str, float]] = {
         "front_delt": 1.0, "side_delt": 1.2, "rear_delt": 0.8,
         "biceps": 1.0, "triceps": 0.9, "forearms": 0.6,
         "traps": 0.5, "abs": 0.7,
-        "quads": 0.0, "hamstrings": 0.0, "glutes": 0.0, "calves": 0.15,
+        # Legs hidden by board shorts but still trained for base / proportionality.
+        # Maintenance volume prevents atrophy without stealing recovery from upper body.
+        "quads": 0.3, "hamstrings": 0.3, "glutes": 0.2, "calves": 0.15,
     },
     "classic_physique": {
         "chest": 1.0, "back": 1.0,
@@ -104,6 +106,12 @@ _CLUSTERS: dict[str, list[str]] = {
     "shoulders":   ["front_delt", "side_delt", "rear_delt", "traps"],
     "arms":        ["biceps", "triceps", "forearms"],
     "chest_back":  ["chest", "back"],
+    # FST-7 Asymmetrical Specific
+    "legs_quad_bias": ["quads", "calves"],
+    "back_biceps":    ["back", "rear_delt", "biceps", "traps"],
+    "chest_triceps":  ["chest", "triceps"],
+    "legs_ham_glute": ["hamstrings", "glutes", "calves"],
+    "delts_calves":   ["front_delt", "side_delt", "rear_delt", "calves"],
 }
 
 # Recovery hours per muscle
@@ -164,13 +172,13 @@ _UNMEASURED_GAP_DEFAULTS: dict[str, float] = {
 ALL_MUSCLES = list(_VOLUME_LANDMARKS.keys())
 
 # Training day offsets from Monday
+# Ensures recovery days are appropriately injected.
 _WEEKLY_SCHEDULE: dict[int, list[int]] = {
-    2: [0, 3],
-    3: [0, 2, 4],
-    4: [0, 1, 3, 4],
-    5: [0, 1, 2, 4, 5],
-    6: [0, 1, 2, 4, 5, 6],
-    7: [0, 1, 2, 3, 4, 5, 6],
+    3: [0, 2, 4],            # Mon, Wed, Fri
+    4: [0, 1, 3, 4],         # Mon, Tue, Thu, Fri
+    # 5-day: Day 1, Day 2, Rest, Day 4, Day 5, Day 6, Rest
+    5: [0, 1, 3, 4, 5],      
+    6: [0, 1, 2, 3, 4, 5],   # Mon-Sat
 }
 
 
@@ -228,6 +236,8 @@ def compute_need_scores(
 def compute_desired_frequency(
     need_scores: dict[str, float],
     days_per_week: int,
+    volume_budget: dict[str, int] | None = None,
+    hqi_gaps: dict[str, float] | None = None,
 ) -> dict[str, int]:
     """Map need score → desired weekly training frequency."""
     desired: dict[str, int] = {}
@@ -241,6 +251,24 @@ def compute_desired_frequency(
             freq = 1
         else:
             freq = 1
+            
+        # Rule 1 (Spillover Volume Caps): If the weekly volume allocation exceeds
+        # the ~12-set upper boundary of productive hypertrophic stimulus for a
+        # single session, forcefully scale the frequency up so the algorithm
+        # is forced to spread it across multiple days instead of dumping "junk volume".
+        if volume_budget:
+            vol = volume_budget.get(muscle, 0)
+            if vol > 12:
+                freq = max(freq, math.ceil(vol / 12))
+        
+        # Rule 3 (Gap-to-Frequency Hard Trigger): If the raw gap in cm
+        # exceeds 15cm, the muscle MUST be trained at least 2x/week to
+        # maximise protein synthesis windows for growth.
+        if hqi_gaps:
+            gap_cm = _get_muscle_gap(muscle, hqi_gaps)
+            if gap_cm > 15.0:
+                freq = max(freq, 2)
+                
         min_gap = math.ceil(_RECOVERY_HOURS.get(muscle, 48) / 24)
         max_freq = _max_slots(offsets, min_gap)
         desired[muscle] = min(freq, max_freq)
@@ -266,6 +294,16 @@ def compute_volume_budget(
     volume: dict[str, int] = {}
     for muscle in ALL_MUSCLES:
         mev, mav, mrv = _VOLUME_LANDMARKS.get(muscle, (4, 12, 20))
+        
+        # Rule 2 (Maintenance Routing - MMV): If this specific muscle group
+        # is incredibly well developed (> 95% HQI / gap < 0.5cm), hard-cap
+        # its volumetric budget to a Minimum Maintenance Volume protocol (4-6 sets/wk)
+        # to preserve system CNS recovery reserves for priority targets.
+        gap_cm = _get_muscle_gap(muscle, hqi_gaps)
+        if gap_cm < 0.5:
+            volume[muscle] = min(mev, 6)
+            continue
+            
         need = need_scores.get(muscle, 3.0)
         imp = importance.get(muscle, 0.5)
         t = min(1.0, max(0.0, need / 10.0))
@@ -307,22 +345,64 @@ def _max_slots(offsets: list[int], min_gap_days: int) -> int:
 
 # Split archetypes — starting points that get customized
 _ARCHETYPES: dict[int, list[list[str]]] = {
-    2: [["upper"], ["legs"]],
     3: [["push"], ["pull"], ["legs"]],
     4: [["push"], ["pull"], ["legs"], ["shoulders", "arms"]],
-    5: [["push"], ["pull"], ["legs"], ["push"], ["pull"]],
+    5: [["legs_quad_bias"], ["back_biceps"], ["chest_triceps"], ["legs_ham_glute"], ["delts_calves"]],
     6: [["push"], ["pull"], ["legs"], ["push"], ["pull"], ["legs"]],
-    7: [["push"], ["pull"], ["legs"], ["shoulders"], ["arms"], ["push"], ["pull"]],
 }
+
+
+def apply_illusion_multipliers(
+    need_scores: dict[str, float],
+    volume_budget: dict[str, int],
+    shoulder_width_cm: float | None = None,
+    height_cm: float | None = None,
+    division: str = "mens_physique",
+) -> tuple[dict[str, float], dict[str, int]]:
+    """
+    Apply illusion-based priority multipliers for narrow-framed athletes.
+
+    If clavicle/shoulder width is narrow relative to height, apply a 2.0x
+    priority multiplier to lateral and posterior deltoids to create the
+    illusion of width, overriding raw geometric gaps.
+
+    This is most impactful for V-taper divisions (MP, Classic, Figure).
+    """
+    if shoulder_width_cm is None or height_cm is None or height_cm <= 0:
+        return need_scores, volume_budget
+
+    # Shoulder-to-height ratio: average is ~0.26, narrow is <0.24
+    ratio = shoulder_width_cm / height_cm
+    v_taper_divisions = {"mens_physique", "classic_physique", "womens_figure"}
+    div_key = division.lower().replace(" ", "_")
+
+    if ratio < 0.24 and div_key in v_taper_divisions:
+        multiplier = 2.0
+        for muscle in ("side_delt", "rear_delt"):
+            if muscle in need_scores:
+                need_scores[muscle] = need_scores[muscle] * multiplier
+            if muscle in volume_budget:
+                volume_budget[muscle] = min(volume_budget[muscle] + 6, 24)
+
+    return need_scores, volume_budget
 
 
 def design_split(
     hqi_gaps: dict[str, float],
     division: str,
     days_per_week: int,
+    shoulder_width_cm: float | None = None,
+    height_cm: float | None = None,
 ) -> dict[str, Any]:
     """
     Design an optimal custom weekly training split.
+
+    Args:
+        hqi_gaps: Per-site gap in cm from ideal.
+        division: Competition division.
+        days_per_week: Training frequency (2-7).
+        shoulder_width_cm: Biacromial width for illusion multiplier.
+        height_cm: Height for illusion multiplier ratio calculation.
 
     Returns:
         {
@@ -334,13 +414,39 @@ def design_split(
             "reasoning": str,
         }
     """
-    days_per_week = max(2, min(7, days_per_week))
+    # Enforce recovery guardrails (min 3, max 6 training days)
+    days_per_week = max(3, min(6, days_per_week))
     division_key = division.lower().replace(" ", "_")
 
     need_scores = compute_need_scores(hqi_gaps, division_key)
-    desired_freq = compute_desired_frequency(need_scores, days_per_week)
     volume_budget = compute_volume_budget(hqi_gaps, need_scores, division_key)
+    desired_freq = compute_desired_frequency(need_scores, days_per_week, volume_budget, hqi_gaps)
     importance = _DIVISION_IMPORTANCE.get(division_key, _DEFAULT_IMPORTANCE)
+
+    # Apply illusion multipliers for narrow-framed athletes
+    need_scores, volume_budget = apply_illusion_multipliers(
+        need_scores, volume_budget, shoulder_width_cm, height_cm, division,
+    )
+
+    # -------------------------------------------------------------------------
+    # Rule 1 C (Aggregation Safety Clamp): The shoulder muscle group is tracked
+    # as 3 independent muscles (front/side/rear delt). If they individually receive
+    # 12 sets, the engine merges them into a catastrophic 35-set "shoulder" block.
+    # We must explicitly clamp the COMBINED deltoid volume down to the 12-set bound.
+    # -------------------------------------------------------------------------
+    shoulder_freq = max(
+        desired_freq.get("front_delt", 1), 
+        desired_freq.get("side_delt", 1), 
+        desired_freq.get("rear_delt", 1)
+    )
+    max_combined_delt_vol = 12 * shoulder_freq
+    current_combined_vol = sum(volume_budget.get(head, 0) for head in ("front_delt", "side_delt", "rear_delt"))
+    
+    if current_combined_vol > max_combined_delt_vol:
+        scale_factor = max_combined_delt_vol / current_combined_vol
+        for head in ("front_delt", "side_delt", "rear_delt"):
+            if head in volume_budget:
+                volume_budget[head] = math.floor(volume_budget[head] * scale_factor)
 
     # Start from archetype
     archetype = _ARCHETYPES.get(days_per_week, _ARCHETYPES[4])
@@ -357,12 +463,21 @@ def design_split(
                     seen.add(m)
         days.append({"muscles": muscles, "total_sets": 0})
 
-    # Compute total sets per day
+    # Compute total sets per day & enforce absolute session caps
     for day in days:
         total = 0
         for m in day["muscles"]:
             freq = _count_muscle_freq(m, days)
             vol = volume_budget.get(m, 0)
+            
+            # Rule 1 B (Safety Clamp): If the available frequency slots cannot
+            # successfully distribute the total volume without exceeding 12 sets
+            # per session, mathematically FORCE the weekly budget down to match.
+            # This protects against 35-set single-day marathons on heavily constrained splits.
+            if vol / max(1, freq) > 12:
+                vol = 12 * max(1, freq)
+                volume_budget[m] = vol
+                
             total += math.ceil(vol / max(1, freq))
         day["total_sets"] = total
 

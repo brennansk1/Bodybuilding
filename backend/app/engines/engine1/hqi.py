@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Hypertrophy Quality Index (HQI) — Muscle Size Gap Engine
 

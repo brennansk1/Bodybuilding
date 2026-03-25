@@ -164,7 +164,7 @@ export default function PeakWeekPage() {
       : "bg-jungle-accent/20 text-jungle-accent";
 
   return (
-    <div className="min-h-screen bg-jungle-dark">
+    <div className="min-h-screen">
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
       <main className="container-app py-6">

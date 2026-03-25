@@ -25,28 +25,10 @@ export default function Logo({ size = "md", showTagline = false }: LogoProps) {
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
           >
-            {/* Stylized leaf/crown mark */}
-            <path
-              d="M16 2C16 2 8 8 8 16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16C24 8 16 2 16 2Z"
-              fill="#2d8a4e"
-              opacity="0.8"
-            />
-            <path
-              d="M16 6C16 6 11 11 11 16C11 18.8 13.2 21 16 21C18.8 21 21 18.8 21 16C21 11 16 6 16 6Z"
-              fill="#c8a84e"
-            />
-            <path
-              d="M16 28V24"
-              stroke="#2d8a4e"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <path
-              d="M12 30H20"
-              stroke="#c8a84e"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
+            {/* Pine tree */}
+            <path d="M16 2L10 12H13L8 20H12L6 28H26L20 20H24L19 12H22L16 2Z" fill="#2d8a4e" />
+            <path d="M16 4L11.5 11H14L9.5 19H13L8 27H24L19 19H22.5L18 11H20.5L16 4Z" fill="#3aad5e" opacity="0.6" />
+            <rect x="14" y="27" width="4" height="4" rx="0.5" fill="#8B6914" />
           </svg>
         </span>
         <h1 className={`${s.text} font-bold tracking-tight`}>

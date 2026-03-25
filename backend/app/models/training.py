@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime
 
@@ -114,10 +116,11 @@ class TrainingProgram(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     split_type: Mapped[str] = mapped_column(String(30), nullable=False)  # ppl, upper_lower, full_body, bro_split
     days_per_week: Mapped[int] = mapped_column(Integer, nullable=False)
-    mesocycle_weeks: Mapped[int] = mapped_column(Integer, default=4)
+    mesocycle_weeks: Mapped[int] = mapped_column(Integer, default=6)
     current_week: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(default=True)
     volume_allocation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    custom_template: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

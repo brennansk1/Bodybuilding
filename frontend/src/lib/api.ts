@@ -71,7 +71,15 @@ class ApiClient {
       throw new Error("Session expired");
     }
 
-    if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
+    if (!res.ok) {
+      let detail = `${method} ${path} failed: ${res.status}`;
+      try {
+        const errBody = await res.json();
+        if (errBody?.error) detail = errBody.error;
+        else if (errBody?.detail) detail = typeof errBody.detail === "string" ? errBody.detail : JSON.stringify(errBody.detail);
+      } catch { /* ignore parse error */ }
+      throw new Error(detail);
+    }
     return res.json();
   }
 

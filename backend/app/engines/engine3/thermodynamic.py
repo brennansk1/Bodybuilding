@@ -6,8 +6,19 @@ body-mass changes.  No DB or HTTP imports.
 """
 
 
-# Approximate kcal equivalence of 1 kg body-mass change
-_KCAL_PER_KG = 7700.0
+# Phase-specific energy equivalents (kcal per kg body mass change)
+# Fat tissue: ~7700 kcal/kg | Muscle tissue: ~2500 kcal/kg
+# Mixed gain (bulk): ~4500 kcal/kg (muscle + glycogen + water + some fat)
+# Mixed loss (cut): ~6500 kcal/kg (mostly fat with some lean tissue)
+_KCAL_PER_KG_BY_PHASE = {
+    "bulk": 4500.0,      # lean tissue accretion is metabolically cheaper
+    "lean_bulk": 4500.0,
+    "cut": 6500.0,       # mostly fat loss, some lean tissue
+    "maintain": 7700.0,  # standard approximation
+    "peak": 7700.0,      # extreme deficit, high fat proportion
+    "restoration": 5500.0,  # rebuilding lean tissue post-show
+}
+_KCAL_PER_KG_DEFAULT = 7700.0
 
 # Sex-specific caloric floors (kcal/day) — safety thresholds
 _MIN_CALORIES = {
@@ -37,27 +48,34 @@ def compute_energy_balance(consumed_calories: float, tdee: float) -> float:
 def compute_expected_weight_change(
     energy_balance_weekly_avg: float,
     weeks: float,
+    phase: str = "maintain",
 ) -> float:
     """Project body-mass change from a sustained weekly energy balance.
 
-    Uses the approximation that 7 700 kcal corresponds to 1 kg of
-    body-mass change.
+    Uses phase-specific energy equivalents:
+    - Bulk: ~4500 kcal/kg (lean tissue accretion is metabolically cheaper)
+    - Cut: ~6500 kcal/kg (mostly fat loss)
+    - Maintain: ~7700 kcal/kg (standard approximation)
 
     Parameters
     ----------
     energy_balance_weekly_avg : float
-        Average *daily* energy balance (kcal) over the period.  Positive
-        means surplus, negative means deficit.
+        Average *daily* energy balance (kcal) over the period.
     weeks : float
         Duration of the projection in weeks.
+    phase : str
+        Training phase for energy equivalent selection.
 
     Returns
     -------
     float
         Expected weight change in kg (positive = gain, negative = loss).
     """
+    kcal_per_kg = _KCAL_PER_KG_BY_PHASE.get(
+        phase.strip().lower(), _KCAL_PER_KG_DEFAULT
+    )
     total_surplus_kcal = energy_balance_weekly_avg * 7.0 * weeks
-    return total_surplus_kcal / _KCAL_PER_KG
+    return total_surplus_kcal / kcal_per_kg
 
 
 def thermodynamic_floor(

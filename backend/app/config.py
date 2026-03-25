@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ENVIRONMENT: str = "development"
+    # Comma-separated list of allowed CORS origins
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    # DB connection pool settings
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

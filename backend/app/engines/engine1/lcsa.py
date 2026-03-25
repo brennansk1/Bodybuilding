@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Lean Cross-Sectional Area (LCSA) Engine
 

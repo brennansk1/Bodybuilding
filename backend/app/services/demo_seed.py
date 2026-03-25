@@ -30,10 +30,10 @@ from app.models.diagnostic import LCSALog, PDSLog, HQILog
 from app.models.nutrition import NutritionPrescription, AdherenceLog, WeeklyCheckin
 
 logger = logging.getLogger(__name__)
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 DEMO_EMAIL = "admin@coronado.dev"
-DEMO_PASSWORD = "coronado2024"
+DEMO_PASSWORD = "admin123"
 DEMO_USERNAME = "marcus_demo"
 
 # Today
@@ -97,6 +97,10 @@ TAPE_SNAPSHOTS = [
         "waist": 80.0, "hips": 98.5,
         "left_thigh": 64.0, "right_thigh": 64.5,
         "left_calf": 42.0, "right_calf": 42.5,
+        # Advanced sites for heatmap granularity
+        "chest_relaxed": 114.5, "chest_lat_spread": 122.0, "back_width": 54.5,
+        "left_proximal_thigh": 68.5, "right_proximal_thigh": 69.2,
+        "left_distal_thigh": 53.5, "right_distal_thigh": 54.2,
     },
 ]
 
@@ -221,11 +225,15 @@ def _session_schedule(program_id: uuid.UUID, user_id: uuid.UUID) -> list[dict]:
     days_since_monday = TODAY.weekday()  # Mon=0 … Sun=6
     this_monday = TODAY - timedelta(days=days_since_monday)
 
-    # Week 1 starts 3 weeks before this Monday
-    session_day_offsets = [0, 1, 3, 4]   # Mon, Tue, Thu, Fri
-    session_types = ["push", "pull", "legs", "upper_body"]
+    # 6-week mesocycle: current_week=4, so week 1 started 3 weeks ago
+    # 5 days/week: Mon, Tue, Wed, Fri, Sat (matches _WEEKLY_SCHEDULE[5])
+    session_day_offsets = [0, 1, 2, 4, 5]
+    session_types = [
+        "quads_priority", "back_rear_delts", "chest_side_delts",
+        "hams_glutes", "upper_pump_fst7",
+    ]
 
-    for week_num in range(1, 5):
+    for week_num in range(1, 7):  # 6-week mesocycle
         week_monday = this_monday - timedelta(weeks=(4 - week_num))
         for day_num, (day_offset, stype) in enumerate(
             zip(session_day_offsets, session_types), start=1
@@ -241,7 +249,7 @@ def _session_schedule(program_id: uuid.UUID, user_id: uuid.UUID) -> list[dict]:
                 "week_number": week_num,
                 "day_number": day_num,
                 "completed": is_past,
-                "split_type": "ppl",
+                "split_type": "custom",
             })
     return sessions
 
@@ -399,16 +407,23 @@ async def seed_demo_admin(db: AsyncSession) -> bool:
     program = TrainingProgram(
         user_id=user.id,
         name="Coronado 16-Week Contest Prep — Mesocycle 3",
-        split_type="ppl",
-        days_per_week=4,
-        mesocycle_weeks=4,
-        current_week=4,
+        split_type="custom",
+        days_per_week=5,
+        mesocycle_weeks=6,
+        current_week=3,
         is_active=True,
         volume_allocation={
-            "chest": 14, "back": 16, "shoulders": 12, "quads": 14,
+            "chest": 14, "back": 18, "shoulders": 12, "quads": 16,
             "hamstrings": 12, "glutes": 8, "biceps": 10, "triceps": 10,
-            "calves": 8, "abs": 6,
+            "calves": 10, "abs": 6,
         },
+        custom_template=[
+            {"day": "Day 1 (Quads Priority)", "muscles": ["quads", "calves", "abs"]},
+            {"day": "Day 2 (Back & Rear Delts)", "muscles": ["back", "rear_delt", "biceps"]},
+            {"day": "Day 3 (Chest & Side Delts)", "muscles": ["chest", "side_delt", "triceps"]},
+            {"day": "Day 4 (Hams & Glutes)", "muscles": ["hamstrings", "glutes", "calves"]},
+            {"day": "Day 5 (Shoulders & Arms)", "muscles": ["shoulders", "biceps", "triceps"]}
+        ]
     )
     db.add(program)
     await db.flush()
@@ -454,7 +469,7 @@ async def seed_demo_admin(db: AsyncSession) -> bool:
             week_number=week,
             day_number=sess_def["day_number"],
             completed=sess_def["completed"],
-            split_type="ppl",
+            split_type="custom",
             stale_baselines=False,
             notes=(
                 f"Week {week} — felt strong today, pumps were great."

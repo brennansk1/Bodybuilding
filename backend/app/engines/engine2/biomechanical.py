@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Biomechanical Exercise Selection
 
@@ -37,6 +39,64 @@ MOVEMENT_PATTERNS: dict[str, list[str]] = {
     "isolation_curl": ["curl", "preacher", "concentration"],
     "isolation_extension": ["tricep", "pushdown", "skull crusher", "overhead extension"],
 }
+
+# ---------------------------------------------------------------------------
+# Anatomical sub-region classification
+# ---------------------------------------------------------------------------
+# Enables the engine to guarantee full coverage of all functional heads
+# within a composite muscle group (e.g. all 3 delt heads for shoulders).
+
+SUB_REGION_KEYWORDS: dict[str, dict[str, list[str]]] = {
+    "shoulders": {
+        "front":   ["overhead press", "military press", "arnold press", "front raise",
+                    "shoulder press", "barbell press", "dumbbell press"],
+        "lateral": ["lateral raise", "side raise", "upright row", "cable lateral",
+                    "side delt", "lateral delt"],
+        "rear":    ["rear delt", "face pull", "reverse fly", "reverse pec",
+                    "bent over fly", "bent-over fly", "rear fly"],
+    },
+    "chest": {
+        "upper":  ["incline", "low-to-high", "low to high"],
+        "mid":    ["bench press", "flat press", "flat bench", "pec deck",
+                   "chest press", "dumbbell press"],
+        "lower":  ["decline", "dip", "high-to-low", "high to low"],
+    },
+    "back": {
+        "width":     ["pulldown", "pull-up", "pullup", "chin up", "chin-up",
+                      "straight arm pulldown"],
+        "thickness": ["row", "t-bar", "barbell row", "cable row", "dumbbell row",
+                      "seated row"],
+        "erectors":  ["deadlift", "good morning", "hyperextension", "back extension"],
+    },
+}
+
+# Required sub-regions: if a muscle has a significant gap, the engine MUST
+# include at least one exercise from each of these sub-regions per week.
+REQUIRED_SUB_REGIONS: dict[str, list[str]] = {
+    "shoulders": ["front", "lateral", "rear"],
+    "chest":     ["upper", "mid"],
+    "back":      ["width", "thickness"],
+}
+
+
+def classify_sub_region(muscle_group: str, exercise_name: str) -> str | None:
+    """
+    Classify an exercise into its anatomical sub-region.
+
+    Args:
+        muscle_group: The parent muscle group (e.g. ``"shoulders"``).
+        exercise_name: The exercise name to classify.
+
+    Returns:
+        Sub-region string (e.g. ``"lateral"``) or ``None`` if unclassifiable.
+    """
+    regions = SUB_REGION_KEYWORDS.get(muscle_group.lower(), {})
+    name_lower = exercise_name.lower()
+    for region, keywords in regions.items():
+        if any(kw in name_lower for kw in keywords):
+            return region
+    return None
+
 
 # Map muscle groups to relevant movement pattern categories.
 _MUSCLE_RELEVANT_PATTERNS: dict[str, list[str]] = {

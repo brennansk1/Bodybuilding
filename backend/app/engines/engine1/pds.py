@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Physique Development Score (PDS)
 
@@ -134,6 +136,17 @@ def compute_symmetry_score(tape_measurements: dict[str, float]) -> float:
     return round(score, 1)
 
 
+# Per-site symmetry penalty multipliers (used by compute_symmetry_details)
+# Arms and calves are heavily penalized (visible from front/back at every pose)
+# Thighs are lightly penalized (quad dominance is common and somewhat accepted)
+_SYMMETRY_PENALTY_MULT: dict[str, float] = {
+    "bicep":   600,   # heavily judged — every front double bi
+    "forearm": 600,   # visible in most poses
+    "calf":    550,   # extremely visible standing
+    "thigh":   300,   # quad dominance tolerated by most divisions
+}
+
+
 def compute_symmetry_details(tape_measurements: dict[str, float]) -> list[dict]:
     """Return per-pair symmetry breakdown for display."""
     pairs = [
@@ -150,12 +163,16 @@ def compute_symmetry_details(tape_measurements: dict[str, float]) -> list[dict]:
             if l_val > 0 and r_val > 0:
                 avg = (l_val + r_val) / 2
                 dev = abs(l_val - r_val) / avg
+                # Site-specific penalty: arms/calves penalized more than legs
+                penalty_mult = _SYMMETRY_PENALTY_MULT.get(name, 500)
+                site_score = max(0.0, 100.0 - dev * penalty_mult)
                 details.append({
                     "site": name,
                     "left_cm": round(l_val, 1),
                     "right_cm": round(r_val, 1),
                     "diff_cm": round(abs(l_val - r_val), 1),
                     "deviation_pct": round(dev * 100, 1),
+                    "site_symmetry_score": round(site_score, 1),
                     "dominant_side": "left" if l_val > r_val else "right" if r_val > l_val else "even",
                 })
     return details

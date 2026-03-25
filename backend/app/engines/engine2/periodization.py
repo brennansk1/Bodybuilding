@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Mesocycle Periodization + Optimal Split Selection
 
@@ -69,8 +71,76 @@ _SPLIT_TEMPLATES: dict[str, list[dict[str, list[str]]]] = {
 }
 
 # Deload cadence and magnitude.
-_DELOAD_EVERY_N_WEEKS: int = 4
+_DELOAD_EVERY_N_WEEKS: int = 6
 _DELOAD_VOLUME_FRACTION: float = 0.50
+
+# ---------------------------------------------------------------------------
+# 6-week mesocycle phase map (bodybuilding-specific)
+# ---------------------------------------------------------------------------
+# Week 1-2: MEV — Minimum Effective Volume (3 working sets, 2 RIR)
+# Week 3-4: MAV — Maximum Adaptive Volume (+1 set, loads increase, 1 RIR)
+# Week 5:   MRV — Maximum Recoverable Volume (failure, 0 RIR)
+# Week 6:   Deload & Recovery (50% volume, 60% loads, no FST-7)
+
+MESO_PHASE_MAP: dict[int, dict] = {
+    1: {
+        "label": "MEV",
+        "name": "Minimum Effective Volume",
+        "description": "Base compounds, 3 working sets each. 2 RIR. Moderate FST-7 fascial stretching.",
+        "volume_landmark": "mev",
+        "rir": 2,
+        "set_modifier": 0,   # base sets
+        "fst7_mode": "moderate",
+    },
+    2: {
+        "label": "MEV",
+        "name": "Minimum Effective Volume",
+        "description": "Base compounds, 3 working sets each. 2 RIR. Moderate FST-7 fascial stretching.",
+        "volume_landmark": "mev",
+        "rir": 2,
+        "set_modifier": 0,
+        "fst7_mode": "moderate",
+    },
+    3: {
+        "label": "MAV",
+        "name": "Maximum Adaptive Volume",
+        "description": "+1 working set per compound. Loads increase. 1 RIR. Aggressive FST-7 stretching, 45s rest.",
+        "volume_landmark": "mav",
+        "rir": 1,
+        "set_modifier": 1,
+        "fst7_mode": "aggressive",
+    },
+    4: {
+        "label": "MAV",
+        "name": "Maximum Adaptive Volume",
+        "description": "+1 working set per compound. Loads increase. 1 RIR. Aggressive FST-7 stretching, 45s rest.",
+        "volume_landmark": "mav",
+        "rir": 1,
+        "set_modifier": 1,
+        "fst7_mode": "aggressive",
+    },
+    5: {
+        "label": "MRV",
+        "name": "Maximum Recoverable Volume",
+        "description": "Peak intensity. Heavy compounds at RIR 1 to protect form/joints; isolation finishers to failure (RIR 0). Forced reps and extreme intra-set stretching on FST-7 isolation work only.",
+        "volume_landmark": "mrv",
+        "rir": 1,
+        "rir_isolation": 0,
+        "set_modifier": 2,
+        "fst7_mode": "extreme",
+    },
+    6: {
+        "label": "DELOAD",
+        "name": "Deload & Recovery",
+        "description": "50% volume, 60% loads. No FST-7. Active recovery for cellular repair and supercompensation.",
+        "volume_landmark": "deload",
+        "rir": 4,
+        "set_modifier": 0,
+        "fst7_mode": "none",
+    },
+}
+
+_DEFAULT_MESOCYCLE_WEEKS: int = 6
 
 # Weekly set progression per muscle group.
 _MIN_WEEKLY_SET_INCREASE: int = 1
@@ -163,7 +233,7 @@ _DUP_ROTATION = ["heavy", "moderate", "light"]
 # ARI-aware deload logic
 # ---------------------------------------------------------------------------
 
-def should_deload(avg_ari_last_week: float, current_week: int) -> bool:
+def should_deload(avg_ari_last_week: float, current_week: int, mesocycle_weeks: int = 4) -> bool:
     """
     Determine whether a deload week should be scheduled.
 
@@ -174,6 +244,7 @@ def should_deload(avg_ari_last_week: float, current_week: int) -> bool:
         avg_ari_last_week: Average ARI across the most recent full training
                            week (0-100).
         current_week: The 1-based week number within the current mesocycle.
+        mesocycle_weeks: The total planned duration of this cycle.
 
     Returns:
         ``True`` if a deload is warranted.
@@ -181,8 +252,11 @@ def should_deload(avg_ari_last_week: float, current_week: int) -> bool:
     # ARI-driven: athlete is systemically under-recovered
     if avg_ari_last_week < 55:
         return True
+    # End-of-cycle default realization / deload
+    if current_week == mesocycle_weeks:
+        return True
     # Safety net: never go more than 4 consecutive weeks without a deload
-    if current_week % _DELOAD_EVERY_N_WEEKS == 0:
+    if current_week % _DELOAD_EVERY_N_WEEKS == 0 and current_week != mesocycle_weeks:
         return True
     return False
 
@@ -340,6 +414,20 @@ def _effective_freq(split_name: str, days_per_week: int, muscle: str) -> int:
                 count += 1
                 last_offset = offset
             # else: recovery not met — session would be skipped
+
+    # Wrap-around check: gap from last training day to first training day
+    # of the next week (simulates continuous weekly schedule)
+    if count >= 2 and last_offset >= 0:
+        first_trained = None
+        for day_idx, offset in enumerate(offsets):
+            slot = template[day_idx % len(template)]
+            if muscle in slot["muscles"]:
+                first_trained = offset
+                break
+        if first_trained is not None:
+            wrap_gap = (first_trained + 7) - last_offset
+            if wrap_gap < min_gap_days:
+                count -= 1  # last session too close to next week's first
 
     return count
 
@@ -503,7 +591,7 @@ def _generate_dup_mesocycle(
         else:
             prev_ari = 70.0  # assume adequate if no ARI data provided
 
-        is_deload = should_deload(prev_ari, week_num)
+        is_deload = should_deload(prev_ari, week_num, week_count)
 
         if is_deload:
             # Deload week: 50% volume, all sets at "light" profile
@@ -515,6 +603,7 @@ def _generate_dup_mesocycle(
             )
             days = _build_dup_days(
                 template, days_per_week, week_volume, deload=True,
+                week_num=week_num,
             )
         else:
             # Progressive non-deload week with DUP rotation
@@ -526,12 +615,20 @@ def _generate_dup_mesocycle(
             )
             days = _build_dup_days(
                 template, days_per_week, week_volume, deload=False,
+                week_num=week_num,
             )
 
+        # Attach mesocycle phase metadata
+        phase_info = MESO_PHASE_MAP.get(week_num, MESO_PHASE_MAP.get(6, {}))
         mesocycle.append({
             "week": week_num,
             "is_deload": is_deload,
             "periodization_type": "dup",
+            "meso_phase": phase_info.get("label", "MEV"),
+            "meso_phase_name": phase_info.get("name", ""),
+            "meso_phase_description": phase_info.get("description", ""),
+            "rir": phase_info.get("rir", 2),
+            "fst7_mode": phase_info.get("fst7_mode", "moderate"),
             "volume": week_volume,
             "days": days,
         })
@@ -544,6 +641,7 @@ def _build_dup_days(
     days_per_week: int,
     week_volume: dict[str, int],
     deload: bool,
+    week_num: int = 1,
 ) -> list[dict[str, Any]]:
     """
     Build training days with DUP intensity profiles rotating across days.
@@ -563,7 +661,7 @@ def _build_dup_days(
         if deload:
             profile_name = "light"
         else:
-            profile_name = _DUP_ROTATION[i % len(_DUP_ROTATION)]
+            profile_name = _DUP_ROTATION[(i + week_num - 1) % len(_DUP_ROTATION)]
 
         profile = DUP_PROFILES[profile_name]
 
@@ -787,7 +885,7 @@ def _generate_linear_mesocycle(
     mesocycle: list[dict[str, Any]] = []
 
     for week_num in range(1, week_count + 1):
-        is_deload = (week_num % _DELOAD_EVERY_N_WEEKS == 0)
+        is_deload = should_deload(70.0, week_num, week_count)
 
         week_volume = _week_volume(
             base_volume=volume_allocation,
@@ -820,21 +918,39 @@ def _week_volume(
     is_deload: bool,
 ) -> dict[str, int]:
     """
-    Compute the volume map for a given week, capped at MRV per muscle.
-
-    Non-deload weeks accumulate sets linearly from base. Deload weeks
-    halve the *base* volume (ignoring accumulated progression).
+    Compute the volume map for a given week using the MESO_PHASE_MAP.
+    Target volume is derived from muscle-specific VOLUME_LANDMARKS
+    (MEV/MAV/MRV) adjusted by the phase's set_modifier.
     """
+    phase_info = MESO_PHASE_MAP.get(week_num, MESO_PHASE_MAP.get(6, {}))
+    landmark_key = phase_info.get("volume_landmark", "mev")
+    modifier = phase_info.get("set_modifier", 0)
+
     result: dict[str, int] = {}
-    for muscle, base_sets in base_volume.items():
+    for muscle in base_volume.keys():
+        # Get landmarks for this muscle
+        # Default to (6, 12, 18) if muscle not in map
+        mev, mav, mrv = VOLUME_LANDMARKS.get(muscle, (6, 12, 18))
+
         if is_deload:
-            result[muscle] = max(1, math.floor(base_sets * _DELOAD_VOLUME_FRACTION))
+            # Deload is 50% of the muscle's individual MEV floor
+            target = max(1, math.floor(mev * _DELOAD_VOLUME_FRACTION))
         else:
-            weeks_progressed = week_num - 1
-            raw = base_sets + increment * weeks_progressed
-            # Cap at MRV — never prescribe more than the muscle can recover from
-            _, _, mrv = VOLUME_LANDMARKS.get(muscle, (0, raw, raw + 10))
-            result[muscle] = min(raw, mrv)
+            if landmark_key == "mev":
+                target = mev
+            elif landmark_key == "mav":
+                target = mav
+            elif landmark_key == "mrv":
+                target = mrv
+            else:
+                target = mev  # fallback
+
+            # Apply phase-specific intensity modifier (+1 set in MAV weeks etc)
+            target += modifier
+
+        # Never prescribe more than the muscle's absolute recovery limit (MRV)
+        result[muscle] = min(max(1, target), mrv)
+
     return result
 
 
@@ -886,3 +1002,73 @@ def _build_days(
             muscle_assigned[m] = already + assigned
 
     return days
+
+
+# ---------------------------------------------------------------------------
+# FST-7 Intensifier Protocol
+# ---------------------------------------------------------------------------
+
+# Division-priority muscles that qualify for FST-7
+_FST7_TARGETS: dict[str, list[str]] = {
+    "mens_physique": ["side_delt", "rear_delt", "back", "biceps"],
+    "classic_physique": ["side_delt", "rear_delt", "biceps", "calves"],
+    "mens_open": ["side_delt", "biceps", "calves", "hamstrings"],
+    "womens_bikini": ["glutes", "hamstrings", "side_delt"],
+    "womens_figure": ["side_delt", "rear_delt", "back"],
+    "womens_physique": ["side_delt", "back", "biceps"],
+}
+
+
+def apply_fst7(
+    session_exercises: list[dict],
+    division: str,
+    training_experience_years: float,
+) -> list[dict]:
+    """
+    Apply FST-7 protocol to the last isolation exercise targeting a
+    division-priority muscle, if the athlete is advanced enough.
+
+    FST-7: 7 sets x 8-12 reps with 30-45 second rest periods on the
+    final isolation movement. Only applied to division-priority muscles
+    to avoid exhausting systemic recovery on non-priority parts.
+
+    Requirements:
+      - Training experience >= 3 years
+      - Exercise must be isolation (not compound)
+      - Muscle must be a division priority target
+
+    Returns the modified session_exercises list with the FST-7 block
+    annotated on the qualifying exercise.
+    """
+    if training_experience_years < 3.0:
+        return session_exercises
+
+    targets = _FST7_TARGETS.get(division.lower().replace(" ", "_"), [])
+    if not targets:
+        return session_exercises
+
+    # Find the last isolation exercise that targets a priority muscle
+    fst7_idx = None
+    for i in range(len(session_exercises) - 1, -1, -1):
+        ex = session_exercises[i]
+        muscle = ex.get("muscle", ex.get("primary_muscle", ""))
+        pattern = ex.get("movement_pattern", "")
+        is_isolation = pattern in ("isolation", "cable", "machine") or "isolation" in pattern.lower()
+
+        if muscle in targets and is_isolation:
+            fst7_idx = i
+            break
+
+    if fst7_idx is not None:
+        ex = dict(session_exercises[fst7_idx])
+        ex["fst7"] = True
+        ex["fst7_sets"] = 7
+        ex["fst7_rep_range"] = (8, 12)
+        ex["fst7_rest_seconds"] = (30, 45)
+        ex["fst7_note"] = (
+            "FST-7 finisher: 7 sets of 8-12 reps with 30-45s rest. "
+            "Focus on full stretch and contraction. Maximize pump."
+        )
+        session_exercises[fst7_idx] = ex
+
+    return session_exercises

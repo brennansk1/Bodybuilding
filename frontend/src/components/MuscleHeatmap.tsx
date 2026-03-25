@@ -14,46 +14,53 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: Mus
   const backgroundColor = "#0f1a0c";
 
   // Map muscle gap site keys (pct_of_ideal values 0-100%) to SVG muscle group IDs.
-  // We removed overly broad proxies so unmeasured specific muscles correctly render as grey.
+  // We prioritize granular measurements (e.g. distal thigh for teardrop) over broad averages.
+  // Helper to average scores if multiple are available
+  const avg = (...vals: (number | undefined)[]) => {
+    const valid = vals.filter((v): v is number => v !== undefined && v !== null);
+    return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : undefined;
+  };
+
   const muscleScores: Record<string, number | undefined> = {
-    // Direct matches
-    chest:        siteScores.chest,
+    // Chest: prioritize common variants, falling back to basic chest
+    chest:        avg(siteScores.chest_lat_spread, siteScores.chest_relaxed, siteScores.chest_expanded) ?? siteScores.chest,
     neck:         siteScores.neck,
-    // Shoulder circumference → deltoid heads
+    // Shoulders: map broad shoulder measurement to all delt heads
     frontDelts:   siteScores.shoulders,
     sideDelts:    siteScores.shoulders,
     rearDelts:    siteScores.shoulders,
-    traps:        siteScores.traps, // Usually undefined unless specifically measured
-    // back_width directly measures axillary lat breadth
-    lats:         siteScores.back_width, // No longer proxying to shoulders
-    lowerBack:    siteScores.lower_back, // No longer proxying to waist
-    rotatorCuffs: siteScores.rotator_cuffs,
-    // Arm circumference → biceps & triceps; forearm measurement → forearms
+    traps:        siteScores.shoulders, // fallback for traps
+    // Lats/Back: back_width is the primary metric for width
+    lats:         siteScores.back_width,
+    lowerBack:    siteScores.waist, // fallback to waist/core
+    rotatorCuffs: siteScores.shoulders, // fallback to shoulders
+    // Arms: bicep measurement typically covers upper arm mass
     biceps:       siteScores.bicep,
     triceps:      siteScores.bicep,
     forearms:     siteScores.forearm,
-    // Waist circumference
+    // Midsection
     abs:          siteScores.waist,
-    obliques:     siteScores.obliques, // No longer proxying to waist
-    // Hip circumference → glutes
+    obliques:     siteScores.waist,
+    // Lower Body
     glutes:       siteScores.hips,
-    adductors:    siteScores.adductors, // No longer proxying to hips
-    abductors:    siteScores.abductors, // No longer proxying to hips
-    // Thigh circumference → quads & hamstrings
-    quads:        siteScores.thigh,
-    hamstrings:   siteScores.thigh,
-    // Calf circumference 
+    adductors:    avg(siteScores.proximal_thigh, siteScores.distal_thigh) ?? siteScores.thigh,
+    abductors:    avg(siteScores.proximal_thigh, siteScores.distal_thigh) ?? siteScores.thigh,
+    // Quads & Hamstrings use averaged granular thigh data (upper + teardrop)
+    quads:        avg(siteScores.proximal_thigh, siteScores.distal_thigh) ?? siteScores.thigh,
+    hamstrings:   avg(siteScores.proximal_thigh, siteScores.distal_thigh) ?? siteScores.thigh,
+    // Calves
     calves:       siteScores.calf,
-    shins:        siteScores.shins, // No longer proxying to calf
+    shins:        siteScores.calf,
   };
 
   function scoreToColor(score: number | undefined): string {
-    if (score === undefined || score === null) return "#52525b"; // zinc-600 grey for missing data
-    if (score < 50) return "#ef4444";
-    if (score < 70) return "#f97316";
-    if (score < 85) return "#eab308";
-    if (score < 95) return "#22c55e";
-    return "#4ade80";
+    if (score === undefined || score === null) return "#52525b"; // grey for missing data
+    if (score > 105) return "#a855f7";      // purple — over-developed
+    if (score >= 95) return "#22c55e";      // green — at/above ideal
+    if (score >= 85) return "#86efac";      // light green — near ideal
+    if (score >= 70) return "#eab308";      // yellow — on track
+    if (score >= 50) return "#f97316";      // orange — developing
+    return "#ef4444";                       // red — major gap
   }
 
   function getMuscleColor(muscleId: string): string {
@@ -97,8 +104,8 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: Mus
           { color: "#ef4444", label: "Major Gap (<50%)" },
           { color: "#f97316", label: "Developing (50-70%)" },
           { color: "#eab308", label: "On Track (70-85%)" },
-          { color: "#22c55e", label: "Near Ideal (85-95%)" },
-          { color: "#4ade80", label: "At/Above Ideal (95%+)" },
+          { color: "#86efac", label: "Near Ideal (85-95%)" },
+          { color: "#22c55e", label: "At/Above Ideal (95%+)" },
         ].map(({ color, label }) => (
           <span key={label} className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: color }} />

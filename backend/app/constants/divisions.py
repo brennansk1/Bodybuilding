@@ -14,29 +14,33 @@ DIVISION_VECTORS = {
     "classic_physique": {
         "neck": 0.238, "shoulders": 0.600, "chest": 0.540,
         "bicep": 0.220, "forearm": 0.170, "waist": 0.432,
-        "hips": 0.510, "thigh": 0.325, "calf": 0.225,
+        "hips": 0.510, "thigh": 0.340, "calf": 0.230,
         "back_width": 0.258,
         "shoulder_to_waist": 1.389, "v_taper": 1.618,
     },
     "mens_physique": {
-        "neck": 0.240, "shoulders": 0.690, "chest": 0.620,
-        "bicep": 0.240, "forearm": 0.175, "waist": 0.430,
-        "hips": 0.510, "thigh": 0.330, "calf": 0.225,
-        # V-taper is a primary criterion — back width heavily weighted
-        "back_width": 0.265,
-        "shoulder_to_waist": 1.605, "v_taper": 1.618,
+        # MP: V-taper dominated. Weight cap is only ~10 lbs below Classic per
+        # bracket, so competitors are large — difference is shape, not size.
+        # Tighter waist + wider back = highest shoulder-to-waist ratio.
+        # Chest thickness de-emphasized (judged front-on, not side).
+        # Legs hidden by board shorts so thigh/calf ratios are lower.
+        "neck": 0.225, "shoulders": 0.590, "chest": 0.525,
+        "bicep": 0.220, "forearm": 0.168, "waist": 0.415,
+        "hips": 0.500, "thigh": 0.310, "calf": 0.215,
+        "back_width": 0.260,
+        "shoulder_to_waist": 1.422, "v_taper": 1.618,
     },
     "womens_figure": {
         "neck": 0.195, "shoulders": 0.530, "chest": 0.490,
         "bicep": 0.170, "forearm": 0.145, "waist": 0.395,
         "hips": 0.530, "thigh": 0.320, "calf": 0.210,
         "back_width": 0.210,
-        "shoulder_to_waist": 1.342, "v_taper": 1.341,
+        "shoulder_to_waist": 1.342, "v_taper": 1.342,
     },
     "womens_bikini": {
         "neck": 0.190, "shoulders": 0.500, "chest": 0.470,
         "bicep": 0.155, "forearm": 0.138, "waist": 0.385,
-        "hips": 0.540, "thigh": 0.330, "calf": 0.205,
+        "hips": 0.575, "thigh": 0.330, "calf": 0.205,
         "back_width": 0.198,
         "shoulder_to_waist": 1.299, "v_taper": 1.299,
     },
@@ -121,44 +125,51 @@ K_SITE_FACTORS = {
 # vectors themselves must produce a Hanavan mass close to the weight cap.
 GHOST_VECTORS = {
     "mens_open": {
-        # Open competitors at 180cm stage at 115-130+ kg; vectors calibrated
-        # to produce Hanavan mass ~105-115 kg at reference height, minimizing
-        # allometric correction. Based on elite natural Open stage measurements.
-        "neck": 0.258, "shoulders": 0.760,
+        # Open competitors at 180cm stage at 115-130+ kg. Calibrated to
+        # IFBB Olympia-level stage measurements: 22-24" arms, 32-34" thighs,
+        # deeply capped delts, and proportionally wide waists (biomechanically
+        # unavoidable at 260+ lbs lean tissue).
+        "neck": 0.258, "shoulders": 0.830,
         "chest_relaxed": 0.640, "chest_expanded": 0.700,
-        "bicep": 0.270, "forearm": 0.195,
-        "waist": 0.465, "hips": 0.560,
-        "proximal_thigh": 0.410, "distal_thigh": 0.340,
-        "calf": 0.255, "back_width": 0.285,
+        "bicep": 0.330, "forearm": 0.195,
+        "waist": 0.490, "hips": 0.560,
+        "proximal_thigh": 0.460, "distal_thigh": 0.385,
+        "calf": 0.265, "back_width": 0.295,
     },
     "classic_physique": {
-        # Classic at 180cm stage at ~96 kg. Between Open and MP in absolute
-        # size but closer to Open in muscularity. IFBB Classic emphasizes
-        # full-body development with slightly tighter waist than Open.
+        # Classic at 180cm stages at ~99 kg. 20+ inch arms, ~30 inch thighs,
+        # tight vacuum-ready waist. Proportions inspired by the 1970s golden
+        # era but with modern IFBB muscularity requirements.
         "neck": 0.248, "shoulders": 0.710,
         "chest_relaxed": 0.580, "chest_expanded": 0.645,
-        "bicep": 0.252, "forearm": 0.185,
+        "bicep": 0.295, "forearm": 0.185,
         "waist": 0.440, "hips": 0.535,
-        "proximal_thigh": 0.385, "distal_thigh": 0.315,
-        "calf": 0.242, "back_width": 0.272,
+        "proximal_thigh": 0.415, "distal_thigh": 0.340,
+        "calf": 0.250, "back_width": 0.272,
     },
     "mens_physique": {
-        "neck": 0.240, "shoulders": 0.690,
-        "chest_relaxed": 0.560, "chest_expanded": 0.620,
-        "bicep": 0.240, "forearm": 0.175,
-        "waist": 0.430, "hips": 0.510,
-        "proximal_thigh": 0.340, "distal_thigh": 0.280,
-        "calf": 0.225, "back_width": 0.265,
+        # MP at 188cm stages at ~105 kg (official IFBB cap: 232 lbs at 6'2").
+        # Only ~10 lbs below Classic per bracket — these are BIG athletes.
+        # Shape difference: tighter waist, wider back, less chest thickness,
+        # slightly smaller thighs (hidden by board shorts). Neck kept lean
+        # to avoid blocky silhouette. Arms full but not Open-level.
+        "neck": 0.218, "shoulders": 0.640,
+        "chest_relaxed": 0.580, "chest_expanded": 0.610,
+        "bicep": 0.235, "forearm": 0.172,
+        "waist": 0.415, "hips": 0.500,
+        "proximal_thigh": 0.330, "distal_thigh": 0.270,
+        "calf": 0.218, "back_width": 0.255,
     },
     "womens_figure": {
-        # Figure at 165cm stages at ~59 kg. Vectors scaled +4% from base
-        # to align Hanavan ghost mass with division weight caps.
-        "neck": 0.203, "shoulders": 0.551,
+        # Figure: extreme X-frame. Aggressive capped lateral deltoids are
+        # the defining feature — shoulders can almost never be "too wide."
+        # Vectors scaled to align ghost mass with division weight caps.
+        "neck": 0.203, "shoulders": 0.595,
         "chest_relaxed": 0.478, "chest_expanded": 0.510,
         "bicep": 0.177, "forearm": 0.151,
-        "waist": 0.411, "hips": 0.551,
+        "waist": 0.411, "hips": 0.540,
         "proximal_thigh": 0.359, "distal_thigh": 0.291,
-        "calf": 0.218, "back_width": 0.218,
+        "calf": 0.218, "back_width": 0.225,
     },
     "womens_bikini": {
         "neck": 0.190, "shoulders": 0.500,

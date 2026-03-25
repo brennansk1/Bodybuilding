@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field, model_validator
 
 def _cm(lo: float, hi: float):
@@ -53,6 +55,12 @@ class WeeklyCheckinRequest(BaseModel):
     sf_bicep: float | None = _sf()
     sf_lower_back: float | None = _sf()
     sf_calf: float | None = _sf()
+
+    # Direct body composition (from Fit3D, DEXA, InBody — bypasses JP7 formula)
+    body_fat_pct: float | None = Field(default=None, ge=3.0, le=60.0)
+    lean_mass_kg: float | None = Field(default=None, gt=20, lt=200)
+    fat_mass_kg: float | None = Field(default=None, gt=1, lt=200)
+    scan_source: str | None = None  # "fit3d" | "dexa" | "inbody" | "tape"
 
     # Photos and notes
     front_photo_url: str | None = None

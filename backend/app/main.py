@@ -1,20 +1,41 @@
 from contextlib import asynccontextmanager
+import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
+from app.config import settings
 from app.database import engine, Base, async_session
 from app.models import *  # noqa: F401, F403 — register all models with Base
 from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload
+
+logger = logging.getLogger(__name__)
+
+
+import re as _re
+
+_IDENT_RE = _re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate a SQL identifier to prevent injection."""
+    if not _IDENT_RE.match(name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
 
 
 def _add_column_if_missing(conn, table: str, column: str, col_type: str):
     """Safely add a column to an existing table if it doesn't exist."""
     from sqlalchemy import text
-    result = conn.execute(text(
-        f"SELECT column_name FROM information_schema.columns "
-        f"WHERE table_name='{table}' AND column_name='{column}'"
-    ))
+    _validate_identifier(table)
+    _validate_identifier(column)
+    result = conn.execute(
+        text("SELECT column_name FROM information_schema.columns "
+             "WHERE table_name = :tbl AND column_name = :col"),
+        {"tbl": table, "col": column},
+    )
     if result.fetchone() is None:
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
 
@@ -22,9 +43,12 @@ def _add_column_if_missing(conn, table: str, column: str, col_type: str):
 def _create_index_if_missing(conn, index_name: str, table: str, columns: str):
     """Create an index if it doesn't already exist."""
     from sqlalchemy import text
-    result = conn.execute(text(
-        f"SELECT 1 FROM pg_indexes WHERE indexname = '{index_name}'"
-    ))
+    _validate_identifier(index_name)
+    _validate_identifier(table)
+    result = conn.execute(
+        text("SELECT 1 FROM pg_indexes WHERE indexname = :idx"),
+        {"idx": index_name},
+    )
     if result.fetchone() is None:
         conn.execute(text(f"CREATE INDEX {index_name} ON {table} ({columns})"))
 
@@ -38,6 +62,7 @@ def _run_schema_migrations(conn):
     # Training session/set new fields
     _add_column_if_missing(conn, "training_sessions", "split_type", "VARCHAR(30)")
     _add_column_if_missing(conn, "training_sessions", "stale_baselines", "BOOLEAN DEFAULT FALSE")
+    _add_column_if_missing(conn, "training_programs", "custom_template", "JSONB")
     _add_column_if_missing(conn, "training_sets", "is_warmup", "BOOLEAN DEFAULT FALSE")
     # Exercise custom user support
     _add_column_if_missing(conn, "exercises", "user_id", "UUID")
@@ -73,11 +98,18 @@ async def lifespan(app: FastAPI):
                 f"Seeded: {seeded['exercises']} exercises, {seeded['ingredients']} ingredients"
             )
 
-    # Seed demo admin account (idempotent)
-    from app.services.demo_seed import seed_demo_admin
+    # Seed admin account (always, idempotent)
+    from app.services.admin_seed import seed_admin_account
     async with async_session() as db:
-        created = await seed_demo_admin(db)
+        await seed_admin_account(db)
         await db.commit()
+
+    # Seed demo test account (idempotent, dev/staging only)
+    if settings.ENVIRONMENT != "production":
+        from app.services.demo_seed import seed_demo_admin
+        async with async_session() as db:
+            created = await seed_demo_admin(db)
+            await db.commit()
 
     yield
     await engine.dispose()
@@ -92,11 +124,29 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Validation error", "detail": str(exc.errors()), "code": 422},
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    detail = str(exc) if settings.ENVIRONMENT != "production" else "An unexpected error occurred"
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "detail": detail, "code": 500},
+    )
 
 # Routers
 app.include_router(auth.router, prefix="/api/v1")
@@ -118,4 +168,19 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/api/v1/health")
 async def health_check():
-    return {"status": "healthy", "version": "4.0.0", "system": "Coronado"}
+    from sqlalchemy import text
+    db_status = "unknown"
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        logger.error("Health check DB error: %s", e)
+        db_status = "error"
+    return {
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "version": "4.0.0",
+        "system": "Coronado",
+        "environment": settings.ENVIRONMENT,
+        "db": db_status,
+    }
