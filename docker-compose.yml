@@ -30,8 +30,8 @@ services:
       dockerfile: Dockerfile
       target: ${BUILD_TARGET:-production}
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://cpos:cpos_dev_password@postgres:5432/cpos}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
@@ -61,13 +61,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: ${BUILD_TARGET:-production}
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
     restart: unless-stopped
     ports:
       - "3001:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      INTERNAL_API_URL: http://backend:8000
     depends_on:
       backend:
         condition: service_healthy
