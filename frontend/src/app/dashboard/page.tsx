@@ -200,11 +200,11 @@ export default function DashboardPage() {
   // Quick log weight state
   const [quickWeight, setQuickWeight] = useState("");
 
-  // Coronado onboarding wizard
+  // Coronado onboarding wizard — only shows once per user account
   const [showWizard, setShowWizard] = useState(false);
   useEffect(() => {
-    if (shouldShowWizard()) setShowWizard(true);
-  }, []);
+    if (user && shouldShowWizard(user.id)) setShowWizard(true);
+  }, [user]);
 
   // kg/lbs toggle — synced with training page via localStorage
   const [useLbs, setUseLbs] = useState(false);
@@ -373,7 +373,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen">
-      {showWizard && <OnboardingWizard onDismiss={() => setShowWizard(false)} />}
+      {showWizard && <OnboardingWizard onDismiss={() => setShowWizard(false)} userId={user?.id} />}
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
       <main className="container-app py-6">

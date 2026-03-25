@@ -115,11 +115,10 @@ def _scale_food_to_fat(food: FoodItem, target_fat_g: float) -> MealIngredient:
 
 
 def _pick_unique(foods: list[FoodItem], used: set[str], count: int = 1) -> list[FoodItem]:
-    """Pick foods not yet used, falling back to any if all used."""
+    """Pick foods not yet used, preserving preference order. Falls back to any if all used."""
     available = [f for f in foods if f.name not in used]
     if not available:
         available = list(foods)
-    random.shuffle(available)
     return available[:count]
 
 
@@ -180,6 +179,27 @@ def _mins_to_time(mins: int) -> str:
 
 # ─── Main generator ─────────────────────────────────────────────────────────
 
+def _prioritize_preferred(foods: list[FoodItem], preferred_names: list[str]) -> list[FoodItem]:
+    """Sort foods so user-preferred items come first."""
+    if not preferred_names:
+        return foods
+    lower_prefs = {n.lower() for n in preferred_names}
+    preferred = [f for f in foods if f.name.lower() in lower_prefs]
+    rest = [f for f in foods if f.name.lower() not in lower_prefs]
+    random.shuffle(preferred)
+    random.shuffle(rest)
+    return preferred + rest
+
+
+def _exclude_blacklisted(foods: list[FoodItem], blacklisted: list[str]) -> list[FoodItem]:
+    """Remove blacklisted foods, but always keep at least a few options."""
+    if not blacklisted:
+        return foods
+    lower_bl = {n.lower() for n in blacklisted}
+    filtered = [f for f in foods if f.name.lower() not in lower_bl]
+    return filtered if len(filtered) >= 2 else foods
+
+
 def generate_meal_plan(
     phase: str,
     division: str,
@@ -195,6 +215,10 @@ def generate_meal_plan(
     peri_workout_carb_pct: float = 0.35,
     dietary_restrictions: list[str] | None = None,
     seed: int | None = None,
+    preferred_proteins: list[str] | None = None,
+    preferred_carbs: list[str] | None = None,
+    preferred_fats: list[str] | None = None,
+    blacklisted_foods: list[str] | None = None,
 ) -> list[dict]:
     """
     Generate a structured meal plan using curated bodybuilding foods.
@@ -213,6 +237,12 @@ def generate_meal_plan(
     fats = get_available_foods(phase, restrictions, "fat")
     vegetables = get_available_foods(phase, restrictions, "vegetable")
     fruits = get_available_foods(phase, restrictions, "fruit")
+
+    # Apply user blacklist and preference ordering
+    bl = blacklisted_foods or []
+    proteins = _prioritize_preferred(_exclude_blacklisted(proteins, bl), preferred_proteins or [])
+    carbs_all = _prioritize_preferred(_exclude_blacklisted(carbs_all, bl), preferred_carbs or [])
+    fats = _prioritize_preferred(_exclude_blacklisted(fats, bl), preferred_fats or [])
 
     # Peri-workout specific pools
     peri_proteins = [p for p in proteins if p.peri_workout] or proteins[:3]

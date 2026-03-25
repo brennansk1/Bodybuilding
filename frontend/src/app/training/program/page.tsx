@@ -168,6 +168,8 @@ export default function ProgramPage() {
   const [trainingStartTime, setTrainingStartTime] = useState("10:00");
   const [trainingDuration, setTrainingDuration] = useState(75);
   const [savingPrefs, setSavingPrefs] = useState(false);
+  const [calendarOverlay, setCalendarOverlay] = useState<"none" | "macrocycle" | "mesocycle" | "microcycle" | "split">("none");
+  const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -559,13 +561,230 @@ export default function ProgramPage() {
                 )}
               </div>
 
-              {/* ── MONTH CALENDAR ── */}
+              {/* ── CALENDAR WITH OVERLAYS ── */}
               {sessions.length > 0 && (
                 <div className="card space-y-3 py-3">
                   <h3 className="font-semibold text-xs uppercase tracking-wider text-jungle-muted">
                     Calendar View
                   </h3>
-                  <CalendarMonth sessions={sessions} today={today} />
+
+                  {/* Overlay toggle buttons */}
+                  <div className="flex gap-1.5 flex-wrap">
+                    {([
+                      { key: "macrocycle", label: "Macro", icon: "📅" },
+                      { key: "mesocycle", label: "Meso", icon: "🔄" },
+                      { key: "microcycle", label: "Micro", icon: "📋" },
+                      { key: "split", label: "Split", icon: "💪" },
+                    ] as const).map(({ key, label, icon }) => (
+                      <button
+                        key={key}
+                        onClick={() => setCalendarOverlay(calendarOverlay === key ? "none" : key)}
+                        className={`px-2.5 py-1.5 rounded-lg text-[10px] font-medium border transition-all ${
+                          calendarOverlay === key
+                            ? "bg-jungle-accent/20 border-jungle-accent/50 text-jungle-accent"
+                            : "bg-jungle-deeper border-jungle-border text-jungle-dim hover:border-jungle-accent/30"
+                        }`}
+                      >
+                        {icon} {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Month navigation for overlay scrolling */}
+                  {calendarOverlay !== "none" && (
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => setCalendarMonthOffset((o) => o - 1)}
+                        className="w-8 h-8 rounded-lg bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent flex items-center justify-center"
+                      >
+                        ‹
+                      </button>
+                      <span className="text-xs text-jungle-muted font-medium">
+                        {new Date(new Date().getFullYear(), new Date().getMonth() + calendarMonthOffset).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                      </span>
+                      <button
+                        onClick={() => setCalendarMonthOffset((o) => o + 1)}
+                        className="w-8 h-8 rounded-lg bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent flex items-center justify-center"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Overlay content */}
+                  {calendarOverlay === "macrocycle" && calendar && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-7 gap-0.5 text-center">
+                        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                          <span key={i} className="text-[8px] text-jungle-dim font-semibold">{d}</span>
+                        ))}
+                        {(() => {
+                          const viewDate = new Date(new Date().getFullYear(), new Date().getMonth() + calendarMonthOffset, 1);
+                          const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+                          const startDay = (viewDate.getDay() + 6) % 7;
+                          const cells = [];
+                          for (let i = 0; i < startDay; i++) cells.push(<div key={`e${i}`} />);
+                          for (let d = 1; d <= daysInMonth; d++) {
+                            const date = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+                            const dateStr = date.toISOString().split("T")[0];
+                            const block = calendar.calendar.find(b => dateStr >= b.start_date && dateStr <= b.end_date);
+                            const phase = block?.phase || "offseason";
+                            const isToday_ = dateStr === today;
+                            cells.push(
+                              <div key={d} title={`${getPhaseLabel(phase)}`}
+                                className={`h-6 rounded flex items-center justify-center text-[8px] font-bold ${getPhaseColor(phase)}${isToday_ ? "/80 ring-1 ring-white/50" : "/40"} text-white/80`}
+                              >
+                                {d}
+                              </div>
+                            );
+                          }
+                          return cells;
+                        })()}
+                      </div>
+                      <div className="flex gap-2 flex-wrap text-[8px] text-jungle-dim justify-center">
+                        {calendar.calendar.map((b, i) => (
+                          <span key={i} className="flex items-center gap-1">
+                            <span className={`w-2 h-2 rounded-sm ${getPhaseColor(b.phase)}`} />
+                            {getPhaseLabel(b.phase)} ({b.weeks}wk)
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {calendarOverlay === "mesocycle" && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-7 gap-0.5 text-center">
+                        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                          <span key={i} className="text-[8px] text-jungle-dim font-semibold">{d}</span>
+                        ))}
+                        {(() => {
+                          const viewDate = new Date(new Date().getFullYear(), new Date().getMonth() + calendarMonthOffset, 1);
+                          const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+                          const startDay = (viewDate.getDay() + 6) % 7;
+                          const cells = [];
+                          for (let i = 0; i < startDay; i++) cells.push(<div key={`e${i}`} />);
+                          for (let d = 1; d <= daysInMonth; d++) {
+                            const date = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+                            const dateStr = date.toISOString().split("T")[0];
+                            const session = sessions.find(s => s.session_date === dateStr);
+                            const phase = session ? (MESO_PHASES[session.week_number] ?? MESO_PHASES[6]) : null;
+                            const isToday_ = dateStr === today;
+                            cells.push(
+                              <div key={d}
+                                className={`h-6 rounded flex items-center justify-center text-[8px] font-bold ${
+                                  phase ? `${phase.color} ${phase.textColor}` : "bg-jungle-deeper/20 text-jungle-dim/30"
+                                }${isToday_ ? " ring-1 ring-white/50" : ""}`}
+                              >
+                                {d}
+                              </div>
+                            );
+                          }
+                          return cells;
+                        })()}
+                      </div>
+                      <div className="flex gap-2 text-[8px] text-jungle-dim justify-center flex-wrap">
+                        {[1, 3, 5, 6].map(w => {
+                          const p = MESO_PHASES[w];
+                          return (
+                            <span key={w} className={`${p.textColor} flex items-center gap-1`}>
+                              <span className={`w-2 h-2 rounded-sm ${p.color.split(" ")[0]}`} />
+                              {p.label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {calendarOverlay === "microcycle" && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-7 gap-0.5 text-center">
+                        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                          <span key={i} className="text-[8px] text-jungle-dim font-semibold">{d}</span>
+                        ))}
+                        {(() => {
+                          const viewDate = new Date(new Date().getFullYear(), new Date().getMonth() + calendarMonthOffset, 1);
+                          const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+                          const startDay = (viewDate.getDay() + 6) % 7;
+                          const cells = [];
+                          for (let i = 0; i < startDay; i++) cells.push(<div key={`e${i}`} />);
+                          for (let d = 1; d <= daysInMonth; d++) {
+                            const date = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+                            const dateStr = date.toISOString().split("T")[0];
+                            const session = sessions.find(s => s.session_date === dateStr);
+                            const isToday_ = dateStr === today;
+                            cells.push(
+                              <div key={d}
+                                className={`h-8 rounded flex flex-col items-center justify-center text-[7px] leading-tight ${
+                                  session
+                                    ? session.completed
+                                      ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                      : isToday_
+                                      ? "bg-jungle-accent/20 text-jungle-accent border border-jungle-accent/40"
+                                      : "bg-jungle-deeper text-jungle-muted border border-jungle-border"
+                                    : "bg-jungle-deeper/20 text-jungle-dim/30"
+                                }`}
+                              >
+                                <span className="font-bold text-[8px]">{d}</span>
+                                {session && <span className="truncate w-full text-center px-0.5">{formatSessionType(session.session_type).split(" ")[0]}</span>}
+                              </div>
+                            );
+                          }
+                          return cells;
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {calendarOverlay === "split" && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-7 gap-0.5 text-center">
+                        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                          <span key={i} className="text-[8px] text-jungle-dim font-semibold">{d}</span>
+                        ))}
+                        {(() => {
+                          const viewDate = new Date(new Date().getFullYear(), new Date().getMonth() + calendarMonthOffset, 1);
+                          const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
+                          const startDay = (viewDate.getDay() + 6) % 7;
+                          const cells = [];
+                          for (let i = 0; i < startDay; i++) cells.push(<div key={`e${i}`} />);
+                          for (let d = 1; d <= daysInMonth; d++) {
+                            const date = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+                            const dateStr = date.toISOString().split("T")[0];
+                            const session = sessions.find(s => s.session_date === dateStr);
+                            cells.push(
+                              <div key={d}
+                                className={`h-10 rounded flex flex-col items-center justify-center text-[6px] leading-tight ${
+                                  session
+                                    ? "bg-jungle-deeper text-jungle-muted border border-jungle-border"
+                                    : "bg-jungle-deeper/20 text-jungle-dim/30"
+                                }`}
+                              >
+                                <span className="font-bold text-[8px]">{d}</span>
+                                {session && (
+                                  <>
+                                    <span className="text-jungle-accent font-semibold truncate w-full text-center px-0.5">
+                                      {formatSessionType(session.session_type)}
+                                    </span>
+                                    {session.primary_muscles?.slice(0, 2).map((m, i) => (
+                                      <span key={i} className="text-jungle-dim capitalize truncate w-full text-center">{m}</span>
+                                    ))}
+                                  </>
+                                )}
+                              </div>
+                            );
+                          }
+                          return cells;
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Default calendar (no overlay) */}
+                  {calendarOverlay === "none" && (
+                    <CalendarMonth sessions={sessions} today={today} />
+                  )}
                 </div>
               )}
 

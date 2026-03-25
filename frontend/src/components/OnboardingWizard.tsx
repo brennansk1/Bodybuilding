@@ -57,13 +57,18 @@ const WIZARD_STEPS = [
 
 const STORAGE_KEY = "coronado_wizard_completed";
 
+function storageKeyFor(userId?: string) {
+  return userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface OnboardingWizardProps {
   onDismiss: () => void;
+  userId?: string;
 }
 
-export default function OnboardingWizard({ onDismiss }: OnboardingWizardProps) {
+export default function OnboardingWizard({ onDismiss, userId }: OnboardingWizardProps) {
   const [step, setStep] = useState(0);
 
   const current = WIZARD_STEPS[step];
@@ -78,7 +83,11 @@ export default function OnboardingWizard({ onDismiss }: OnboardingWizardProps) {
   }
 
   function complete() {
-    try { localStorage.setItem(STORAGE_KEY, "1"); } catch { /* ignore */ }
+    try {
+      localStorage.setItem(storageKeyFor(userId), "1");
+      // Also set the generic key for backwards compatibility
+      localStorage.setItem(STORAGE_KEY, "1");
+    } catch { /* ignore */ }
     onDismiss();
   }
 
@@ -161,9 +170,12 @@ export default function OnboardingWizard({ onDismiss }: OnboardingWizardProps) {
 
 // ─── Helper to check if wizard should show ───────────────────────────────────
 
-export function shouldShowWizard(): boolean {
+export function shouldShowWizard(userId?: string): boolean {
   try {
-    return !localStorage.getItem(STORAGE_KEY);
+    // Check both user-specific and generic key
+    if (localStorage.getItem(storageKeyFor(userId))) return false;
+    if (localStorage.getItem(STORAGE_KEY)) return false;
+    return true;
   } catch {
     return false;
   }

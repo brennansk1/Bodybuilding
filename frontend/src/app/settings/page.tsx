@@ -36,6 +36,10 @@ interface Profile {
     cheat_meals_per_week?: number;
     intra_workout_nutrition?: boolean;
     initial_phase?: string;
+    preferred_proteins?: string[];
+    preferred_carbs?: string[];
+    preferred_fats?: string[];
+    blacklisted_foods?: string[];
   };
 }
 
@@ -82,6 +86,24 @@ const DIETARY_OPTIONS = [
   "no_shellfish", "no_pork", "halal", "kosher",
 ];
 
+const PROTEIN_SOURCES = [
+  "Chicken Breast", "Turkey Breast", "Lean Ground Turkey", "Lean Ground Beef",
+  "Flank Steak", "Sirloin Steak", "Tilapia", "Cod", "Salmon", "Shrimp",
+  "Tuna (canned)", "Egg Whites", "Whole Eggs", "Greek Yogurt (nonfat)",
+  "Cottage Cheese (low-fat)", "Tofu (firm)", "Tempeh", "Seitan",
+];
+
+const CARB_SOURCES = [
+  "White Rice", "Jasmine Rice", "Brown Rice", "Oats (rolled)",
+  "Cream of Rice", "Sweet Potato", "Red Potato (boiled)", "Quinoa",
+  "Ezekiel Bread", "Banana",
+];
+
+const FAT_SOURCES = [
+  "Extra Virgin Olive Oil", "Avocado", "Almonds", "Peanut Butter",
+  "Almond Butter", "Walnuts", "Coconut Oil", "Chia Seeds", "Flax Seeds",
+];
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -124,6 +146,10 @@ export default function SettingsPage() {
   const [mealCount, setMealCount] = useState("5");
   const [dietaryRestrictions, setDietaryRestrictions] = useState<string[]>([]);
   const [cheatMeals, setCheatMeals] = useState("0");
+  const [preferredProteins, setPreferredProteins] = useState<string[]>([]);
+  const [preferredCarbs, setPreferredCarbs] = useState<string[]>([]);
+  const [preferredFats, setPreferredFats] = useState<string[]>([]);
+  const [blacklistedFoods, setBlacklistedFoods] = useState<string[]>([]);
 
   // ── Notifications ───────────────────────────────────────────────────────────
   const [notifyCheckin, setNotifyCheckin] = useState(false);
@@ -175,6 +201,10 @@ export default function SettingsPage() {
         setMealCount(prefs.meal_count?.toString() ?? "5");
         setDietaryRestrictions(prefs.dietary_restrictions ?? []);
         setCheatMeals(prefs.cheat_meals_per_week?.toString() ?? "0");
+        setPreferredProteins(prefs.preferred_proteins ?? []);
+        setPreferredCarbs(prefs.preferred_carbs ?? []);
+        setPreferredFats(prefs.preferred_fats ?? []);
+        setBlacklistedFoods(prefs.blacklisted_foods ?? []);
       }).catch(() => {});
 
       if (typeof window !== "undefined") {
@@ -221,6 +251,10 @@ export default function SettingsPage() {
           cheat_meals_per_week: cheatMeals ? parseInt(cheatMeals) : 0,
           intra_workout_nutrition: intraWorkout,
           initial_phase: currentPhase || null,
+          preferred_proteins: preferredProteins,
+          preferred_carbs: preferredCarbs,
+          preferred_fats: preferredFats,
+          blacklisted_foods: blacklistedFoods,
         },
       });
       setSaved(true);
@@ -751,6 +785,124 @@ export default function SettingsPage() {
                       ? "One refeed-style meal — plan around it"
                       : "Multiple — flag in meal plan to track adherence"}
                   </p>
+                </div>
+              </div>
+
+              {/* Food Source Preferences */}
+              <div className="card space-y-4">
+                <SectionHeader>Food Source Preferences</SectionHeader>
+                <p className="text-[10px] text-jungle-dim -mt-2">
+                  Select your preferred sources for each macro. The meal planner will prioritize these choices.
+                </p>
+
+                {/* Protein Sources */}
+                <div>
+                  <label className="label-field">Primary Protein Sources</label>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {PROTEIN_SOURCES.map((item) => (
+                      <button
+                        key={item}
+                        onClick={() => {
+                          if (blacklistedFoods.includes(item)) return;
+                          setPreferredProteins((prev) =>
+                            prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+                          );
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
+                          blacklistedFoods.includes(item)
+                            ? "bg-red-500/10 border-red-500/30 text-red-400/50 line-through cursor-not-allowed"
+                            : preferredProteins.includes(item)
+                            ? "bg-blue-500/20 border-blue-500/50 text-blue-400"
+                            : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-blue-500/30"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Carb Sources */}
+                <div>
+                  <label className="label-field">Primary Carb Sources</label>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {CARB_SOURCES.map((item) => (
+                      <button
+                        key={item}
+                        onClick={() => {
+                          if (blacklistedFoods.includes(item)) return;
+                          setPreferredCarbs((prev) =>
+                            prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+                          );
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
+                          blacklistedFoods.includes(item)
+                            ? "bg-red-500/10 border-red-500/30 text-red-400/50 line-through cursor-not-allowed"
+                            : preferredCarbs.includes(item)
+                            ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
+                            : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-amber-500/30"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Fat Sources */}
+                <div>
+                  <label className="label-field">Primary Fat Sources</label>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {FAT_SOURCES.map((item) => (
+                      <button
+                        key={item}
+                        onClick={() => {
+                          if (blacklistedFoods.includes(item)) return;
+                          setPreferredFats((prev) =>
+                            prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+                          );
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
+                          blacklistedFoods.includes(item)
+                            ? "bg-red-500/10 border-red-500/30 text-red-400/50 line-through cursor-not-allowed"
+                            : preferredFats.includes(item)
+                            ? "bg-rose-500/20 border-rose-500/50 text-rose-400"
+                            : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-rose-500/30"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Blacklisted Foods */}
+                <div>
+                  <label className="label-field">Blacklist (never include)</label>
+                  <p className="text-[10px] text-jungle-dim mt-0.5 mb-2">
+                    Long-press or click any food above, then tap here to blacklist it
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...PROTEIN_SOURCES, ...CARB_SOURCES, ...FAT_SOURCES]
+                      .filter((f) => !preferredProteins.includes(f) && !preferredCarbs.includes(f) && !preferredFats.includes(f))
+                      .map((item) => (
+                        <button
+                          key={item}
+                          onClick={() =>
+                            setBlacklistedFoods((prev) =>
+                              prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+                            )
+                          }
+                          className={`px-2 py-1 rounded-lg text-[10px] font-medium border transition-colors ${
+                            blacklistedFoods.includes(item)
+                              ? "bg-red-500/20 border-red-500/50 text-red-400"
+                              : "bg-jungle-deeper border-jungle-border text-jungle-dim hover:border-red-500/30"
+                          }`}
+                        >
+                          {blacklistedFoods.includes(item) ? "✕ " : ""}{item}
+                        </button>
+                      ))}
+                  </div>
                 </div>
               </div>
 

@@ -77,6 +77,9 @@ export default function OnboardingPage() {
   const [intraWorkoutNutrition, setIntraWorkoutNutrition] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [cardioMachine, setCardioMachine] = useState("treadmill");
+  const [preferredProteins, setPreferredProteins] = useState<string[]>([]);
+  const [preferredCarbs, setPreferredCarbs] = useState<string[]>([]);
+  const [preferredFats, setPreferredFats] = useState<string[]>([]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -160,6 +163,9 @@ export default function OnboardingPage() {
           intra_workout_nutrition: intraWorkoutNutrition,
           display_name: displayName,
           cardio_machine: cardioMachine,
+          preferred_proteins: preferredProteins,
+          preferred_carbs: preferredCarbs,
+          preferred_fats: preferredFats,
         });
       } else if (step === 5) {
         await api.post("/onboarding/complete");
@@ -410,6 +416,48 @@ export default function OnboardingPage() {
                   <option value="treadmill">Treadmill</option>
                   <option value="stairmaster">StairMaster</option>
                 </select>
+              </div>
+
+              {/* Food Source Preferences */}
+              <div className="border-t border-jungle-border pt-4 mt-4">
+                <h3 className="text-sm font-semibold text-jungle-accent mb-1">Food Preferences</h3>
+                <p className="text-[10px] text-jungle-dim mb-3">Select your go-to sources. You can change these later in Settings.</p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="label-field text-[11px]">Protein Sources</label>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {["Chicken Breast", "Turkey Breast", "Lean Ground Beef", "Flank Steak", "Tilapia", "Cod", "Salmon", "Shrimp", "Egg Whites", "Greek Yogurt (nonfat)", "Tofu (firm)", "Tempeh"].map((item) => (
+                        <button key={item} type="button" onClick={() => setPreferredProteins((p) => p.includes(item) ? p.filter((x) => x !== item) : [...p, item])}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-medium border transition-colors ${
+                            preferredProteins.includes(item) ? "bg-blue-500/20 border-blue-500/50 text-blue-400" : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-blue-500/30"
+                          }`}>{item}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label-field text-[11px]">Carb Sources</label>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {["White Rice", "Jasmine Rice", "Brown Rice", "Oats (rolled)", "Cream of Rice", "Sweet Potato", "Red Potato (boiled)", "Quinoa"].map((item) => (
+                        <button key={item} type="button" onClick={() => setPreferredCarbs((p) => p.includes(item) ? p.filter((x) => x !== item) : [...p, item])}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-medium border transition-colors ${
+                            preferredCarbs.includes(item) ? "bg-amber-500/20 border-amber-500/50 text-amber-400" : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-amber-500/30"
+                          }`}>{item}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label-field text-[11px]">Fat Sources</label>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {["Extra Virgin Olive Oil", "Avocado", "Almonds", "Peanut Butter", "Almond Butter", "Coconut Oil"].map((item) => (
+                        <button key={item} type="button" onClick={() => setPreferredFats((p) => p.includes(item) ? p.filter((x) => x !== item) : [...p, item])}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-medium border transition-colors ${
+                            preferredFats.includes(item) ? "bg-rose-500/20 border-rose-500/50 text-rose-400" : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-rose-500/30"
+                          }`}>{item}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
