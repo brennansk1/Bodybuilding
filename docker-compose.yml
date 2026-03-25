@@ -61,6 +61,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: ${BUILD_TARGET:-production}
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
     restart: unless-stopped
     ports:
       - "3001:3000"
