@@ -21,7 +21,7 @@ from app.models.user import User
 from app.models.profile import UserProfile
 
 logger = logging.getLogger(__name__)
-_pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ADMIN_EMAIL = "coronado@admin.dev"
 ADMIN_PASSWORD = "coronado2024!"
