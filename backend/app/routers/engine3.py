@@ -830,6 +830,10 @@ async def _build_meal_plan_for_day(
         is_training_day=is_training,
         is_refeed=False,
         dietary_restrictions=dietary_restrictions,
+        preferred_proteins=prefs.get("preferred_proteins", []),
+        preferred_carbs=prefs.get("preferred_carbs", []),
+        preferred_fats=prefs.get("preferred_fats", []),
+        blacklisted_foods=prefs.get("blacklisted_foods", []),
     )
 
 

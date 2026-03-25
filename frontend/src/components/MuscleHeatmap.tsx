@@ -32,15 +32,15 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: Mus
     traps:        siteScores.shoulders, // fallback for traps
     // Lats/Back: back_width is the primary metric for width
     lats:         siteScores.back_width,
-    lowerBack:    siteScores.waist, // fallback to waist/core
+    lowerBack:    undefined, // excluded from gap calculation
     rotatorCuffs: siteScores.shoulders, // fallback to shoulders
     // Arms: bicep measurement typically covers upper arm mass
     biceps:       siteScores.bicep,
     triceps:      siteScores.bicep,
     forearms:     siteScores.forearm,
-    // Midsection
-    abs:          siteScores.waist,
-    obliques:     siteScores.waist,
+    // Midsection — excluded from gap calculation, show as neutral
+    abs:          undefined,
+    obliques:     undefined,
     // Lower Body
     glutes:       siteScores.hips,
     adductors:    avg(siteScores.proximal_thigh, siteScores.distal_thigh) ?? siteScores.thigh,
@@ -54,13 +54,28 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: Mus
   };
 
   function scoreToColor(score: number | undefined): string {
-    if (score === undefined || score === null) return "#52525b"; // grey for missing data
-    if (score > 105) return "#a855f7";      // purple — over-developed
-    if (score >= 95) return "#22c55e";      // green — at/above ideal
-    if (score >= 85) return "#86efac";      // light green — near ideal
-    if (score >= 70) return "#eab308";      // yellow — on track
-    if (score >= 50) return "#f97316";      // orange — developing
-    return "#ef4444";                       // red — major gap
+    if (score === undefined || score === null) return "#52525b"; // grey — not measured
+    // Continuous gradient: red → orange → yellow → lime → green
+    const clamped = Math.max(0, Math.min(score, 110));
+    const stops: [number, [number, number, number]][] = [
+      [0,   [220, 38, 38]],   // red
+      [50,  [234, 88, 12]],   // orange
+      [70,  [234, 179, 8]],   // yellow
+      [85,  [132, 204, 22]],  // lime
+      [95,  [34, 197, 94]],   // green
+      [110, [16, 185, 129]],  // emerald
+    ];
+    let lo = stops[0], hi = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (clamped >= stops[i][0] && clamped <= stops[i + 1][0]) {
+        lo = stops[i]; hi = stops[i + 1]; break;
+      }
+    }
+    const t = hi[0] === lo[0] ? 1 : (clamped - lo[0]) / (hi[0] - lo[0]);
+    const r = Math.round(lo[1][0] + t * (hi[1][0] - lo[1][0]));
+    const g = Math.round(lo[1][1] + t * (hi[1][1] - lo[1][1]));
+    const b = Math.round(lo[1][2] + t * (hi[1][2] - lo[1][2]));
+    return `rgb(${r},${g},${b})`;
   }
 
   function getMuscleColor(muscleId: string): string {
@@ -98,20 +113,26 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: Mus
         )}
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center justify-center gap-3 mt-2 flex-wrap text-[9px]">
-        {[
-          { color: "#ef4444", label: "Major Gap (<50%)" },
-          { color: "#f97316", label: "Developing (50-70%)" },
-          { color: "#eab308", label: "On Track (70-85%)" },
-          { color: "#86efac", label: "Near Ideal (85-95%)" },
-          { color: "#22c55e", label: "At/Above Ideal (95%+)" },
-        ].map(({ color, label }) => (
-          <span key={label} className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: color }} />
-            <span className="text-jungle-dim">{label}</span>
-          </span>
-        ))}
+      {/* Legend — continuous gradient bar */}
+      <div className="mt-2 space-y-1">
+        <div className="h-2 rounded-full w-full" style={{
+          background: "linear-gradient(to right, rgb(220,38,38), rgb(234,88,12) 45%, rgb(234,179,8) 64%, rgb(132,204,22) 77%, rgb(34,197,94) 86%, rgb(16,185,129))"
+        }} />
+        <div className="flex justify-between text-[9px] text-jungle-dim px-0.5">
+          {[
+            { label: "0%", sub: "Gap" },
+            { label: "50%" },
+            { label: "70%" },
+            { label: "85%" },
+            { label: "95%" },
+            { label: "110%", sub: "Ideal" },
+          ].map(({ label, sub }) => (
+            <span key={label} className="text-center leading-tight">
+              <span>{label}</span>
+              {sub && <span className="block text-jungle-accent/60">{sub}</span>}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Avg % of Ideal banner */}

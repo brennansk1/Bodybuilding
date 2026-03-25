@@ -24,6 +24,14 @@ export default function CheckinPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
 
+  // Unit preference
+  const [useLbs, setUseLbs] = useState(false);
+  useEffect(() => {
+    setUseLbs(localStorage.getItem("useLbs") === "true");
+  }, []);
+  const unit = useLbs ? "lbs" : "kg";
+  const toKg = (val: number) => useLbs ? val / 2.20462 : val;
+
   // Quick mode state
   const [quickWeight, setQuickWeight] = useState("");
   const [quickRmssd, setQuickRmssd] = useState("");
@@ -176,7 +184,7 @@ export default function CheckinPage() {
     setQuickError("");
     try {
       const res = await api.post<QuickCheckinResult>("/checkin/daily", {
-        body_weight_kg: quickWeight ? parseFloat(quickWeight) : undefined,
+        body_weight_kg: quickWeight ? toKg(parseFloat(quickWeight)) : undefined,
         rmssd: quickRmssd ? parseFloat(quickRmssd) : undefined,
         resting_hr: quickRestingHr ? parseFloat(quickRestingHr) : undefined,
         sleep_quality: parseFloat(quickSleep),
@@ -234,7 +242,7 @@ export default function CheckinPage() {
         // ── Standard full check-in ──
         // 1. Submit Daily touchpoint (weight + HRV + adherence)
         await api.post("/checkin/daily", {
-          body_weight_kg: bodyWeight ? parseFloat(bodyWeight) : undefined,
+          body_weight_kg: bodyWeight ? toKg(parseFloat(bodyWeight)) : undefined,
           rmssd: rmssd ? parseFloat(rmssd) : undefined,
           resting_hr: restingHr ? parseFloat(restingHr) : undefined,
           sleep_quality: parseFloat(sleepQuality),
@@ -520,7 +528,7 @@ export default function CheckinPage() {
                   {quickResult.weight_kg !== undefined && (
                     <div className="bg-jungle-deeper rounded-lg p-3 text-center">
                       <p className="text-[10px] text-jungle-muted uppercase tracking-wider">Weight</p>
-                      <p className="text-xl font-bold text-jungle-accent mt-1">{quickResult.weight_kg}kg</p>
+                      <p className="text-xl font-bold text-jungle-accent mt-1">{useLbs ? (quickResult.weight_kg! * 2.20462).toFixed(1) : quickResult.weight_kg}{unit}</p>
                     </div>
                   )}
                   {quickResult.ari_score !== undefined && (
@@ -588,7 +596,7 @@ export default function CheckinPage() {
                   <>
                     <h2 className="text-lg font-semibold">Biological Data</h2>
                     <div>
-                      <label className="label-field">Body Weight (kg)</label>
+                      <label className="label-field">Body Weight ({unit})</label>
                       <input type="number" step="0.1" value={bodyWeight} onChange={(e) => setBodyWeight(e.target.value)} className="input-field" placeholder="90.0" />
                     </div>
                     <h3 className="text-sm font-semibold text-jungle-accent uppercase tracking-wide pt-2">Tape (cm)</h3>
@@ -887,7 +895,7 @@ export default function CheckinPage() {
                       ) : !result.ari ? (
                         <div className="card text-center">
                           <p className="text-[10px] text-jungle-muted uppercase tracking-wider mb-1">Body Weight</p>
-                          <p className="text-2xl font-bold">{result.body_weight_kg as number}kg</p>
+                          <p className="text-2xl font-bold">{useLbs ? ((result.body_weight_kg as number) * 2.20462).toFixed(1) : String(result.body_weight_kg)}{unit}</p>
                         </div>
                       ) : null}
                     </div>

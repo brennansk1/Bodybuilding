@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PlateLoadingSVG from "@/components/PlateLoadingSVG";
 import { api } from "@/lib/api";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -304,6 +305,22 @@ export default function TrainingPage() {
   const [machineTaken, setMachineTaken] = useState<Set<string>>(new Set());
   const [altLog, setAltLog] = useState<Record<string, { name: string; weight: string; reps: string; rpe: string; logged: boolean }>>({});
 
+  // ── Day navigation ──
+  const [viewOffset, setViewOffset] = useState(0); // 0 = today, +1 = tomorrow, -1 = yesterday
+  const viewDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + viewOffset);
+    return d.toISOString().split("T")[0];
+  })();
+  const isToday = viewOffset === 0;
+  const viewLabel = isToday
+    ? "Today"
+    : viewOffset === 1
+    ? "Tomorrow"
+    : viewOffset === -1
+    ? "Yesterday"
+    : new Date(viewDate).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
   // ── Gym mode & Unit ──
   const [gymMode, setGymMode] = useState(false);
   const [useLbs, setUseLbs] = useState(false);
@@ -376,7 +393,7 @@ export default function TrainingPage() {
     if (user) {
       api.get<Program>("/engine2/program/current").then(setProgram).catch(() => {});
       api.get<StrengthEntry[]>("/engine2/strength-log?limit=10").then(setStrengthLog).catch(() => {});
-      api.get<TrainingSession>(`/engine2/session/${today}`)
+      api.get<TrainingSession>(`/engine2/session/${viewDate}`)
         .then((s) => {
           setSession(s);
           const lbs = localStorage.getItem("useLbs") === "true";
@@ -424,7 +441,7 @@ export default function TrainingPage() {
         })
         .catch(() => {});
     }
-  }, [user, loading, router, today]);
+  }, [user, loading, router, viewDate, today]);
 
   // ── Rest timer countdown ──
   useEffect(() => {
@@ -660,9 +677,37 @@ export default function TrainingPage() {
           {/* Header */}
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold">
-                <span className="text-jungle-accent">Training</span>
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold">
+                  <span className="text-jungle-accent">Training</span>
+                </h1>
+                <div className="flex items-center gap-1 ml-2">
+                  <button
+                    onClick={() => setViewOffset((o) => o - 1)}
+                    className="w-7 h-7 rounded-lg bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent hover:border-jungle-accent flex items-center justify-center text-sm transition-colors"
+                    aria-label="Previous day"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    onClick={() => setViewOffset(0)}
+                    className={`px-2 h-7 rounded-lg text-[11px] font-medium transition-colors ${
+                      isToday
+                        ? "bg-jungle-accent/20 text-jungle-accent border border-jungle-accent/30"
+                        : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent"
+                    }`}
+                  >
+                    {viewLabel}
+                  </button>
+                  <button
+                    onClick={() => setViewOffset((o) => o + 1)}
+                    className="w-7 h-7 rounded-lg bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent hover:border-jungle-accent flex items-center justify-center text-sm transition-colors"
+                    aria-label="Next day"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
               {program ? (
                 <p className="text-jungle-muted text-xs mt-0.5 truncate">
                   {program.name} — Wk {program.current_week}/{program.mesocycle_weeks} · {program.split_type} · {program.days_per_week}d/wk
@@ -694,6 +739,13 @@ export default function TrainingPage() {
               </button>
             </div>
           </div>
+
+          {/* Read-only banner for non-today views */}
+          {!isToday && session && (
+            <div className="bg-jungle-accent/10 border border-jungle-accent/20 rounded-xl px-4 py-2 text-center">
+              <p className="text-jungle-accent text-xs font-medium">Viewing {viewLabel}&apos;s workout — read only</p>
+            </div>
+          )}
 
           {/* No program */}
           {!program && (
@@ -881,7 +933,8 @@ export default function TrainingPage() {
                             inputMode="decimal"
                             value={sets[currentSet.id]?.weight || ""}
                             onChange={(e) => logSet(currentSet.id, "weight", e.target.value)}
-                            className="input-field text-base py-3 text-center font-semibold"
+                            disabled={!isToday}
+                            className="input-field text-base py-3 text-center font-semibold disabled:opacity-50"
                             placeholder="0"
                           />
                         </div>
@@ -894,7 +947,8 @@ export default function TrainingPage() {
                             inputMode="numeric"
                             value={sets[currentSet.id]?.reps || ""}
                             onChange={(e) => logSet(currentSet.id, "reps", e.target.value)}
-                            className="input-field text-base py-3 text-center font-semibold"
+                            disabled={!isToday}
+                            className="input-field text-base py-3 text-center font-semibold disabled:opacity-50"
                             placeholder={String(currentSet.prescribed_reps)}
                           />
                         </div>
@@ -910,20 +964,31 @@ export default function TrainingPage() {
                             inputMode="decimal"
                             value={sets[currentSet.id]?.rpe || ""}
                             onChange={(e) => logSet(currentSet.id, "rpe", e.target.value)}
-                            className={`${rpeClass(sets[currentSet.id]?.rpe || "")} text-base py-3 text-center font-semibold`}
+                            disabled={!isToday}
+                            className={`${rpeClass(sets[currentSet.id]?.rpe || "")} text-base py-3 text-center font-semibold disabled:opacity-50`}
                             placeholder="RPE"
                           />
                         </div>
                       </div>
 
                       {/* Plates link */}
-                      {isBarbell && currentWeight && (
-                        <button
-                          onClick={() => setPlateCalc({ open: true, weight: parseFloat(currentWeight) || 0 })}
-                          className="text-xs text-jungle-dim hover:text-jungle-accent transition-colors"
-                        >
-                          🏋️ View plates
-                        </button>
+                      {/* Plate loading visual */}
+                      {currentWeight && currentSet.equipment && (
+                        <div className="flex flex-col items-center gap-1">
+                          <PlateLoadingSVG
+                            targetWeight={parseFloat(currentWeight) || 0}
+                            equipment={currentSet.equipment}
+                            useLbs={useLbs}
+                          />
+                          {isBarbell && (
+                            <button
+                              onClick={() => setPlateCalc({ open: true, weight: parseFloat(currentWeight) || 0 })}
+                              className="text-[10px] text-jungle-dim hover:text-jungle-accent transition-colors"
+                            >
+                              Expand calculator
+                            </button>
+                          )}
+                        </div>
                       )}
 
                       {/* Set Done button */}
@@ -1126,7 +1191,8 @@ export default function TrainingPage() {
                                         inputMode="decimal"
                                         value={sets[set.id]?.weight || ""}
                                         onChange={(e) => logSet(set.id, "weight", e.target.value)}
-                                        className="input-field text-sm py-2.5 flex-1 min-w-0"
+                                        disabled={!isToday}
+                                        className="input-field text-sm py-2.5 flex-1 min-w-0 disabled:opacity-50"
                                         placeholder={unit}
                                       />
                                     </div>
@@ -1140,7 +1206,8 @@ export default function TrainingPage() {
                                       inputMode="numeric"
                                       value={sets[set.id]?.reps || ""}
                                       onChange={(e) => logSet(set.id, "reps", e.target.value)}
-                                      className="input-field text-sm py-2.5"
+                                      disabled={!isToday}
+                                      className="input-field text-sm py-2.5 disabled:opacity-50"
                                       placeholder="reps"
                                     />
                                   </div>
@@ -1156,7 +1223,8 @@ export default function TrainingPage() {
                                       inputMode="decimal"
                                       value={sets[set.id]?.rpe || ""}
                                       onChange={(e) => logSet(set.id, "rpe", e.target.value)}
-                                      className={rpeClass(sets[set.id]?.rpe || "")}
+                                      disabled={!isToday}
+                                      className={`${rpeClass(sets[set.id]?.rpe || "")} disabled:opacity-50`}
                                       placeholder="RPE"
                                     />
                                   </div>
@@ -1341,7 +1409,7 @@ export default function TrainingPage() {
             {/* Save button */}
             <button
               onClick={saveSession}
-              disabled={saving}
+              disabled={saving || !isToday}
               className={`px-5 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50 ${
                 allWorkingSetsComplete
                   ? "bg-jungle-accent text-jungle-dark"
