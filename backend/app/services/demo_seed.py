@@ -30,7 +30,7 @@ from app.models.diagnostic import LCSALog, PDSLog, HQILog
 from app.models.nutrition import NutritionPrescription, AdherenceLog, WeeklyCheckin
 
 logger = logging.getLogger(__name__)
-_pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 DEMO_EMAIL = "admin@coronado.dev"
 DEMO_PASSWORD = "admin123"
