@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -14,7 +15,7 @@ from app.models.user import User
 from app.models.profile import UserProfile
 from app.models.training import (
     TrainingProgram, TrainingSession, TrainingSet,
-    HRVLog, ARILog, Exercise,
+    HRVLog, ARILog, Exercise, StrengthLog,
 )
 from app.models.diagnostic import HQILog
 from app.services.training import generate_program_sessions, DEFAULT_VOLUME
@@ -446,12 +447,15 @@ async def get_session(
     )
     session = result.scalar_one_or_none()
     if not session:
-        # Fall back to any session on that date
+        # Fall back to any session on that date, but ONLY from programs that
+        # were active (not orphaned sessions from old deactivated programs).
+        # Completed sessions are always visible (historical data).
         result = await db.execute(
             select(TrainingSession)
             .where(
                 TrainingSession.user_id == user.id,
                 TrainingSession.session_date == resolved,
+                TrainingSession.completed == True,
             )
             .order_by(desc(TrainingSession.created_at))
             .limit(1)
@@ -944,6 +948,139 @@ async def create_custom_exercise(
         "is_custom": True,
         "message": "Custom exercise created",
     }
+
+
+# ---------------------------------------------------------------------------
+# Volume history — weekly working sets per muscle group (last 8 weeks)
+# ---------------------------------------------------------------------------
+
+@router.get("/volume-history")
+async def get_volume_history(
+    weeks: int = 8,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return weekly volume (total working sets) per muscle group for the last N weeks.
+    Queries training_sessions → training_sets → exercises, grouped by week_number and
+    exercise.primary_muscle. Only completed sessions with non-warmup sets are counted.
+    """
+    weeks = max(1, min(weeks, 52))
+
+    # Find the maximum week_number for this user's completed sessions
+    max_week_result = await db.execute(
+        select(func.max(TrainingSession.week_number))
+        .where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.completed == True,
+        )
+    )
+    max_week = max_week_result.scalar()
+    if max_week is None:
+        return {"weeks": []}
+
+    min_week = max(1, max_week - weeks + 1)
+
+    # Query: join sessions → sets → exercises, filter completed + non-warmup
+    rows = await db.execute(
+        select(
+            TrainingSession.week_number,
+            Exercise.primary_muscle,
+            func.count(TrainingSet.id).label("set_count"),
+        )
+        .join(TrainingSet, TrainingSet.session_id == TrainingSession.id)
+        .join(Exercise, TrainingSet.exercise_id == Exercise.id)
+        .where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.completed == True,
+            TrainingSession.week_number >= min_week,
+            TrainingSession.week_number <= max_week,
+            TrainingSet.is_warmup == False,
+        )
+        .group_by(TrainingSession.week_number, Exercise.primary_muscle)
+        .order_by(TrainingSession.week_number)
+    )
+    result_rows = rows.all()
+
+    # Aggregate into per-week structures
+    week_data: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for week_number, muscle, set_count in result_rows:
+        week_data[week_number][muscle] += set_count
+
+    output_weeks = []
+    for wk in range(min_week, max_week + 1):
+        by_muscle = dict(week_data.get(wk, {}))
+        total_sets = sum(by_muscle.values())
+        output_weeks.append({
+            "week_number": wk,
+            "total_sets": total_sets,
+            "by_muscle": by_muscle,
+        })
+
+    return {"weeks": output_weeks}
+
+
+# ---------------------------------------------------------------------------
+# Strength history — estimated 1RM over time for top exercises
+# ---------------------------------------------------------------------------
+
+@router.get("/strength-history")
+async def get_strength_history_top(
+    top_n: int = 5,
+    entries_per_exercise: int = 12,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return estimated 1RM history for the top N most-logged exercises.
+    Queries strength_log joined with exercises, returning the last M entries
+    per exercise, ordered by date descending.
+    """
+    top_n = max(1, min(top_n, 20))
+    entries_per_exercise = max(1, min(entries_per_exercise, 50))
+
+    # Step 1: Find the top N most-logged exercises for this user
+    top_exercises_result = await db.execute(
+        select(
+            Exercise.id,
+            Exercise.name,
+            func.count(StrengthLog.id).label("log_count"),
+        )
+        .join(StrengthLog, StrengthLog.exercise_id == Exercise.id)
+        .where(StrengthLog.user_id == user.id)
+        .group_by(Exercise.id, Exercise.name)
+        .order_by(func.count(StrengthLog.id).desc())
+        .limit(top_n)
+    )
+    top_exercises = top_exercises_result.all()
+
+    if not top_exercises:
+        return {"exercises": {}}
+
+    # Step 2: For each top exercise, fetch the last N entries
+    exercises_output: dict[str, list] = {}
+    for ex_id, ex_name, _count in top_exercises:
+        entries_result = await db.execute(
+            select(StrengthLog)
+            .where(
+                StrengthLog.user_id == user.id,
+                StrengthLog.exercise_id == ex_id,
+            )
+            .order_by(desc(StrengthLog.recorded_date), desc(StrengthLog.created_at))
+            .limit(entries_per_exercise)
+        )
+        entries = entries_result.scalars().all()
+        exercises_output[ex_name] = [
+            {
+                "date": str(e.recorded_date),
+                "estimated_1rm": e.estimated_1rm,
+                "weight_kg": e.weight_kg,
+                "reps": e.reps,
+            }
+            for e in entries
+        ]
+
+    return {"exercises": exercises_output}
 
 
 # ---------------------------------------------------------------------------

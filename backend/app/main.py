@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 
 from fastapi import FastAPI, Request
@@ -9,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from app.config import settings
 from app.database import engine, Base, async_session
 from app.models import *  # noqa: F401, F403 — register all models with Base
-from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload
+from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,14 @@ async def lifespan(app: FastAPI):
             created = await seed_demo_admin(db)
             await db.commit()
 
+    # Start background cron maintenance (every 6 hours)
+    from app.services.cron import cron_loop
+    cron_task = asyncio.create_task(cron_loop(interval_seconds=21600))
+    logger.info("Background cron started (6h interval)")
+
     yield
+
+    cron_task.cancel()
     await engine.dispose()
 
 
@@ -158,6 +166,7 @@ app.include_router(engine3.router, prefix="/api/v1")
 app.include_router(viz.router, prefix="/api/v1")
 app.include_router(export.router, prefix="/api/v1")
 app.include_router(upload.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 
 import os
 from fastapi.staticfiles import StaticFiles

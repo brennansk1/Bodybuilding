@@ -174,7 +174,12 @@ def _build_time_slots(
 
 
 def _mins_to_time(mins: int) -> str:
-    return f"{(mins // 60) % 24:02d}:{mins % 60:02d}"
+    """Convert minutes since midnight to 12-hour format (e.g. '7:30 AM')."""
+    h = (mins // 60) % 24
+    m = mins % 60
+    period = "AM" if h < 12 else "PM"
+    display_h = h if 1 <= h <= 12 else (h - 12 if h > 12 else 12)
+    return f"{display_h}:{m:02d} {period}"
 
 
 # ─── Main generator ─────────────────────────────────────────────────────────
@@ -259,11 +264,17 @@ def generate_meal_plan(
     slots = _build_time_slots(meal_count, training_start_time, training_duration_min, is_training_day)
 
     # Distribute macros across meals
+    #
+    # Coach principle: peri-workout window (pre + post) receives the LARGEST
+    # carbohydrate allocation to fuel training and drive recovery. Fat is
+    # isolated AWAY from peri-workout for gastric emptying speed. Protein
+    # is distributed evenly across all meals for MPS optimization.
     peri_count = sum(1 for _, _, p in slots if p)
     non_peri_count = len(slots) - peri_count
 
-    # Peri-workout gets carb priority, fat isolation
-    peri_carb_total = carbs_g * peri_workout_carb_pct if is_training_day else 0
+    # Peri-workout gets 40-50% of carbs (up from old 35% default)
+    effective_peri_pct = max(peri_workout_carb_pct, 0.40) if is_training_day else 0
+    peri_carb_total = carbs_g * effective_peri_pct if is_training_day else 0
     other_carb_total = carbs_g - peri_carb_total
 
     per_meal_protein = protein_g / len(slots)

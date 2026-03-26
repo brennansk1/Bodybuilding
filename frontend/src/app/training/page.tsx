@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import PlateLoadingSVG from "@/components/PlateLoadingSVG";
+import SessionProgressRing from "@/components/SessionProgressRing";
 import { api } from "@/lib/api";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -310,7 +311,11 @@ export default function TrainingPage() {
   const viewDate = (() => {
     const d = new Date();
     d.setDate(d.getDate() + viewOffset);
-    return d.toISOString().split("T")[0];
+    // Build YYYY-MM-DD in local timezone (not UTC) to avoid timezone shift
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
   })();
   const isToday = viewOffset === 0;
   const viewLabel = isToday
@@ -319,7 +324,7 @@ export default function TrainingPage() {
     ? "Tomorrow"
     : viewOffset === -1
     ? "Yesterday"
-    : new Date(viewDate).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    : new Date(viewDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
   // ── Gym mode & Unit ──
   const [gymMode, setGymMode] = useState(false);
@@ -338,7 +343,10 @@ export default function TrainingPage() {
   const [progressToast, setProgressToast] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState(false);
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
 
   // Auto-save workout progress to localStorage (survives logout/phone-off)
   useEffect(() => {
@@ -393,6 +401,14 @@ export default function TrainingPage() {
     if (user) {
       api.get<Program>("/engine2/program/current").then(setProgram).catch(() => {});
       api.get<StrengthEntry[]>("/engine2/strength-log?limit=10").then(setStrengthLog).catch(() => {});
+      // Reset session state before fetching new date
+      setSession(null);
+      setSets({});
+      setPreviousSets({});
+      setCompletedSets({});
+      setExpandedExercise(null);
+      setNowPlaying(false);
+
       api.get<TrainingSession>(`/engine2/session/${viewDate}`)
         .then((s) => {
           setSession(s);
@@ -420,9 +436,8 @@ export default function TrainingPage() {
             const savedSets = localStorage.getItem("cpos_workout_sets");
             if (savedSets) {
               const parsed = JSON.parse(savedSets);
-              if (parsed._date === today) {
+              if (parsed._date === viewDate) {
                 const { _date, ...restored } = parsed;
-                // Override API defaults with user's in-progress edits
                 for (const [id, data] of Object.entries(restored)) {
                   if (initial[id]) {
                     initial[id] = data as { reps: string; weight: string; rpe: string };
@@ -435,11 +450,13 @@ export default function TrainingPage() {
           setSets(initial);
           setPreviousSets(prevData);
 
-          // Auto-expand first exercise
           const firstEx = s.sets.find((st) => !st.is_warmup);
           if (firstEx) setExpandedExercise(firstEx.exercise_name);
         })
-        .catch(() => {});
+        .catch(() => {
+          // 404 = no session this day (rest day) — session stays null
+          setSession(null);
+        });
     }
   }, [user, loading, router, viewDate, today]);
 
@@ -770,36 +787,35 @@ export default function TrainingPage() {
             <>
               {/* Session info bar */}
               <div className={`card py-3 ${gymMode ? "gym-mode" : ""}`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-semibold capitalize text-base">
-                      {session.session_type.replace(/_/g, " ")} Day
-                    </h2>
-                    <p className="text-jungle-dim text-[11px]">
-                      Wk {session.week_number} · Day {session.day_number} · {totalCount} working sets
-                    </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <SessionProgressRing completed={completedCount} total={totalCount} size={gymMode ? 56 : 48} />
+                    <div className="min-w-0">
+                      <h2 className="font-semibold capitalize text-base truncate">
+                        {session.session_type.replace(/_/g, " ")} Day
+                      </h2>
+                      <p className="text-jungle-dim text-[11px]">
+                        Wk {session.week_number} · {completedCount}/{totalCount} sets
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                        session.completed
-                          ? "bg-green-500/20 text-green-400"
-                          : "bg-jungle-accent/20 text-jungle-accent"
-                      }`}
-                    >
-                      {session.completed ? "Done" : `${completedCount}/${totalCount}`}
-                    </span>
-                    {!session.completed && totalCount > 0 && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isToday && !session.completed && totalCount > 0 && (
                       <button
                         onClick={nowPlaying ? () => setNowPlaying(false) : startNowPlaying}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                           nowPlaying
                             ? "bg-jungle-deeper border border-jungle-border text-jungle-dim"
-                            : "bg-jungle-accent text-jungle-dark"
+                            : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover active:scale-95"
                         }`}
                       >
                         {nowPlaying ? "Overview" : "▶ Start"}
                       </button>
+                    )}
+                    {session.completed && (
+                      <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-green-500/20 text-green-400">
+                        Complete
+                      </span>
                     )}
                   </div>
                 </div>
@@ -921,7 +937,7 @@ export default function TrainingPage() {
                         </div>
                       )}
 
-                      {/* Inputs */}
+                      {/* Inputs — large tap targets for gym use */}
                       <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label className="text-[10px] text-jungle-dim uppercase tracking-wider block mb-1">
@@ -934,7 +950,7 @@ export default function TrainingPage() {
                             value={sets[currentSet.id]?.weight || ""}
                             onChange={(e) => logSet(currentSet.id, "weight", e.target.value)}
                             disabled={!isToday}
-                            className="input-field text-base py-3 text-center font-semibold disabled:opacity-50"
+                            className="input-field text-lg py-3.5 text-center font-bold disabled:opacity-50"
                             placeholder="0"
                           />
                         </div>
@@ -948,7 +964,7 @@ export default function TrainingPage() {
                             value={sets[currentSet.id]?.reps || ""}
                             onChange={(e) => logSet(currentSet.id, "reps", e.target.value)}
                             disabled={!isToday}
-                            className="input-field text-base py-3 text-center font-semibold disabled:opacity-50"
+                            className="input-field text-lg py-3.5 text-center font-bold disabled:opacity-50"
                             placeholder={String(currentSet.prescribed_reps)}
                           />
                         </div>
@@ -965,9 +981,15 @@ export default function TrainingPage() {
                             value={sets[currentSet.id]?.rpe || ""}
                             onChange={(e) => logSet(currentSet.id, "rpe", e.target.value)}
                             disabled={!isToday}
-                            className={`${rpeClass(sets[currentSet.id]?.rpe || "")} text-base py-3 text-center font-semibold disabled:opacity-50`}
+                            className={`${rpeClass(sets[currentSet.id]?.rpe || "")} text-lg py-3.5 text-center font-bold disabled:opacity-50`}
                             placeholder="RPE"
                           />
+                          {/* RIR indicator */}
+                          {sets[currentSet.id]?.rpe && parseFloat(sets[currentSet.id].rpe) > 0 && (
+                            <p className="text-[9px] text-jungle-dim text-center mt-1">
+                              RIR: {Math.max(0, 10 - parseFloat(sets[currentSet.id].rpe)).toFixed(0)}
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -991,16 +1013,16 @@ export default function TrainingPage() {
                         </div>
                       )}
 
-                      {/* Set Done button */}
+                      {/* Set Done button — extra large for gym use */}
                       <button
                         onClick={() => isCompleted ? markSetDone(currentSet) : markSetDoneNowPlaying(currentSet)}
-                        className={`w-full py-4 rounded-xl text-base font-bold transition-all ${
+                        className={`set-done-btn w-full py-5 rounded-2xl text-lg font-bold transition-all ${
                           isCompleted
-                            ? "bg-green-500/20 text-green-400 border-2 border-green-500/30"
-                            : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent/90 active:scale-95"
+                            ? "bg-green-500/20 text-green-400 border-2 border-green-500/30 active:scale-95"
+                            : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover active:scale-[0.97] shadow-lg shadow-jungle-accent/20"
                         }`}
                       >
-                        {isCompleted ? "✓ Set Done — Tap to Undo" : "Set Done ▶"}
+                        {isCompleted ? "✓ Done — Tap to Undo" : "Log Set ▶"}
                       </button>
                     </div>
 
@@ -1089,19 +1111,21 @@ export default function TrainingPage() {
                       {/* Expanded content */}
                       {isExpanded && (
                         <div className="px-4 pb-4 space-y-2">
-                          {/* Machine taken toggle */}
-                          <div className="flex gap-2 mb-1">
-                            <button
-                              onClick={() => toggleMachineTaken(name)}
-                              className={`text-[10px] px-2.5 py-1 rounded-lg border transition-colors ${
-                                isMachineTaken
-                                  ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400"
-                                  : "border-jungle-border text-jungle-dim hover:border-yellow-500/40"
-                              }`}
-                            >
-                              {isMachineTaken ? "Cancel Sub" : "Machine Taken?"}
-                            </button>
-                          </div>
+                          {/* Machine taken toggle — only when today */}
+                          {isToday && (
+                            <div className="flex gap-2 mb-1">
+                              <button
+                                onClick={() => toggleMachineTaken(name)}
+                                className={`text-[10px] px-2.5 py-1 rounded-lg border transition-colors ${
+                                  isMachineTaken
+                                    ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400"
+                                    : "border-jungle-border text-jungle-dim hover:border-yellow-500/40"
+                                }`}
+                              >
+                                {isMachineTaken ? "Cancel Sub" : "Machine Taken?"}
+                              </button>
+                            </div>
+                          )}
 
                           {/* Compact warmup summary */}
                           {warmupSets.length > 0 && (
@@ -1166,16 +1190,20 @@ export default function TrainingPage() {
                                       Target: {prescribedDisplay}
                                     </span>
                                   </div>
-                                  <button
-                                    onClick={() => markSetDone(set)}
-                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                                      isCompleted
-                                        ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                                        : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent/90"
-                                    }`}
-                                  >
-                                    {isCompleted ? "Undo" : "Done"}
-                                  </button>
+                                  {isToday ? (
+                                    <button
+                                      onClick={() => markSetDone(set)}
+                                      className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                                        isCompleted
+                                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                          : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover"
+                                      }`}
+                                    >
+                                      {isCompleted ? "Undo" : "Done ✓"}
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-jungle-dim">Preview</span>
+                                  )}
                                 </div>
 
                                 {/* Inputs — 3 columns, big tap targets */}
@@ -1227,6 +1255,11 @@ export default function TrainingPage() {
                                       className={`${rpeClass(sets[set.id]?.rpe || "")} disabled:opacity-50`}
                                       placeholder="RPE"
                                     />
+                                    {sets[set.id]?.rpe && parseFloat(sets[set.id].rpe) > 0 && (
+                                      <p className="text-[8px] text-jungle-dim text-center mt-0.5">
+                                        RIR {Math.max(0, 10 - parseFloat(sets[set.id].rpe)).toFixed(0)}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1378,45 +1411,53 @@ export default function TrainingPage() {
           </div>
 
           {/* Quick links */}
-          <div className="flex gap-3">
-            <a href="/training/exercises" className="flex-1 btn-secondary text-center text-sm py-2.5">
-              Exercise Library
+          <div className="grid grid-cols-2 gap-2">
+            <a href="/training/program" className="btn-secondary text-center text-sm py-2.5">
+              Program
             </a>
-            <a href="/progress" className="flex-1 btn-secondary text-center text-sm py-2.5">
-              Progress History
+            <a href="/training/history" className="btn-secondary text-center text-sm py-2.5">
+              History
+            </a>
+            <a href="/training/exercises" className="btn-secondary text-center text-sm py-2.5">
+              Exercises
+            </a>
+            <a href="/training/analytics" className="btn-secondary text-center text-sm py-2.5">
+              Analytics
             </a>
           </div>
 
         </div>
       </main>
 
-      {/* ── Sticky bottom bar: progress + save ── */}
-      {session && totalCount > 0 && (
+      {/* ── Sticky bottom bar: progress + save (today only) ── */}
+      {isToday && session && totalCount > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-30 bg-jungle-card/95 backdrop-blur-md border-t border-jungle-border safe-bottom">
-          <div className="max-w-lg mx-auto px-4 py-2.5 flex items-center gap-3">
+          <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
             {/* Progress bar */}
             <div className="flex-1">
-              <div className="h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
+              <div className="h-2 bg-jungle-deeper rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-jungle-accent rounded-full transition-all"
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    allWorkingSetsComplete ? "bg-green-400" : "bg-jungle-accent"
+                  }`}
                   style={{ width: `${(completedCount / totalCount) * 100}%` }}
                 />
               </div>
               <p className="text-[10px] text-jungle-dim mt-0.5">
-                {completedCount}/{totalCount} sets
+                {completedCount}/{totalCount} sets {allWorkingSetsComplete && "— all done"}
               </p>
             </div>
-            {/* Save button */}
+            {/* Save button — bigger tap target */}
             <button
               onClick={saveSession}
               disabled={saving || !isToday}
-              className={`px-5 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50 ${
+              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 ${
                 allWorkingSetsComplete
-                  ? "bg-jungle-accent text-jungle-dark"
+                  ? "bg-jungle-accent text-jungle-dark shadow-lg shadow-jungle-accent/20"
                   : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:border-jungle-accent"
               }`}
             >
-              {saved ? "Saved ✓" : saving ? "Saving..." : allWorkingSetsComplete ? "Log Session" : "Save Partial"}
+              {saved ? "Saved ✓" : saving ? "Saving..." : allWorkingSetsComplete ? "Log Session" : "Save Progress"}
             </button>
           </div>
         </div>

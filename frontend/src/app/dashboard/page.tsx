@@ -197,6 +197,10 @@ export default function DashboardPage() {
   const [diagnostic, setDiagnostic] = useState<DiagnosticData | null>(null);
   const [classEstimate, setClassEstimate] = useState<ClassEstimate | null>(null);
 
+  // Today's session preview
+  const [todaySession, setTodaySession] = useState<{ session_type: string; sets: { exercise_name: string }[] } | null>(null);
+  const [todayMacros, setTodayMacros] = useState<{ target_calories: number; protein_g: number; carbs_g: number; fat_g: number; phase: string } | null>(null);
+
   // Quick log weight state
   const [quickWeight, setQuickWeight] = useState("");
 
@@ -252,6 +256,11 @@ export default function DashboardPage() {
     api.get<ARIData>("/engine2/ari").then(setAri).catch(() => {});
     api.get<AdherenceEntry[]>("/engine3/adherence").then(setAdherence).catch(() => {});
     api.get<WeightEntry[]>("/checkin/weight-history?days=14").then(setRecentWeights).catch(() => {});
+
+    // Today's plan previews
+    const todayStr = new Date().toISOString().split("T")[0];
+    api.get<any>(`/engine2/session/${todayStr}`).then(setTodaySession).catch(() => {});
+    api.get<any>("/engine3/prescription/current").then(setTodayMacros).catch(() => {});
 
     // Run diagnostics first, then fetch freshly computed Engine 1 outputs
     const runAndFetch = async () => {
@@ -397,6 +406,63 @@ export default function DashboardPage() {
               Daily Check-In
             </a>
           </div>
+        </div>
+
+        {/* Today's Plan — quick glance at what needs to happen today */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          {/* Today's Training */}
+          <a href="/training" className="card card-hover flex items-center gap-3 py-3">
+            <div className="w-10 h-10 rounded-xl bg-jungle-accent/15 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-jungle-dim uppercase tracking-wider">Today&apos;s Training</p>
+              {todaySession ? (
+                <>
+                  <p className="text-sm font-semibold text-jungle-text capitalize truncate">
+                    {todaySession.session_type.replace(/_/g, " ")} Day
+                  </p>
+                  <p className="text-[10px] text-jungle-muted">
+                    {new Set(todaySession.sets.map(s => s.exercise_name)).size} exercises
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm font-medium text-jungle-muted">Rest Day</p>
+              )}
+            </div>
+            <svg className="w-4 h-4 text-jungle-dim shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+
+          {/* Today's Nutrition */}
+          <a href="/nutrition" className="card card-hover flex items-center gap-3 py-3">
+            <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-jungle-dim uppercase tracking-wider">Today&apos;s Macros</p>
+              {todayMacros ? (
+                <>
+                  <p className="text-sm font-semibold text-jungle-text">
+                    {Math.round(todayMacros.target_calories)} kcal
+                  </p>
+                  <p className="text-[10px] text-jungle-muted">
+                    P {Math.round(todayMacros.protein_g)}g · C {Math.round(todayMacros.carbs_g)}g · F {Math.round(todayMacros.fat_g)}g
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm font-medium text-jungle-muted">No prescription yet</p>
+              )}
+            </div>
+            <svg className="w-4 h-4 text-jungle-dim shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
         </div>
 
         {/* PDS Banner */}
@@ -734,56 +800,34 @@ export default function DashboardPage() {
             )}
           </ChartCard>
 
-          {/* Competition Class */}
+          {/* Competition Class — simplified */}
           {classEstimate && (
             <ChartCard
               title="Competition Class"
-              subtitle="Division Routing & Ghost Limits"
-              tooltip="Your estimated competition class based on your height, weight, and division. Shows the mathematically derived Ghost limits scaling to your IFBB cap."
+              subtitle="Division & Weight Limits"
+              tooltip="Your estimated competition class based on height, weight, and division."
             >
               <div className="mt-3 space-y-3">
                 <div className="flex items-center gap-3">
-                  <span className="px-3 py-1.5 rounded bg-jungle-accent/20 text-jungle-accent text-lg font-bold">
+                  <span className="px-4 py-2 rounded-xl bg-jungle-accent/20 text-jungle-accent text-xl font-bold">
                     {classEstimate.label}
                   </span>
                   <div>
-                    <p className="text-xs text-jungle-muted capitalize">
+                    <p className="text-sm text-jungle-text font-medium capitalize">
                       {classEstimate.division.replace(/_/g, " ")}
                     </p>
-                    {classEstimate.max_height_cm && classEstimate.max_height_cm < 999 && (
-                      <p className="text-[10px] text-jungle-dim">
-                        Given Height: {classEstimate.max_height_cm} cm
-                      </p>
-                    )}
                   </div>
                 </div>
-                
-                {diagnostic?.weight_cap && diagnostic?.ghost_model && (
-                  <div className="border-t border-jungle-border pt-3 mt-2 space-y-3">
-                    <div className="grid grid-cols-2 gap-2 text-center">
-                      <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Division Cap</p>
-                        <p className="text-sm font-bold text-red-400">{wt(diagnostic.weight_cap.weight_cap_kg)} {unit}</p>
-                      </div>
-                      <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Max LBM Limit</p>
-                        <p className="text-sm font-bold text-orange-400">{wt(diagnostic.weight_cap.target_lbm_kg)} {unit}</p>
-                      </div>
-                      <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Ghost Mass</p>
-                        <p className="text-sm font-bold text-blue-400">{wt(diagnostic.ghost_model.ghost_mass_kg)} {unit}</p>
-                      </div>
-                      <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim uppercase tracking-wide">Ghost LBM Est.</p>
-                        <p className="text-sm font-bold text-green-400">
-                          {wt(diagnostic.ghost_model.ghost_mass_kg * 0.95)} {unit}
-                        </p>
-                      </div>
+
+                {diagnostic?.weight_cap && (
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div className="bg-jungle-deeper rounded-lg p-2.5">
+                      <p className="text-[9px] text-jungle-dim uppercase">Weight Cap</p>
+                      <p className="text-base font-bold text-jungle-accent">{wt(diagnostic.weight_cap.weight_cap_kg)} {unit}</p>
                     </div>
-                    
-                    <div className="bg-jungle-deeper rounded-lg p-2 flex items-center justify-between px-4">
-                        <p className="text-[10px] text-jungle-dim uppercase tracking-wide">Mathematical Scale Factor</p>
-                        <p className="text-sm font-bold text-jungle-accent">{inflationMultiplier.toFixed(4)}x</p>
+                    <div className="bg-jungle-deeper rounded-lg p-2.5">
+                      <p className="text-[9px] text-jungle-dim uppercase">Stage Weight</p>
+                      <p className="text-base font-bold text-green-400">{wt(diagnostic.weight_cap.stage_weight_kg)} {unit}</p>
                     </div>
                   </div>
                 )}
@@ -791,227 +835,89 @@ export default function DashboardPage() {
             </ChartCard>
           )}
 
-          {/* Volumetric Ghost Model — segment volume breakdown */}
-          {diagnostic?.ghost_model && (
+          {/* Growth Projection — replaces Volumetric Ghost (engine internals aren't actionable) */}
+          {muscleGaps && (
             <ChartCard
-              title="Volumetric Ghost"
-              subtitle="3D Biomechanical Model"
-              tooltip="Your ideal physique modeled as a 3D geometric body (Hanavan segmental model). The ghost is built from division-specific proportion vectors, then allometrically scaled (cube-root) to match your IFBB weight cap. Each segment shows its contribution to total lean mass."
+              title="Growth Projection"
+              subtitle="Where You Are vs. Where You Need To Be"
+              tooltip="Shows your current lean measurements as a percentage of your division-ideal target. Based on your gap analysis and current rate of progress."
             >
-              <div className="mt-3 space-y-3">
-                {/* Mass comparison gauge */}
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex justify-between text-[10px] mb-1">
-                      <span className="text-jungle-dim">Ghost Mass</span>
-                      <span className="text-jungle-muted font-medium">
-                        {wt(diagnostic.ghost_model.ghost_mass_kg)} {unit}
-                        <span className="text-jungle-dim ml-1">
-                          → {wt(diagnostic.weight_cap?.target_lbm_kg)} {unit} target
-                        </span>
-                      </span>
+              <div className="mt-2 space-y-1.5">
+                {muscleGaps.ranked_gaps?.length > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between text-[10px] text-jungle-dim mb-1">
+                      <span>Muscle Site</span>
+                      <span>% of Ideal</span>
                     </div>
-                    <div className="h-2.5 bg-jungle-deeper rounded-full overflow-hidden relative">
-                      {/* Target marker */}
-                      <div
-                        className="absolute top-0 bottom-0 w-0.5 bg-green-400 z-10"
-                        style={{
-                          left: `${Math.min(100, ((diagnostic.weight_cap?.target_lbm_kg ?? 100) / (Math.max(diagnostic.ghost_model.ghost_mass_kg, diagnostic.weight_cap?.target_lbm_kg ?? 100) * 1.1)) * 100)}%`,
-                        }}
-                      />
-                      <div
-                        className="h-full rounded-full transition-all bg-jungle-accent"
-                        style={{
-                          width: `${Math.min(100, (diagnostic.ghost_model.ghost_mass_kg / (Math.max(diagnostic.ghost_model.ghost_mass_kg, diagnostic.weight_cap?.target_lbm_kg ?? 100) * 1.1)) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="flex justify-end text-[9px] text-green-400 font-medium mt-0.5">
-                      <span>Target: {wt(diagnostic.weight_cap?.target_lbm_kg)} {unit}</span>
-                    </div>
-                  </div>
-                  <div className="text-center shrink-0">
-                    <p className="text-2xl font-bold text-jungle-accent">
-                      {inflationMultiplier.toFixed(3)}x
-                    </p>
-                    <p className="text-[9px] text-jungle-dim tracking-tight">scale factor</p>
-                  </div>
-                </div>
-
-                {/* Segment volume breakdown */}
-                <div>
-                  <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1.5">Hanavan Segment Volumes</p>
-                  {(() => {
-                    const vols = diagnostic.ghost_model.hanavan_volumes;
-                    const total = vols.total || 1;
-                    const segments = [
-                      { label: "Torso", value: vols.torso, color: "#c8a84e" },
-                      { label: "Thighs", value: vols.thighs, color: "#4ade80" },
-                      { label: "Upper Arms", value: vols.upper_arms, color: "#60a5fa" },
-                      { label: "Calves", value: vols.calves, color: "#f97316" },
-                      { label: "Forearms", value: vols.forearms, color: "#a78bfa" },
-                    ];
-                    return (
-                      <>
-                        {/* Stacked bar */}
-                        <div className="flex h-4 rounded-full overflow-hidden mb-2">
-                          {segments.map((seg) => (
-                            <div
-                              key={seg.label}
-                              className="transition-all"
-                              style={{
-                                width: `${(seg.value / total) * 100}%`,
-                                backgroundColor: seg.color,
-                                opacity: 0.8,
-                              }}
-                              title={`${seg.label}: ${(seg.value / 1000).toFixed(1)}L (${((seg.value / total) * 100).toFixed(0)}%)`}
-                            />
-                          ))}
-                        </div>
-                        {/* Legend */}
-                        <div className="grid grid-cols-3 gap-x-3 gap-y-1">
-                          {segments.map((seg) => (
-                            <div key={seg.label} className="flex items-center gap-1.5 text-[10px]">
-                              <span
-                                className="w-2 h-2 rounded-sm shrink-0"
-                                style={{ backgroundColor: seg.color, opacity: 0.8 }}
-                              />
-                              <span className="text-jungle-dim">{seg.label}</span>
-                              <span className="text-jungle-muted font-medium ml-auto">
-                                {(seg.value / 1000).toFixed(1)}L
-                              </span>
+                    {Object.entries(muscleGaps.sites || {})
+                      .filter(([site]) => !["waist", "hips"].includes(site))
+                      .sort(([, a]: [string, any], [, b]: [string, any]) => (a.pct_of_ideal || 0) - (b.pct_of_ideal || 0))
+                      .map(([site, data]: [string, any]) => {
+                        const pct = data.pct_of_ideal || 0;
+                        const color = pct >= 98 ? "#4ade80" : pct >= 90 ? "#c8a84e" : pct >= 80 ? "#f97316" : "#ef4444";
+                        return (
+                          <div key={site} className="flex items-center gap-2">
+                            <span className="text-[10px] text-jungle-muted w-20 capitalize truncate">{site.replace(/_/g, " ")}</span>
+                            <div className="flex-1 h-3 bg-jungle-deeper rounded-full overflow-hidden">
+                              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }} />
                             </div>
-                          ))}
-                          <div className="flex items-center gap-1.5 text-[10px] col-span-3 border-t border-jungle-border pt-1 mt-0.5">
-                            <span className="text-jungle-dim">Total (after lung correction)</span>
-                            <span className="text-jungle-accent font-bold ml-auto">
-                              {(vols.total_after_lung / 1000).toFixed(1)}L
+                            <span className="text-[10px] font-bold w-10 text-right" style={{ color }}>
+                              {pct.toFixed(0)}%
                             </span>
                           </div>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
+                        );
+                      })}
+                    <div className="border-t border-jungle-border pt-2 mt-2 flex items-center justify-between">
+                      <span className="text-[10px] text-jungle-dim">Overall</span>
+                      <span className="text-sm font-bold text-jungle-accent">{muscleGaps.avg_pct_of_ideal?.toFixed(0) || "—"}% of ideal</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-jungle-dim text-xs text-center py-4">Run diagnostics to see growth projections</p>
+                )}
               </div>
             </ChartCard>
           )}
 
-          {/* Isolation Tracking — only shown when advanced measurements exist */}
+          {/* Detail Metrics — simplified, only shown when data exists */}
           {diagnostic?.advanced_measurements && (
             <ChartCard
-              title="Isolation Tracking"
-              subtitle="Back, Lat & Quad Detail"
-              tooltip="Scored metrics for lat activation (how much back width comes from lat flare), back width gap vs. your division ideal, and quad VMO regionality (teardrop development)."
+              title="Detail Metrics"
+              subtitle="Lat Spread & Quad VMO"
+              tooltip="Advanced measurements for lat activation and quad development."
             >
-              <div className="mt-2 space-y-3">
-
-                {/* Lat Activation */}
+              <div className="mt-2 space-y-2">
                 {diagnostic.advanced_measurements.lat_spread_delta_cm !== undefined && (
-                  <div>
-                    <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1">Lat Activation</p>
-                    <div className="grid grid-cols-3 gap-2 text-center mb-1.5">
-                      <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim">Relaxed</p>
-                        <p className="text-sm font-bold">{diagnostic.advanced_measurements.chest_relaxed_cm} cm</p>
-                      </div>
-                      <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim">Lat Spread</p>
-                        <p className="text-sm font-bold">{diagnostic.advanced_measurements.chest_lat_spread_cm} cm</p>
-                      </div>
-                      <div className="bg-jungle-deeper rounded-lg p-2">
-                        <p className="text-[9px] text-jungle-dim">Delta</p>
-                        <p className="text-sm font-bold text-jungle-accent">+{diagnostic.advanced_measurements.lat_spread_delta_cm} cm</p>
-                      </div>
+                  <div className="flex items-center justify-between bg-jungle-deeper rounded-lg px-3 py-2">
+                    <div>
+                      <p className="text-xs text-jungle-muted font-medium">Lat Spread Delta</p>
+                      <p className="text-[9px] text-jungle-dim">Relaxed → Spread</p>
                     </div>
-                    {diagnostic.advanced_measurements.lat_activation_pct !== undefined && (
-                      <div>
-                        <div className="flex justify-between text-[10px] mb-0.5">
-                          <span className="text-jungle-dim">Lat activation</span>
-                          <span className="font-medium">{diagnostic.advanced_measurements.lat_activation_pct}%
-                            <span className="text-jungle-dim ml-1">(target 3–7%)</span>
-                          </span>
-                        </div>
-                        <div className="h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${Math.min(100, (diagnostic.advanced_measurements.lat_activation_score ?? 0))}%`,
-                              backgroundColor: (diagnostic.advanced_measurements.lat_activation_score ?? 0) >= 70 ? "#4ade80" : (diagnostic.advanced_measurements.lat_activation_score ?? 0) >= 40 ? "#eab308" : "#ef4444",
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {diagnostic.advanced_measurements.lean_chest_used_cm && (
-                      <p className="text-[9px] text-jungle-dim mt-1">
-                        Chest gap uses relaxed ({diagnostic.advanced_measurements.lean_chest_used_cm} cm lean) — isolates pecs from lat contribution
-                      </p>
-                    )}
+                    <span className="text-lg font-bold text-jungle-accent">
+                      +{diagnostic.advanced_measurements.lat_spread_delta_cm} cm
+                    </span>
                   </div>
                 )}
-
-                {/* Back Width */}
                 {diagnostic.advanced_measurements.back_width_cm && (
-                  <div>
-                    <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1">Back Width</p>
-                    <div className="flex items-center justify-between bg-jungle-deeper rounded-lg p-2">
-                      <div>
-                        <span className="text-[10px] text-jungle-dim">Axillary breadth</span>
-                        {diagnostic.advanced_measurements.lean_back_width_cm && (
-                          <span className="text-[9px] text-jungle-dim ml-2">
-                            ({diagnostic.advanced_measurements.lean_back_width_cm} cm lean)
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-sm font-bold text-jungle-accent">{diagnostic.advanced_measurements.back_width_cm} cm</span>
-                    </div>
-                    <p className="text-[9px] text-jungle-dim mt-0.5">
-                      Tracked in Muscle Gaps — compare against your division ideal
-                    </p>
+                  <div className="flex items-center justify-between bg-jungle-deeper rounded-lg px-3 py-2">
+                    <p className="text-xs text-jungle-muted font-medium">Back Width</p>
+                    <span className="text-lg font-bold text-jungle-accent">{diagnostic.advanced_measurements.back_width_cm} cm</span>
                   </div>
                 )}
-
-                {/* Quad Regionality (VMO) */}
-                {(diagnostic.advanced_measurements.proximal_thigh_cm || diagnostic.advanced_measurements.distal_thigh_cm) && (
-                  <div>
-                    <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-1">Quad Regionality (VMO)</p>
-                    <div className="grid grid-cols-2 gap-2 text-center mb-1.5">
-                      {diagnostic.advanced_measurements.proximal_thigh_cm && (
-                        <div className="bg-jungle-deeper rounded-lg p-2">
-                          <p className="text-[9px] text-jungle-dim">Proximal (glute fold)</p>
-                          <p className="text-sm font-bold">{diagnostic.advanced_measurements.proximal_thigh_cm} cm</p>
-                        </div>
-                      )}
-                      {diagnostic.advanced_measurements.distal_thigh_cm && (
-                        <div className="bg-jungle-deeper rounded-lg p-2">
-                          <p className="text-[9px] text-jungle-dim">Distal (VMO teardrop)</p>
-                          <p className="text-sm font-bold">{diagnostic.advanced_measurements.distal_thigh_cm} cm</p>
-                        </div>
-                      )}
+                {diagnostic.advanced_measurements.quad_vmo_ratio !== undefined && (
+                  <div className="flex items-center justify-between bg-jungle-deeper rounded-lg px-3 py-2">
+                    <div>
+                      <p className="text-xs text-jungle-muted font-medium">VMO Ratio</p>
+                      <p className="text-[9px] text-jungle-dim">Target: 0.76–0.82</p>
                     </div>
-                    {diagnostic.advanced_measurements.quad_vmo_ratio !== undefined && (
-                      <div>
-                        <div className="flex justify-between text-[10px] mb-0.5">
-                          <span className="text-jungle-dim">VMO ratio (distal/proximal)</span>
-                          <span className="font-medium">{diagnostic.advanced_measurements.quad_vmo_ratio}
-                            <span className="text-jungle-dim ml-1">(target 0.76–0.82)</span>
-                          </span>
-                        </div>
-                        <div className="h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${Math.min(100, diagnostic.advanced_measurements.quad_regionality_score ?? 0)}%`,
-                              backgroundColor: (diagnostic.advanced_measurements.quad_regionality_score ?? 0) >= 70 ? "#4ade80" : (diagnostic.advanced_measurements.quad_regionality_score ?? 0) >= 40 ? "#eab308" : "#ef4444",
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
+                    <span className={`text-lg font-bold ${
+                      (diagnostic.advanced_measurements.quad_vmo_ratio >= 0.76 && diagnostic.advanced_measurements.quad_vmo_ratio <= 0.82)
+                        ? "text-green-400" : "text-yellow-400"
+                    }`}>
+                      {diagnostic.advanced_measurements.quad_vmo_ratio.toFixed(3)}
+                    </span>
                   </div>
                 )}
-
               </div>
             </ChartCard>
           )}

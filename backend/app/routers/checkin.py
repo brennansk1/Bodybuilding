@@ -523,3 +523,211 @@ async def get_previous_weekly(
         }
 
     return {"tape": tape_dict, "skinfolds": sf_dict}
+
+
+# ---------------------------------------------------------------------------
+# Weekly review — coaching heartbeat aggregation
+# ---------------------------------------------------------------------------
+
+@router.get("/weekly/review")
+async def get_weekly_review(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Build a weekly review aggregation for the most recent complete week.
+    Combines weight trend, training summary, nutrition adherence, photos,
+    and PDS engine changes into a single coaching heartbeat payload.
+    """
+    from collections import defaultdict
+    from app.models.training import TrainingSession, TrainingSet, TrainingProgram
+    from app.models.diagnostic import PDSLog
+
+    today = date.today()
+
+    # -----------------------------------------------------------------------
+    # 1. Weight trend: last 14 days of body weight with 7-day rolling average
+    # -----------------------------------------------------------------------
+    cutoff_14d = today - timedelta(days=14)
+    bw_result = await db.execute(
+        select(BodyWeightLog)
+        .where(BodyWeightLog.user_id == user.id, BodyWeightLog.recorded_date >= cutoff_14d)
+        .order_by(BodyWeightLog.recorded_date)
+    )
+    bw_logs = bw_result.scalars().all()
+
+    weight_trend = []
+    for i, bw in enumerate(bw_logs):
+        # Compute rolling 7-day average using available prior entries
+        window_start = max(0, i - 6)
+        window = bw_logs[window_start : i + 1]
+        rolling_avg = round(sum(w.weight_kg for w in window) / len(window), 2)
+        weight_trend.append({
+            "date": str(bw.recorded_date),
+            "weight_kg": bw.weight_kg,
+            "rolling_avg": rolling_avg,
+        })
+
+    # Current week avg (last 7 days) vs previous week avg (days 8-14)
+    cutoff_7d = today - timedelta(days=7)
+    current_week_weights = [bw.weight_kg for bw in bw_logs if bw.recorded_date > cutoff_7d]
+    previous_week_weights = [bw.weight_kg for bw in bw_logs if bw.recorded_date <= cutoff_7d]
+
+    current_avg = round(sum(current_week_weights) / len(current_week_weights), 2) if current_week_weights else None
+    previous_avg = round(sum(previous_week_weights) / len(previous_week_weights), 2) if previous_week_weights else None
+    delta_kg = round(current_avg - previous_avg, 2) if current_avg is not None and previous_avg is not None else None
+
+    weight_section = {
+        "current_avg": current_avg,
+        "previous_avg": previous_avg,
+        "delta_kg": delta_kg,
+        "trend": weight_trend,
+    }
+
+    # -----------------------------------------------------------------------
+    # 2. Training summary: sessions completed vs scheduled this week, total volume
+    # -----------------------------------------------------------------------
+    # Determine the most recent Monday as the start of the current week
+    days_since_monday = today.weekday()  # Monday=0, Sunday=6
+    week_start = today - timedelta(days=days_since_monday)
+    week_end = week_start + timedelta(days=6)
+
+    # Scheduled sessions this week
+    scheduled_result = await db.execute(
+        select(func.count())
+        .select_from(TrainingSession)
+        .where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.session_date >= week_start,
+            TrainingSession.session_date <= week_end,
+        )
+    )
+    sessions_scheduled = scheduled_result.scalar() or 0
+
+    # Completed sessions this week
+    completed_result = await db.execute(
+        select(func.count())
+        .select_from(TrainingSession)
+        .where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.session_date >= week_start,
+            TrainingSession.session_date <= week_end,
+            TrainingSession.completed == True,
+        )
+    )
+    sessions_completed = completed_result.scalar() or 0
+
+    completion_pct = round((sessions_completed / sessions_scheduled) * 100) if sessions_scheduled > 0 else 0
+
+    # Total working sets this week (non-warmup, from completed sessions)
+    total_sets_result = await db.execute(
+        select(func.count())
+        .select_from(TrainingSet)
+        .join(TrainingSession, TrainingSet.session_id == TrainingSession.id)
+        .where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.session_date >= week_start,
+            TrainingSession.session_date <= week_end,
+            TrainingSession.completed == True,
+            TrainingSet.is_warmup == False,
+        )
+    )
+    total_sets = total_sets_result.scalar() or 0
+
+    training_section = {
+        "sessions_completed": sessions_completed,
+        "sessions_scheduled": sessions_scheduled,
+        "completion_pct": completion_pct,
+        "total_sets": total_sets,
+    }
+
+    # -----------------------------------------------------------------------
+    # 3. Nutrition adherence: last 7 days from adherence_log
+    # -----------------------------------------------------------------------
+    adh_result = await db.execute(
+        select(AdherenceLog)
+        .where(AdherenceLog.user_id == user.id, AdherenceLog.recorded_date >= cutoff_7d)
+        .order_by(AdherenceLog.recorded_date)
+    )
+    adh_logs = adh_result.scalars().all()
+
+    adh_entries = [
+        {
+            "date": str(a.recorded_date),
+            "nutrition": a.nutrition_adherence_pct,
+            "training": a.training_adherence_pct,
+            "overall": a.overall_adherence_pct,
+        }
+        for a in adh_logs
+    ]
+
+    avg_adherence_pct = (
+        round(sum(a.overall_adherence_pct for a in adh_logs) / len(adh_logs), 1)
+        if adh_logs else None
+    )
+
+    nutrition_section = {
+        "avg_adherence_pct": avg_adherence_pct,
+        "days_logged": len(adh_logs),
+        "entries": adh_entries,
+    }
+
+    # -----------------------------------------------------------------------
+    # 4. Photos: most recent weekly_checkins photos
+    # -----------------------------------------------------------------------
+    checkin_result = await db.execute(
+        select(WeeklyCheckin)
+        .where(WeeklyCheckin.user_id == user.id)
+        .order_by(desc(WeeklyCheckin.checkin_date), desc(WeeklyCheckin.created_at))
+        .limit(1)
+    )
+    latest_checkin = checkin_result.scalar_one_or_none()
+
+    photos_section = {
+        "front_photo_url": latest_checkin.front_photo_url if latest_checkin else None,
+        "back_photo_url": latest_checkin.back_photo_url if latest_checkin else None,
+        "side_left_photo_url": latest_checkin.side_left_photo_url if latest_checkin else None,
+        "side_right_photo_url": latest_checkin.side_right_photo_url if latest_checkin else None,
+    }
+
+    # -----------------------------------------------------------------------
+    # 5. Engine changes: latest PDS score vs previous
+    # -----------------------------------------------------------------------
+    pds_result = await db.execute(
+        select(PDSLog)
+        .where(PDSLog.user_id == user.id)
+        .order_by(desc(PDSLog.recorded_date), desc(PDSLog.created_at))
+        .limit(2)
+    )
+    pds_logs = pds_result.scalars().all()
+
+    if pds_logs:
+        current_pds = pds_logs[0]
+        previous_pds = pds_logs[1] if len(pds_logs) > 1 else None
+        pds_section = {
+            "current": current_pds.pds_score,
+            "previous": previous_pds.pds_score if previous_pds else None,
+            "delta": round(current_pds.pds_score - previous_pds.pds_score, 2) if previous_pds else None,
+            "tier": current_pds.tier,
+        }
+    else:
+        pds_section = {
+            "current": None,
+            "previous": None,
+            "delta": None,
+            "tier": None,
+        }
+
+    # -----------------------------------------------------------------------
+    # Determine the week number from the latest check-in or fallback to ISO week
+    # -----------------------------------------------------------------------
+    week_number = latest_checkin.week_number if latest_checkin else today.isocalendar()[1]
+
+    return {
+        "week_number": week_number,
+        "weight": weight_section,
+        "training": training_section,
+        "nutrition": nutrition_section,
+        "photos": photos_section,
+        "pds": pds_section,
+    }

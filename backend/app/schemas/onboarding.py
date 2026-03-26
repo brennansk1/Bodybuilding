@@ -65,6 +65,11 @@ class PreferencesCreate(BaseModel):
     intra_workout_nutrition: bool | None = None
     training_start_time: str | None = Field(default="10:00", pattern="^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     training_duration_min: int | None = Field(default=75, ge=30, le=240)
+    # Food preferences — used by meal planner engine
+    preferred_proteins: list[str] = Field(default_factory=list)
+    preferred_carbs: list[str] = Field(default_factory=list)
+    preferred_fats: list[str] = Field(default_factory=list)
+    blacklisted_foods: list[str] = Field(default_factory=list)
 
 
 class OnboardingCompleteResponse(BaseModel):

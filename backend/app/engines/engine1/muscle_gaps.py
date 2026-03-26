@@ -42,10 +42,18 @@ def compute_site_gap(
     gap_cm = ideal_lean_cm - lean_circ_cm
     pct = round((lean_circ_cm / ideal_lean_cm) * 100, 1) if ideal_lean_cm > 0 else 0.0
 
-    if gap_cm > 0.5:
+    # Stay-small sites (waist, hips): being UNDER the ideal ratio is GOOD.
+    # For these sites the "ideal" is a maximum — smaller is better.
+    # A coach would never tell a Classic athlete to GROW their waist.
+    if site in _RATIO_SITES:
+        if gap_cm < -0.5:
+            # Waist/hips exceed the ideal ratio — needs reduction
+            gap_type = "reduce_girth"
+        else:
+            # Waist/hips at or below ideal — this is ideal, not a "gap"
+            gap_type = "at_ideal"
+    elif gap_cm > 0.5:
         gap_type = "add_muscle"
-    elif gap_cm < -0.5 and site in _RATIO_SITES:
-        gap_type = "reduce_girth"
     elif gap_cm < -0.5:
         gap_type = "above_ideal"
     else:

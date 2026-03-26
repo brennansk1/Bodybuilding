@@ -179,6 +179,15 @@ async def set_preferences(
         prefs["cheat_meals_per_week"] = data.cheat_meals_per_week
     if data.intra_workout_nutrition is not None:
         prefs["intra_workout_nutrition"] = data.intra_workout_nutrition
+    # Food preferences — consumed by meal planner engine
+    if data.preferred_proteins:
+        prefs["preferred_proteins"] = data.preferred_proteins
+    if data.preferred_carbs:
+        prefs["preferred_carbs"] = data.preferred_carbs
+    if data.preferred_fats:
+        prefs["preferred_fats"] = data.preferred_fats
+    if data.blacklisted_foods:
+        prefs["blacklisted_foods"] = data.blacklisted_foods
     profile.preferences = prefs
     profile.training_start_time = data.training_start_time
     profile.training_duration_min = data.training_duration_min

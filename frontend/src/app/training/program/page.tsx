@@ -65,12 +65,27 @@ function sessionDotColor(session: ScheduledSession, today: string): string {
   return session.session_date < today ? "bg-jungle-dim" : "bg-jungle-accent";
 }
 
+// Use hex colors instead of Tailwind classes — template literals with
+// opacity modifiers (e.g. `bg-blue-500/50`) don't reliably compile in JIT.
+const PHASE_HEX: Record<string, string> = {
+  offseason: "#3b82f6",
+  bulk: "#3b82f6",
+  lean_bulk: "#06b6d4",
+  mini_cut: "#f97316",
+  cut: "#f97316",
+  peak_week: "#ef4444",
+  peak: "#ef4444",
+  contest: "#eab308",
+  restoration: "#22c55e",
+};
+
 function getPhaseColor(phase: string): string {
+  // Still used by calendar overlays that need Tailwind classes
   switch (phase) {
-    case "offseason": return "bg-blue-500";
+    case "offseason": case "bulk": return "bg-blue-500";
     case "lean_bulk": return "bg-cyan-500";
-    case "cut": return "bg-orange-500";
-    case "peak_week": return "bg-red-500";
+    case "mini_cut": case "cut": return "bg-orange-500";
+    case "peak_week": case "peak": return "bg-red-500";
     case "contest": return "bg-yellow-400";
     case "restoration": return "bg-green-500";
     default: return "bg-jungle-border";
@@ -79,13 +94,14 @@ function getPhaseColor(phase: string): string {
 
 function getPhaseLabel(phase: string): string {
   switch (phase) {
-    case "offseason": return "Bulk";
+    case "offseason": case "bulk": return "Bulk";
     case "lean_bulk": return "Lean Bulk";
+    case "mini_cut": return "Mini Cut";
     case "cut": return "Cut";
-    case "peak_week": return "Peak";
+    case "peak_week": case "peak": return "Peak";
     case "contest": return "Show";
     case "restoration": return "Restoration";
-    default: return phase;
+    default: return phase.replace(/_/g, " ");
   }
 }
 
@@ -352,43 +368,85 @@ export default function ProgramPage() {
               <div className="card space-y-3 py-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-xs uppercase tracking-wider text-jungle-muted">Macro Cycle</h3>
-                  <span className="text-[10px] text-jungle-dim">
+                  <span className="text-xs text-jungle-accent font-bold">
                     Wk {macroCurrentWeek} · {getPhaseLabel(currentPhaseName)}
                   </span>
                 </div>
 
-                {/* Phase legend */}
-                <div className="flex gap-x-3 gap-y-1 text-[9px] text-jungle-dim flex-wrap">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" /> Bulk</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-500 inline-block" /> Lean Bulk</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-orange-500 inline-block" /> Cut</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500 inline-block" /> Peak</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500 inline-block" /> Restore</span>
+                {/* Phase blocks — grouped by phase with labels */}
+                <div className="overflow-x-auto pb-1">
+                  <div className="flex gap-0.5 min-w-max">
+                    {(() => {
+                      const blocks: { phase: string; startWeek: number; count: number }[] = [];
+                      let currentBlock = { phase: macroPhases[0], startWeek: 1, count: 0 };
+                      macroPhases.forEach((phase, i) => {
+                        if (phase === currentBlock.phase) {
+                          currentBlock.count++;
+                        } else {
+                          blocks.push({ ...currentBlock });
+                          currentBlock = { phase, startWeek: i + 1, count: 1 };
+                        }
+                      });
+                      blocks.push({ ...currentBlock });
+
+                      return blocks.map((block, bi) => {
+                        const hex = PHASE_HEX[block.phase] || "#4a6040";
+                        return (
+                          <div key={bi} className="flex flex-col items-center gap-1">
+                            <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: hex }}>
+                              {getPhaseLabel(block.phase)} ({block.count}wk)
+                            </span>
+                            <div className="flex gap-0.5">
+                              {Array.from({ length: block.count }, (_, wi) => {
+                                const weekNum = block.startWeek + wi;
+                                const isCurrent = weekNum === macroCurrentWeek;
+                                const isPast = weekNum < macroCurrentWeek;
+                                return (
+                                  <div
+                                    key={weekNum}
+                                    title={`Week ${weekNum} — ${getPhaseLabel(block.phase)}`}
+                                    className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all ${
+                                      isCurrent ? "ring-2 ring-white/80 shadow-lg scale-110 text-white" : "text-white"
+                                    }`}
+                                    style={{
+                                      backgroundColor: hex,
+                                      opacity: isCurrent ? 1 : isPast ? 0.25 : 0.55,
+                                    }}
+                                  >
+                                    {weekNum}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
                 </div>
 
-                {/* Week boxes */}
-                <div className="flex gap-0.5 flex-wrap">
-                  {macroPhases.map((phase, i) => {
-                    const weekNum = i + 1;
-                    const isCurrent = weekNum === macroCurrentWeek;
-                    const isPast = weekNum < macroCurrentWeek;
-                    const color = getPhaseColor(phase);
-                    return (
-                      <div
-                        key={weekNum}
-                        title={`Week ${weekNum} — ${getPhaseLabel(phase)}`}
-                        className={`flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[8px] font-bold ${
-                          isCurrent
-                            ? `${color} text-white ring-2 ring-white/60 shadow-lg`
-                            : isPast
-                            ? `${color}/30 text-white/30`
-                            : `${color}/50 text-white/50`
-                        }`}
-                      >
-                        {weekNum}
-                      </div>
-                    );
-                  })}
+                {/* Compact legend */}
+                <div className="flex gap-x-3 gap-y-1 text-[9px] text-jungle-dim flex-wrap">
+                  {[
+                    { phase: "offseason", label: "Bulk" },
+                    { phase: "lean_bulk", label: "Lean Bulk" },
+                    { phase: "cut", label: "Cut" },
+                    { phase: "peak", label: "Peak" },
+                    { phase: "restoration", label: "Restore" },
+                  ].map(({ phase, label }) => (
+                    <span key={phase} className="flex items-center gap-1">
+                      <span className="w-2.5 h-2.5 rounded inline-block" style={{ backgroundColor: PHASE_HEX[phase] }} />
+                      {label}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Progress bar */}
+                <div>
+                  <div className="h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
+                    <div className="h-full bg-jungle-accent rounded-full transition-all" style={{ width: `${Math.min(100, (macroCurrentWeek / macroPhases.length) * 100)}%` }} />
+                  </div>
+                  <p className="text-[9px] text-jungle-dim text-right mt-0.5">{Math.round((macroCurrentWeek / macroPhases.length) * 100)}% through annual plan</p>
                 </div>
               </div>
 
@@ -491,7 +549,25 @@ export default function ProgramPage() {
               {/* ── MICROCYCLE (current week) ── */}
               <div className="card space-y-3 py-3">
                 <h3 className="font-semibold text-xs uppercase tracking-wider text-jungle-muted">
-                  This Week — {(() => { const p = MESO_PHASES[currentWeek]; return p ? p.label : ""; })()}
+                  {(() => {
+                    const p = MESO_PHASES[currentWeek];
+                    const weekSessions = currentWeekSessions;
+                    if (weekSessions.length > 0) {
+                      const firstDate = weekSessions[0].session_date;
+                      const d = new Date(firstDate + "T00:00:00");
+                      const monday = new Date(d);
+                      monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+                      const isThisWeek = (() => {
+                        const now = new Date();
+                        const thisMonday = new Date(now);
+                        thisMonday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+                        return monday.toDateString() === thisMonday.toDateString();
+                      })();
+                      const label = isThisWeek ? "This Week" : `Week of ${monday.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+                      return `${label} — ${p ? p.label : ""}`;
+                    }
+                    return `Week ${currentWeek} — ${p ? p.label : ""}`;
+                  })()}
                 </h3>
 
                 {/* Day grid */}
@@ -916,6 +992,15 @@ export default function ProgramPage() {
                 </p>
               </div>
 
+              {/* Quick links */}
+              <div className="flex gap-3">
+                <a href="/training/analytics" className="flex-1 btn-secondary text-center text-sm py-2.5">
+                  Analytics
+                </a>
+                <a href="/training/history" className="flex-1 btn-secondary text-center text-sm py-2.5">
+                  History
+                </a>
+              </div>
             </>
           )}
         </div>
