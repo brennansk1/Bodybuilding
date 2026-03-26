@@ -267,6 +267,8 @@ export default function SettingsPage() {
     try {
       await api.post("/engine1/run");
       await api.post("/engine2/program/generate");
+      // Auto-regenerate meal plan with new food preferences
+      await api.post("/engine3/meal-plan/generate", {}).catch(() => {});
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch { /* ignore */ } finally {

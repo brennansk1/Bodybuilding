@@ -7,7 +7,10 @@ Phase tags control availability:  "all" = always available,
 "prep" = cut/peak only, "bulk" = bulk/lean_bulk/offseason, etc.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -197,20 +200,185 @@ _PHASE_MAP = {
 }
 
 
+# ─── Coach-Level Phase Blacklists ────────────────────────────────────────────
+#
+# These mirror what an Olympia-level coach would remove from a diet during
+# specific phases. The reasoning:
+#
+# PEAK WEEK: Sodium control, GI predictability, water manipulation.
+#   - No red meat (sodium, slow digestion, unpredictable water retention)
+#   - No dairy (bloating, lactose-induced GI distress on stage day)
+#   - No high-fiber complex carbs late in peak (bloating on show day)
+#   - No nuts/nut butters (calorie-dense, hard to portion precisely)
+#   - No cruciferous vegetables (bloating/gas)
+#   - Only white fish, chicken breast, egg whites for protein
+#   - Only white rice, cream of rice, rice cakes, potatoes for carbs
+#   - Only olive oil (measured precisely) for fats
+#
+# CUT (contest prep): Gradual restriction as body fat drops.
+#   - Remove calorie-dense fats (coconut oil, walnuts)
+#   - Remove fatty proteins (salmon, whole eggs, sirloin)
+#   - Keep food variety higher than peak but tighter than bulk
+#
+# These are ADDITIONAL to the phase_tags filtering already in place.
+
+_COACH_PHASE_BLACKLISTS: dict[str, set[str]] = {
+    "peak": {
+        # Red meat — sodium, slow digestion, water retention unpredictability
+        "Lean Ground Beef (96/4)", "Lean Ground Beef (93/7)", "Sirloin Steak",
+        "Flank Steak", "Eye of Round", "Ground Turkey (93/7)",
+        # Fatty fish — too much fat for peak week calorie precision
+        "Salmon",
+        # Dairy — bloating, lactose, GI unpredictability on stage day
+        "Whole Eggs", "Greek Yogurt (nonfat)", "Cottage Cheese (low-fat)",
+        # Pork — sodium content, unpredictable water
+        "Pork Tenderloin",
+        # Nuts and nut butters — calorie dense, hard to measure precisely
+        "Natural Peanut Butter", "Almond Butter", "Almonds", "Walnuts",
+        "Chia Seeds", "Flaxseeds (ground)",
+        # Coconut oil — too dense, prefer olive oil for precision
+        "Coconut Oil",
+        # Cruciferous vegetables — bloating and gas risk on stage
+        "Broccoli", "Cauliflower", "Kale",
+        # High-fiber carbs — bloating risk in final days
+        "Oats (rolled)", "Quinoa (cooked)", "Ezekiel Bread", "Brown Rice (cooked)",
+        # Plant proteins — gas, fiber, bloating
+        "Tofu (firm)", "Tempeh", "Seitan", "Edamame",
+        # Fruits (most) — fructose can cause bloating + water
+        "Apple", "Pineapple",
+    },
+    "cut": {
+        # Remove calorie-dense fats that are hard to track precisely
+        "Coconut Oil", "Walnuts",
+        # Remove fattier proteins — every calorie counts during prep
+        "Salmon", "Whole Eggs", "Sirloin Steak",
+        "Lean Ground Beef (93/7)",
+    },
+}
+
+
+# ─── Coach-Level Phase Rankings ──────────────────────────────────────────────
+#
+# A real Olympia coach has "go-to" proteins per phase. These rankings control
+# the default order when the user has no preferences set.
+# The first items in each list are chosen first by the meal planner.
+
+_PHASE_PROTEIN_RANKINGS: dict[str, list[str]] = {
+    "bulk": [
+        "Chicken Breast", "Lean Ground Beef (96/4)", "Flank Steak",
+        "Turkey Breast", "Whole Eggs", "Salmon", "Ground Turkey (93/7)",
+        "Sirloin Steak", "Greek Yogurt (nonfat)", "Pork Tenderloin",
+    ],
+    "lean_bulk": [
+        "Chicken Breast", "Turkey Breast", "Lean Ground Beef (96/4)",
+        "Flank Steak", "Tilapia", "Egg Whites", "Greek Yogurt (nonfat)",
+        "Ground Turkey (93/7)", "Cod", "Shrimp",
+    ],
+    "cut": [
+        "Chicken Breast", "Turkey Breast", "Tilapia", "Cod",
+        "Egg Whites", "Lean Ground Beef (96/4)", "Shrimp",
+        "Flank Steak", "Halibut", "Canned Tuna (in water)",
+    ],
+    "peak": [
+        "Chicken Breast", "Turkey Breast", "Tilapia", "Cod",
+        "Egg Whites", "Shrimp", "Halibut",
+    ],
+    "maintain": [
+        "Chicken Breast", "Turkey Breast", "Lean Ground Beef (96/4)",
+        "Tilapia", "Flank Steak", "Egg Whites", "Cod",
+        "Greek Yogurt (nonfat)", "Shrimp", "Ground Turkey (93/7)",
+    ],
+}
+
+_PHASE_CARB_RANKINGS: dict[str, list[str]] = {
+    "bulk": [
+        "White Rice (cooked)", "Jasmine Rice (cooked)", "Sweet Potato",
+        "Oats (rolled)", "Brown Rice (cooked)", "Cream of Rice (dry)",
+        "Russet Potato (baked)", "Quinoa (cooked)", "Ezekiel Bread",
+    ],
+    "lean_bulk": [
+        "White Rice (cooked)", "Jasmine Rice (cooked)", "Sweet Potato",
+        "Oats (rolled)", "Brown Rice (cooked)", "Cream of Rice (dry)",
+        "Quinoa (cooked)", "Russet Potato (baked)",
+    ],
+    "cut": [
+        "White Rice (cooked)", "Jasmine Rice (cooked)", "Sweet Potato",
+        "Cream of Rice (dry)", "Oats (rolled)", "Red Potato (boiled)",
+        "Rice Cakes",
+    ],
+    "peak": [
+        "White Rice (cooked)", "Jasmine Rice (cooked)", "Sweet Potato",
+        "Cream of Rice (dry)", "Rice Cakes", "Red Potato (boiled)",
+    ],
+    "maintain": [
+        "White Rice (cooked)", "Jasmine Rice (cooked)", "Sweet Potato",
+        "Oats (rolled)", "Brown Rice (cooked)", "Cream of Rice (dry)",
+        "Quinoa (cooked)", "Russet Potato (baked)",
+    ],
+}
+
+_PHASE_FAT_RANKINGS: dict[str, list[str]] = {
+    "bulk": [
+        "Extra Virgin Olive Oil", "Natural Peanut Butter", "Almonds",
+        "Almond Butter", "Avocado", "Walnuts", "Chia Seeds",
+    ],
+    "lean_bulk": [
+        "Extra Virgin Olive Oil", "Avocado", "Almonds",
+        "Natural Peanut Butter", "Almond Butter", "Chia Seeds",
+    ],
+    "cut": [
+        "Extra Virgin Olive Oil", "Avocado", "Almonds",
+        "Natural Peanut Butter",
+    ],
+    "peak": [
+        "Extra Virgin Olive Oil", "Avocado",
+    ],
+    "maintain": [
+        "Extra Virgin Olive Oil", "Avocado", "Almonds",
+        "Natural Peanut Butter", "Almond Butter",
+    ],
+}
+
+
+def _apply_phase_ranking(foods: list[FoodItem], phase: str, category: str) -> list[FoodItem]:
+    """Sort foods by coach-level phase ranking. Unranked foods go to the end."""
+    rankings = {
+        "protein": _PHASE_PROTEIN_RANKINGS,
+        "carb": _PHASE_CARB_RANKINGS,
+        "fat": _PHASE_FAT_RANKINGS,
+    }
+    rank_map = rankings.get(category, {}).get(phase, [])
+    if not rank_map:
+        return foods
+
+    rank_index = {name: i for i, name in enumerate(rank_map)}
+    max_rank = len(rank_map)
+
+    return sorted(foods, key=lambda f: rank_index.get(f.name, max_rank + hash(f.name) % 100))
+
+
 def get_available_foods(
     phase: str = "maintain",
     dietary_restrictions: list[str] | None = None,
     category: str | None = None,
     peri_workout_only: bool = False,
 ) -> list[FoodItem]:
-    """Return foods available for the given phase and dietary profile."""
+    """Return foods available for the given phase and dietary profile.
+
+    Applies both phase_tags filtering AND coach-level phase blacklists
+    that mirror real Olympia-level coaching practices.
+    """
     allowed_phases = _PHASE_MAP.get(phase, ("all",))
     restrictions = set(dietary_restrictions or [])
+    coach_blacklist = _COACH_PHASE_BLACKLISTS.get(phase, set())
 
     result = []
     for food in ALL_FOODS:
         # Phase filter
         if not any(tag in allowed_phases for tag in food.phase_tags):
+            continue
+        # Coach-level phase blacklist (e.g. no red meat during peak week)
+        if food.name in coach_blacklist:
             continue
         # Dietary restriction filter
         if restrictions and any(tag in restrictions for tag in food.exclude_tags):
@@ -222,4 +390,9 @@ def get_available_foods(
         if peri_workout_only and not food.peri_workout:
             continue
         result.append(food)
+
+    # Apply coach-level phase ranking so the "best" foods come first
+    if category:
+        result = _apply_phase_ranking(result, phase, category)
+
     return result

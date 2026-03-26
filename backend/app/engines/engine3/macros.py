@@ -66,27 +66,43 @@ def _fat_floor_for_context(
 ) -> float:
     """Return the phase-appropriate fat floor in g/kg TBW.
 
-    During late-stage cuts (men <8% BF, women <14% BF), the floor drops
-    further to 0.5 g/kg to maximise carbohydrate availability for training
-    performance and muscle fullness.
+    Coach-aligned fat floors:
+    - Offseason/bulk: 1.0 g/kg (hormonal optimization, joint health)
+    - Early cut: 0.8 g/kg (standard prep)
+    - Late cut (<8% male, <14% female): 0.65 g/kg (not lower — protects hormones)
+    - Peak week: 0.5 g/kg male, 0.6 g/kg female (7 days only, tight precision)
+    - Female absolute floor: 0.6 g/kg (hormonal health is non-negotiable)
+
+    An Olympia coach would NEVER drop a female athlete below 0.6 g/kg fat
+    regardless of phase. For males, 0.5 g/kg is the absolute floor during
+    peak week only — sustained cuts stay ≥0.65.
     """
     phase_key = phase.strip().lower()
+    is_female = sex.strip().lower() == "female"
     floor = _FAT_FLOOR_BY_PHASE.get(phase_key, _FAT_FLOOR_PER_KG)
 
-    # Late-cut override: smooth interpolation to avoid a jarring step-change
-    # at the threshold. Transitions from 0.8 → 0.5 g/kg over a 2% BF band
-    # (e.g., male: 10.0% → 8.0% BF), preventing macros from suddenly shifting
-    # by 50+ carb grams when a BF estimate crosses the threshold.
-    if phase_key == "cut" and body_fat_pct is not None:
-        lean_threshold = 8.0 if sex.strip().lower() == "male" else 14.0
-        transition_band = 2.0  # start transitioning 2% above threshold
+    # Peak week: tight but not reckless
+    if phase_key == "peak":
+        floor = 0.6 if is_female else 0.5
+
+    # Late-cut override: smooth interpolation to avoid a jarring step-change.
+    # Transitions from 0.8 → 0.65 g/kg over a 2% BF band.
+    # A real coach would keep fat higher than the old 0.5 floor during
+    # sustained prep to preserve testosterone/estrogen and avoid metabolic crash.
+    elif phase_key == "cut" and body_fat_pct is not None:
+        lean_threshold = 8.0 if not is_female else 14.0
+        transition_band = 2.0
+        late_cut_floor = 0.65 if not is_female else 0.70
         if body_fat_pct <= lean_threshold:
-            # Fully in late-cut territory
-            floor = 0.5
+            floor = late_cut_floor
         elif body_fat_pct < lean_threshold + transition_band:
-            # Smooth interpolation band: 0.8 g/kg at threshold+2% → 0.5 at threshold
             fraction = (lean_threshold + transition_band - body_fat_pct) / transition_band
-            floor = 0.8 - fraction * 0.3
+            floor = 0.8 - fraction * (0.8 - late_cut_floor)
+
+    # Female absolute floor — hormonal health is non-negotiable
+    if is_female:
+        floor = max(floor, 0.6)
+
     return floor
 
 # Caloric densities

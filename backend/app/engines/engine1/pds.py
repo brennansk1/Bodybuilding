@@ -85,9 +85,13 @@ def compute_conditioning_score(
         return 50.0
 
     if sex == "male":
-        ideal_bf = {"contest": 4.0, "peak_week": 5.0, "cut": 8.0, "offseason": 12.0, "bulk": 15.0}
+        ideal_bf = {"contest": 4.0, "peak_week": 5.0, "peak": 5.0, "cut": 8.0,
+                    "offseason": 12.0, "bulk": 15.0, "lean_bulk": 13.0,
+                    "maintain": 12.0, "restoration": 10.0}
     else:
-        ideal_bf = {"contest": 10.0, "peak_week": 11.0, "cut": 14.0, "offseason": 18.0, "bulk": 22.0}
+        ideal_bf = {"contest": 10.0, "peak_week": 11.0, "peak": 11.0, "cut": 14.0,
+                    "offseason": 18.0, "bulk": 22.0, "lean_bulk": 19.0,
+                    "maintain": 18.0, "restoration": 16.0}
 
     target = ideal_bf.get(phase, ideal_bf["offseason"])
     deviation = abs(body_fat_pct - target)

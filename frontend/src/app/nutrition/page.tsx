@@ -209,6 +209,41 @@ export default function NutritionPage() {
               )}
             </div>
 
+            {/* ── Today's Intake vs Target ── */}
+            {dailyTotals && activeMacros && (
+              <div className="card space-y-3">
+                <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Today&apos;s Progress</h2>
+                <div className="space-y-2">
+                  {[
+                    { label: "Calories", actual: dailyTotals.total_calories, target: activeMacros.calories, unit: "kcal", color: "bg-jungle-accent" },
+                    { label: "Protein", actual: dailyTotals.total_protein_g, target: activeMacros.protein_g, unit: "g", color: "bg-blue-400" },
+                    { label: "Carbs", actual: dailyTotals.total_carbs_g, target: activeMacros.carbs_g, unit: "g", color: "bg-amber-400" },
+                    { label: "Fat", actual: dailyTotals.total_fat_g, target: activeMacros.fat_g, unit: "g", color: "bg-red-400" },
+                  ].map(({ label, actual, target, unit: u, color }) => {
+                    const pct = target > 0 ? Math.min((actual / target) * 100, 120) : 0;
+                    const isOver = actual > target * 1.05;
+                    const isClose = actual >= target * 0.95 && actual <= target * 1.05;
+                    return (
+                      <div key={label}>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[10px] text-jungle-muted">{label}</span>
+                          <span className={`text-[10px] font-semibold ${isClose ? "text-green-400" : isOver ? "text-red-400" : "text-jungle-muted"}`}>
+                            {Math.round(actual)} / {Math.round(target)} {u}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-jungle-deeper rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${isOver ? "bg-red-400" : isClose ? "bg-green-400" : color}`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* ── Meal Plan ── */}
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
@@ -249,9 +284,15 @@ export default function NutritionPage() {
                           </div>
                           <div className="px-3 pb-2 space-y-0.5">
                             {meal.ingredients.map((ing, i) => (
-                              <div key={i} className="flex items-center justify-between text-[11px]">
-                                <span className={eaten ? "text-jungle-dim line-through" : "text-jungle-muted"}>{ing.name}</span>
-                                <span className="text-jungle-dim font-mono">{ing.quantity_g}g</span>
+                              <div key={i} className={`flex items-center justify-between text-[11px] py-0.5 ${i > 0 ? "border-t border-jungle-border/30" : ""}`}>
+                                <span className={`flex-1 ${eaten ? "text-jungle-dim line-through" : "text-jungle-muted"}`}>{ing.name}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-jungle-dim font-mono w-10 text-right">{ing.quantity_g}g</span>
+                                  <span className="text-[9px] text-blue-400/70 w-6 text-right">{Math.round(ing.protein_g)}p</span>
+                                  <span className="text-[9px] text-amber-400/70 w-6 text-right">{Math.round(ing.carbs_g)}c</span>
+                                  <span className="text-[9px] text-red-400/70 w-6 text-right">{Math.round(ing.fat_g)}f</span>
+                                  <span className="text-[9px] text-jungle-dim w-10 text-right">{Math.round(ing.calories)}</span>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -324,6 +365,15 @@ export default function NutritionPage() {
                 </div>
               </div>
             )}
+            {/* ── Quick Links ── */}
+            <div className="flex gap-3">
+              <a href="/nutrition/peak-week" className="flex-1 btn-secondary text-center text-sm py-2.5">
+                Peak Week
+              </a>
+              <a href="/checkin/review" className="flex-1 btn-secondary text-center text-sm py-2.5">
+                Weekly Review
+              </a>
+            </div>
           </>
         )}
       </main>

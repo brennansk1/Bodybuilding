@@ -66,8 +66,13 @@ class ApiClient {
     if (res.status === 401 && retry) {
       const refreshed = await this.tryRefresh();
       if (refreshed) return this.request<T>(method, path, body, false);
-      // Refresh failed — redirect to login
-      if (typeof window !== "undefined") window.location.href = "/auth/login";
+      // Refresh failed — clear tokens and let the page-level auth guard handle redirect.
+      // Do NOT hard-redirect here — it causes page reload loops on the login page
+      // and wipes any form data the user is typing.
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+      }
       throw new Error("Session expired");
     }
 
@@ -117,7 +122,10 @@ class ApiClient {
     if (res.status === 401) {
       const refreshed = await this.tryRefresh();
       if (refreshed) return this.postFormData<T>(path, formData);
-      if (typeof window !== "undefined") window.location.href = "/auth/login";
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+      }
       throw new Error("Session expired");
     }
     if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);

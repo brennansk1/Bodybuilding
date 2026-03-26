@@ -2,20 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Gym mode — larger text, higher contrast */
+/* Gym mode — aggressively larger for mid-workout phone use */
 .gym-mode {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
 }
 .gym-mode .input-field {
-  font-size: 1.125rem;
-  padding-top: 0.625rem;
-  padding-bottom: 0.625rem;
+  font-size: 1.375rem;
+  padding-top: 0.875rem;
+  padding-bottom: 0.875rem;
+  font-weight: 600;
+  text-align: center;
 }
 .gym-mode .text-sm {
-  font-size: 1rem;
+  font-size: 1.125rem;
 }
 .gym-mode .text-xs {
-  font-size: 0.875rem;
+  font-size: 1rem;
+}
+.gym-mode .text-base {
+  font-size: 1.375rem;
+}
+.gym-mode button {
+  min-height: 3rem;
+}
+.gym-mode .set-done-btn {
+  min-height: 3.5rem;
+  font-size: 1.25rem;
 }
 
 :root {

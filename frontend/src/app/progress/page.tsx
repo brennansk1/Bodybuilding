@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import { api } from "@/lib/api";
 import MiniLineChart from "@/components/MiniLineChart";
+import WeightTrendChart from "@/components/WeightTrendChart";
 
 interface WeightEntry { date: string; weight_kg: number }
 interface PDSEntry { date: string; pds_score: number; tier: string }
@@ -159,6 +160,16 @@ export default function ProgressPage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
 
+  // Unit preference — must be declared before any early returns
+  const [useLbs, setUseLbs] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUseLbs(localStorage.getItem("useLbs") === "true");
+    }
+  }, []);
+  const wm = useLbs ? 2.20462 : 1;
+  const wUnit = useLbs ? "lbs" : "kg";
+
   useEffect(() => {
     if (!loading && !user) { router.push("/auth/login"); return; }
     if (user) {
@@ -206,6 +217,18 @@ export default function ProgressPage() {
   const weightChange = latestWeight !== undefined && firstWeight !== undefined
     ? latestWeight - firstWeight
     : null;
+
+  // Compute 7-day rolling average for weight trend chart
+  const weightTrendData = weights.map((w, i) => {
+    const windowStart = Math.max(0, i - 6);
+    const window = weights.slice(windowStart, i + 1);
+    const avg = window.reduce((s, e) => s + e.weight_kg, 0) / window.length;
+    return {
+      date: w.date,
+      weight_kg: w.weight_kg,
+      rolling_avg: parseFloat(avg.toFixed(2)),
+    };
+  });
 
   const currentTotal = lcsa?.current?.total ?? 0;
   // Muscle mass score (0-100) from PDS components — how close to ghost model ideal
@@ -341,38 +364,77 @@ export default function ProgressPage() {
             <div className="card">
               <div className="flex items-baseline justify-between mb-4">
                 <h3 className="text-sm font-semibold">Body Weight Trend</h3>
-                <span className="text-xs text-jungle-muted">Last 120 days</span>
+                <span className="text-xs text-jungle-muted">Last 120 days · {wUnit}</span>
               </div>
-              {weightData.length >= 2 ? (
+              {weightTrendData.length >= 2 ? (
                 <>
-                  <MiniLineChart data={weightData} height={160} color="#c8a84e" />
+                  <WeightTrendChart data={weightTrendData} height={180} useLbs={useLbs} />
                   <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-4">
                     <div className="bg-jungle-deeper rounded-lg p-2 sm:p-3 text-center">
                       <p className="text-[10px] text-jungle-muted">Start</p>
-                      <p className="font-bold">{firstWeight}kg</p>
+                      <p className="font-bold">{(firstWeight * wm).toFixed(1)} {wUnit}</p>
                     </div>
                     <div className="bg-jungle-deeper rounded-lg p-3 text-center">
                       <p className="text-[10px] text-jungle-muted">Change</p>
                       <p className={`font-bold ${weightChange && weightChange < 0 ? "text-green-400" : weightChange && weightChange > 0 ? "text-red-400" : ""}`}>
-                        {weightChange !== null ? `${weightChange > 0 ? "+" : ""}${weightChange.toFixed(1)}kg` : "—"}
+                        {weightChange !== null ? `${weightChange > 0 ? "+" : ""}${(weightChange * wm).toFixed(1)} ${wUnit}` : "—"}
                       </p>
                     </div>
                     <div className="bg-jungle-deeper rounded-lg p-3 text-center">
                       <p className="text-[10px] text-jungle-muted">Current</p>
-                      <p className="font-bold text-jungle-accent">{latestWeight}kg</p>
+                      <p className="font-bold text-jungle-accent">{(latestWeight * wm).toFixed(1)} {wUnit}</p>
                     </div>
                   </div>
 
+                  {/* Weekly deltas */}
+                  {weights.length >= 14 && (() => {
+                    const weeklyDeltas: { week: string; delta: number }[] = [];
+                    for (let i = 7; i < weights.length; i += 7) {
+                      const end = weights[Math.min(i + 6, weights.length - 1)];
+                      const start = weights[i];
+                      if (end && start) {
+                        weeklyDeltas.push({
+                          week: start.date.slice(5),
+                          delta: (end.weight_kg - start.weight_kg) * wm,
+                        });
+                      }
+                    }
+                    if (weeklyDeltas.length === 0) return null;
+                    return (
+                      <div className="mt-4">
+                        <p className="text-[10px] text-jungle-dim uppercase tracking-wider mb-2">Weekly Change</p>
+                        <div className="flex gap-1 items-end h-16">
+                          {weeklyDeltas.map((w, i) => {
+                            const maxDelta = Math.max(...weeklyDeltas.map((d) => Math.abs(d.delta)), 0.5);
+                            const barH = Math.max(4, (Math.abs(w.delta) / maxDelta) * 56);
+                            const isNeg = w.delta < 0;
+                            return (
+                              <div key={i} className="flex-1 flex flex-col items-center justify-end" title={`${w.week}: ${w.delta > 0 ? "+" : ""}${w.delta.toFixed(1)} ${wUnit}`}>
+                                <div
+                                  className={`w-full rounded-sm ${isNeg ? "bg-green-400/60" : "bg-red-400/60"}`}
+                                  style={{ height: barH }}
+                                />
+                                <span className="text-[7px] text-jungle-dim mt-0.5">{w.week}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Weight log table */}
                   <div className="mt-4 space-y-1 max-h-48 overflow-y-auto">
-                    <div className="grid grid-cols-2 text-[10px] text-jungle-dim uppercase px-2 pb-1 border-b border-jungle-border">
+                    <div className="grid grid-cols-3 text-[10px] text-jungle-dim uppercase px-2 pb-1 border-b border-jungle-border">
                       <span>Date</span>
                       <span className="text-right">Weight</span>
+                      <span className="text-right">7d Avg</span>
                     </div>
-                    {[...weights].reverse().map((w) => (
-                      <div key={w.date} className="grid grid-cols-2 text-sm px-2 py-1.5 hover:bg-jungle-deeper rounded">
+                    {[...weightTrendData].reverse().map((w) => (
+                      <div key={w.date} className="grid grid-cols-3 text-sm px-2 py-1.5 hover:bg-jungle-deeper rounded">
                         <span className="text-jungle-muted">{w.date}</span>
-                        <span className="text-right font-medium">{w.weight_kg}kg</span>
+                        <span className="text-right font-medium">{(w.weight_kg * wm).toFixed(1)}</span>
+                        <span className="text-right text-jungle-accent font-medium">{(w.rolling_avg! * wm).toFixed(1)}</span>
                       </div>
                     ))}
                   </div>

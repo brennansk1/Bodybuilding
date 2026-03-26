@@ -38,8 +38,10 @@ from typing import Any
 
 _DIVISION_IMPORTANCE: dict[str, dict[str, float]] = {
     "mens_physique": {
-        "chest": 1.0, "back": 1.0,
-        "front_delt": 1.0, "side_delt": 1.2, "rear_delt": 0.8,
+        # MP lives and dies by WIDTH. Side delts are THE differentiator.
+        # Brandon Hendrickson, Jeremy Buendia — capped delts define the division.
+        "chest": 1.0, "back": 1.1,
+        "front_delt": 1.0, "side_delt": 1.4, "rear_delt": 0.9,
         "biceps": 1.0, "triceps": 0.9, "forearms": 0.6,
         "traps": 0.5, "abs": 0.7,
         # Legs hidden by board shorts but still trained for base / proportionality.
@@ -47,8 +49,10 @@ _DIVISION_IMPORTANCE: dict[str, dict[str, float]] = {
         "quads": 0.3, "hamstrings": 0.3, "glutes": 0.2, "calves": 0.15,
     },
     "classic_physique": {
-        "chest": 1.0, "back": 1.0,
-        "front_delt": 1.0, "side_delt": 1.0, "rear_delt": 0.9,
+        # Classic is the V-taper division. Side delts + back width create the
+        # Golden Era illusion. Cbum's shoulders are what separate him.
+        "chest": 1.0, "back": 1.1,
+        "front_delt": 1.0, "side_delt": 1.3, "rear_delt": 1.0,
         "biceps": 1.0, "triceps": 1.0, "forearms": 0.7,
         "traps": 0.8, "abs": 0.9,
         "quads": 1.0, "hamstrings": 0.9, "glutes": 0.8, "calves": 0.9,
