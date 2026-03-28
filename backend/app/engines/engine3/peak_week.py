@@ -81,22 +81,27 @@ def compute_peak_week_protocol(
     # Water loading protocol: aggressive divisions load heavily then cut;
     # gentle divisions taper gradually and maintain moderate hydration
     if aggressive:
-        # Saturday: minimum 2800 mL — joint lubrication, pump preservation, blood volume
-        # Cutting below 2.5L on stage day risks cramping and vasovagal events in hot staging areas
-        water_schedule = [8000, 8000, 6000, 3000, 2500, 2800, 4000]
+        # Graduated taper — never below 3000 mL on show day
+        # 8L water load depletes vasopressin, then gradual reduction
+        water_schedule = [8000, 8000, 6000, 4000, 3500, 3000, 4000]
     elif gentle:
-        water_schedule = [5000, 5000, 4500, 4000, 3500, 3000, 4000]
+        # Gentle divisions — minimal water manipulation to avoid flat appearance
+        water_schedule = [4500, 4500, 4000, 4000, 3500, 3000, 4000]
     else:
-        water_schedule = [6000, 6000, 5000, 3500, 3000, 2500, 4000]
+        water_schedule = [6000, 6000, 5000, 4000, 3500, 3000, 4000]
 
-    # Sodium protocol: maintain sodium during carb load for SGLT1 glucose transport
-    # Ratio targets: 4:1 to 5:1 Na:K during carb load days
+    # Sodium protocol — MAINTAIN or INCREASE during carb load days
+    # Research (Barakat et al. 2022, Escalante et al. 2021): SGLT1 glucose
+    # transport requires sodium for intestinal absorption. Cutting sodium
+    # during carb loading impairs glycogen storage.
+    # Load days (Thu/Fri) get HIGHER sodium to facilitate glucose absorption.
+    # Only show day gets modest reduction for final water tightening.
     if aggressive:
-        sodium_schedule = [2000, 1500, 1000, 1500, 1200, 800, 2300]
+        sodium_schedule = [2300, 2300, 2000, 2500, 2300, 1500, 2300]
     elif gentle:
-        sodium_schedule = [2300, 2300, 2000, 1800, 1500, 1200, 2300]
+        sodium_schedule = [2300, 2300, 2300, 2300, 2000, 1800, 2300]
     else:
-        sodium_schedule = [2300, 2000, 1500, 1500, 1200, 1000, 2300]
+        sodium_schedule = [2300, 2300, 2000, 2300, 2000, 1500, 2300]
 
     # Start Monday of peak week (6 days before show)
     if show_date:
@@ -154,7 +159,8 @@ def compute_peak_week_protocol(
             "notes": (
                 "Primary carb load. High-GI carbs from rice, white potato, "
                 "and bananas. Keep fat extremely low — fat inhibits glycogen storage. "
-                "Sodium very low. Reduce water intake."
+                "Sodium MAINTAINED (SGLT1 glucose co-transport requires sodium for "
+                "intestinal absorption). Moderate water to support glycogen hydration."
             ),
         },
         {  # Friday — Load Day 2 / Final Adjustments
@@ -167,7 +173,8 @@ def compute_peak_week_protocol(
                 "Continue carb load at slightly lower carbs. "
                 "Assess condition by late evening — if looking flat, "
                 "add 50-75g carbs before sleep. If looking full and tight, hold. "
-                "Virtually no sodium. Water carefully controlled."
+                "Sodium maintained for continued SGLT1 glucose absorption. "
+                "Water tapering gradually."
             ),
         },
         {  # Saturday — Show Day

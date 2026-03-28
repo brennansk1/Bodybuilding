@@ -163,22 +163,22 @@ _WEEKLY_SCHEDULE: dict[int, list[int]] = {
 # MRV = maximum recoverable volume (above = excess fatigue)
 # ---------------------------------------------------------------------------
 VOLUME_LANDMARKS: dict[str, tuple[int, int, int]] = {
-    # muscle:      (MEV, MAV, MRV)
-    "chest":       (6,  12, 22),
-    "back":        (8,  16, 25),
-    "quads":       (6,  12, 20),
-    "hamstrings":  (4,  10, 16),
-    "glutes":      (4,  10, 18),
-    "shoulders":   (6,  16, 22),
-    "biceps":      (4,  14, 20),
-    "triceps":     (4,  14, 20),
-    "calves":      (6,  16, 22),
-    "abs":         (0,  16, 25),
-    "traps":       (0,   8, 16),
-    "forearms":    (0,   8, 16),
-    "front_delt":  (4,  10, 18),
-    "side_delt":   (4,  12, 20),
-    "rear_delt":   (4,  12, 20),
+    # muscle:       (MEV, MAV, MRV) — RP-aligned (Renaissance Periodization)
+    "chest":        (6,  14, 22),    # MAV bumped from 12 → 14
+    "back":         (10, 18, 25),    # MEV bumped from 8 → 10, MAV 16 → 18
+    "quads":        (8,  14, 20),    # MEV bumped from 6 → 8, MAV 12 → 14
+    "hamstrings":   (6,  12, 16),    # MEV bumped from 4 → 6, MAV 10 → 12
+    "glutes":       (4,   8, 16),    # MAV dropped from 10 → 8, MRV 18 → 16
+    "shoulders":    (6,  16, 22),    # combined (kept for backward compat)
+    "biceps":       (6,  16, 22),    # bumped across all landmarks
+    "triceps":      (4,  10, 16),    # MAV dropped 14 → 10, MRV 20 → 16 (indirect from pressing)
+    "calves":       (8,  14, 20),    # MEV bumped from 6 → 8, MAV/MRV dropped
+    "abs":          (0,  12, 20),    # dropped from 16/25
+    "traps":        (0,  12, 20),    # bumped MAV and MRV
+    "forearms":     (0,   8, 14),    # MRV dropped from 16 → 14
+    "front_delt":   (0,   6, 12),    # MEV is 0 — pressing covers it
+    "side_delt":    (8,  18, 24),    # major bump — tolerates high volume
+    "rear_delt":    (6,  14, 22),    # MEV bumped from 4 → 6, MAV 12 → 14
 }
 
 # Minimum hours between training the same muscle (min recovery window)
@@ -1009,13 +1009,15 @@ def _build_days(
 # ---------------------------------------------------------------------------
 
 # Division-priority muscles that qualify for FST-7
+# Expanded based on Hany Rambod's actual protocols per division
 _FST7_TARGETS: dict[str, list[str]] = {
-    "mens_physique": ["side_delt", "rear_delt", "back", "biceps"],
-    "classic_physique": ["side_delt", "rear_delt", "biceps", "calves"],
-    "mens_open": ["side_delt", "biceps", "calves", "hamstrings"],
-    "womens_bikini": ["glutes", "hamstrings", "side_delt"],
-    "womens_figure": ["side_delt", "rear_delt", "back"],
-    "womens_physique": ["side_delt", "back", "biceps"],
+    "mens_physique": ["side_delt", "rear_delt", "back", "biceps", "triceps"],
+    "classic_physique": ["side_delt", "rear_delt", "biceps", "calves", "chest"],
+    "mens_open": ["side_delt", "biceps", "calves", "hamstrings", "chest", "back"],
+    "womens_bikini": ["glutes", "hamstrings", "side_delt", "rear_delt"],
+    "womens_figure": ["side_delt", "rear_delt", "back", "glutes"],
+    "womens_physique": ["side_delt", "back", "biceps", "hamstrings"],
+    "wellness": ["glutes", "hamstrings", "quads", "side_delt"],
 }
 
 

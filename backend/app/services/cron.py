@@ -122,6 +122,8 @@ async def _fix_duplicate_programs(db: AsyncSession) -> int:
 
 async def run_maintenance_cycle():
     """Run all maintenance tasks in a single DB session."""
+    import time as _time
+    _cycle_start = _time.monotonic()
     try:
         async with async_session() as db:
             # 1. Orphan cleanup
@@ -196,11 +198,64 @@ async def run_maintenance_cycle():
             else:
                 _log("integrity_check", "ok", "All active sessions have exercises", 0)
 
+            # 6. Stale check-in detector — flag users who haven't checked in for 14+ days during prep
+            from app.models.nutrition import WeeklyCheckin, AdherenceLog
+            stale_checkins = 0
+            prep_users = await db.execute(
+                select(User, UserProfile)
+                .join(UserProfile, User.id == UserProfile.user_id)
+                .where(User.onboarding_complete == True)
+            )
+            for u, profile in prep_users.all():
+                prefs = profile.preferences or {}
+                phase = prefs.get("initial_phase", "maintain")
+                if phase not in ("cut", "peak"):
+                    continue
+                latest_checkin = await db.execute(
+                    select(func.max(BodyWeightLog.recorded_date))
+                    .where(BodyWeightLog.user_id == u.id)
+                )
+                last_date = latest_checkin.scalar()
+                if last_date and (date.today() - last_date).days >= 14:
+                    stale_checkins += 1
+            if stale_checkins > 0:
+                _log("stale_checkins", "warning",
+                     f"{stale_checkins} prep athletes haven't logged weight in 14+ days", 0)
+            else:
+                _log("stale_checkins", "ok", "All prep athletes have recent check-ins", 0)
+
+            # 7. Weight stall detector — flag users whose weight hasn't changed in 14+ days during cut
+            weight_stalls = 0
+            cut_users = await db.execute(
+                select(User.id).join(UserProfile, User.id == UserProfile.user_id)
+                .where(User.onboarding_complete == True)
+            )
+            for (uid,) in cut_users.all():
+                recent_weights = await db.execute(
+                    select(BodyWeightLog.weight_kg)
+                    .where(
+                        BodyWeightLog.user_id == uid,
+                        BodyWeightLog.recorded_date >= date.today() - timedelta(days=14),
+                    )
+                    .order_by(BodyWeightLog.recorded_date)
+                )
+                weights = [r[0] for r in recent_weights.all()]
+                if len(weights) >= 4:
+                    weight_range = max(weights) - min(weights)
+                    if weight_range < 0.3:  # less than 300g change in 2 weeks
+                        weight_stalls += 1
+            if weight_stalls > 0:
+                _log("weight_stalls", "warning",
+                     f"{weight_stalls} users have stalled weight (<0.3kg change in 14 days)", 0)
+            else:
+                _log("weight_stalls", "ok", "No weight stalls detected", 0)
+
             await db.commit()
 
+        elapsed = _time.monotonic() - _cycle_start
         total = orphans + stale + dups + rx_fixed
         _log("maintenance_cycle", "complete",
-             f"Cycle complete — {total} total fixes applied", total)
+             f"Cycle complete — {total} fixes applied in {elapsed:.1f}s", total)
 
     except Exception as e:
         _log("maintenance_cycle", "error", f"Cycle failed: {str(e)}", 0)

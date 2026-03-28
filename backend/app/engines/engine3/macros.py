@@ -565,15 +565,54 @@ def compute_division_nutrition_priorities(division: str, phase: str) -> dict:
     }
 
 
+def compute_energy_availability(
+    consumed_calories: float,
+    exercise_energy_expenditure: float,
+    ffm_kg: float,
+) -> dict:
+    """Compute energy availability (EA) per kg fat-free mass.
+
+    Below 30 kcal/kg FFM/day, females risk RED-S (Relative Energy
+    Deficiency in Sport) — menstrual dysfunction, bone loss, impaired recovery.
+    """
+    if ffm_kg <= 0:
+        return {"energy_availability_kcal_per_kg_ffm": 0, "status": "error", "message": "Invalid FFM"}
+
+    ea = (consumed_calories - exercise_energy_expenditure) / ffm_kg
+
+    if ea < 30:
+        status = "danger"
+        message = (
+            f"Energy availability is {ea:.0f} kcal/kg FFM — below the 30 kcal/kg RED-S threshold. "
+            "Risk of menstrual dysfunction, bone density loss, and impaired recovery. "
+            "Increase caloric intake or reduce training volume immediately."
+        )
+    elif ea < 45:
+        status = "caution"
+        message = (
+            f"Energy availability is {ea:.0f} kcal/kg FFM — in the caution zone (30-45). "
+            "Monitor for signs of hormonal disruption, fatigue, and mood changes."
+        )
+    else:
+        status = "adequate"
+        message = f"Energy availability is {ea:.0f} kcal/kg FFM — adequate for health and performance."
+
+    return {
+        "energy_availability_kcal_per_kg_ffm": round(ea, 1),
+        "status": status,
+        "message": message,
+    }
+
+
 def compute_peri_workout_carb_split(carbs_g: float, meal_count: int = 5) -> dict:
     """
     Distribute carbohydrates across the day with peri-workout prioritisation.
 
-    Allocation:
-      - Pre-workout (2-3 h before training):  35% of daily carbs
-      - Intra-workout (during training):       10% (fast carbs — dextrose/gels)
-      - Post-workout (within 1 h after):       25% of daily carbs
-      - Remaining meals split across the rest: 30% distributed evenly
+    Allocation (research-validated — 55% total peri-workout):
+      - Pre-workout (2-3 h before training):  25% of daily carbs
+      - Intra-workout (during training):       8% (fast carbs — dextrose/gels)
+      - Post-workout (within 1 h after):       22% of daily carbs
+      - Remaining meals split across the rest: 45% distributed evenly
 
     Args:
         carbs_g: Total daily carbohydrate target (grams).
@@ -586,9 +625,9 @@ def compute_peri_workout_carb_split(carbs_g: float, meal_count: int = 5) -> dict
         ``other_meal_count``.
     """
     meal_count = max(3, meal_count)
-    pre_g    = round(carbs_g * 0.35, 1)
-    intra_g  = round(carbs_g * 0.10, 1)
-    post_g   = round(carbs_g * 0.25, 1)
+    pre_g    = round(carbs_g * 0.25, 1)
+    intra_g  = round(carbs_g * 0.08, 1)
+    post_g   = round(carbs_g * 0.22, 1)
     remaining = round(carbs_g - pre_g - intra_g - post_g, 1)
 
     other_meals = max(1, meal_count - 3)  # meals outside the peri-workout window

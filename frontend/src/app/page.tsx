@@ -24,8 +24,9 @@ export default function Home() {
         <Logo size="xl" showTagline />
 
         <p className="text-jungle-muted text-base sm:text-lg leading-relaxed">
-          A closed-loop algorithmic framework that optimizes competitive
-          bodybuilding physiques through three precision engines.
+          Your personal Olympia-level coaching system. Personalized training
+          programs, precision nutrition, and physique tracking — all calibrated
+          to your division and competition timeline.
         </p>
 
         <div className="card">
@@ -59,18 +60,18 @@ export default function Home() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-12 text-left">
           <FeatureCard
             icon="1"
-            title="Diagnostic Engine"
-            desc="LCSA, HQI, PDS scoring with division-specific vectors"
+            title="Physique Analysis"
+            desc="Track muscle development against your division's ideal proportions with precision scoring"
           />
           <FeatureCard
             icon="2"
-            title="Training Engine"
-            desc="ARI-driven volume allocation and periodization"
+            title="Smart Programming"
+            desc="Auto-adjusting training volume based on your recovery — deloads when you need them"
           />
           <FeatureCard
             icon="3"
-            title="Nutrition Engine"
-            desc="Thermodynamic macro control with adherence locks"
+            title="Precision Nutrition"
+            desc="Phase-aware meal plans with coach-level food selection and peak week protocols"
           />
         </div>
       </div>

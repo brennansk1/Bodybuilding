@@ -7,51 +7,51 @@ import { useState } from "react";
 const WIZARD_STEPS = [
   {
     key: "dashboard",
-    title: "Dashboard",
+    title: "Your Dashboard",
     icon: "📊",
     description:
-      "Your home base. See your Physique Development Score, body composition trends, and the Volumetric Ghost Model — a 3D projection of your physique gaps vs. division standards.",
-    highlight: "PDS score updates after every check-in.",
+      "This is your home base. At a glance you'll see today's workout, your macros, your Physique Development Score (a 0-100 rating of how close you are to stage-ready for your division), and which muscles need the most work.",
+    highlight: "Your PDS updates automatically after every check-in.",
   },
   {
     key: "checkin",
     title: "Daily Check-In",
     icon: "📋",
     description:
-      "Log your morning weight, HRV, sleep quality, and soreness. This drives all three engines — nutrition adjusts, training volume adapts, and diagnostics update.",
-    highlight: "Check in every morning for best results.",
+      "Every morning, log your fasted weight, sleep quality, and soreness. This takes about 30 seconds. The system uses this data to adjust your training volume and nutrition — just like a coach reviewing your daily updates.",
+    highlight: "Consistency is key — check in daily for the best results.",
   },
   {
     key: "training",
-    title: "Training",
+    title: "Your Workouts",
     icon: "🏋️",
     description:
-      "Your workout for today, guided set-by-set in Now Playing mode. Tap 'Start' to enter the flow — log weight, reps, and RPE. Rest timers run automatically.",
-    highlight: "Progressive overload is tracked every session.",
+      "Open the Training tab to see today's session. Tap 'Start' to enter Now Playing mode — it guides you set by set with weight, reps, and RPE logging. Rest timers start automatically between sets. Use Gym Mode for bigger buttons during your workout.",
+    highlight: "Navigate with arrows to preview upcoming workouts.",
   },
   {
     key: "program",
-    title: "Program",
+    title: "Your Program",
     icon: "📅",
     description:
-      "Your full 6-week mesocycle: MEV → MAV → MRV → Deload. View the calendar month to see all scheduled sessions and tap any day for a workout preview.",
-    highlight: "The split adapts to your physique gap priority.",
+      "Your training runs in 6-week cycles that progressively increase volume, then deload for recovery. The Program tab shows your full schedule, which muscles are prioritized, and where you are in the cycle.",
+    highlight: "Your split is designed around your weakest muscle groups.",
   },
   {
     key: "nutrition",
-    title: "Nutrition",
+    title: "Meal Plan & Macros",
     icon: "🥩",
     description:
-      "Engine 3 prescribes your macros and generates a coach-level meal plan with real foods and gram weights. Training day and rest day plans are separate.",
-    highlight: "Carb cycling and fat isolation built-in.",
+      "Your daily calories, protein, carbs, and fat are calculated based on your phase (bulk, cut, or maintain). The meal planner generates real meals with gram weights using the foods you selected during setup. Training days and rest days have different plans.",
+    highlight: "Regenerate your meal plan anytime from the Nutrition tab.",
   },
   {
     key: "settings",
-    title: "Settings",
+    title: "Settings & Preferences",
     icon: "⚙️",
     description:
-      "Update your competition date, division, and training preferences. Changes re-run the engines and update all prescriptions automatically.",
-    highlight: "Set your show date to activate peak week protocol.",
+      "Update your competition date, division, food preferences, or training schedule anytime. When you save, all three engines recalculate — your program, meals, and scores update automatically.",
+    highlight: "Set a competition date to activate the peak week protocol.",
   },
 ];
 

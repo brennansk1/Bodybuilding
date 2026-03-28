@@ -355,24 +355,30 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold"><span className="text-jungle-accent">Settings</span></h1>
-              <p className="text-jungle-muted text-sm mt-1">Profile & training preferences</p>
+              <p className="text-jungle-muted text-sm mt-1">Manage your profile, training, and nutrition preferences</p>
             </div>
-            <a href="/dashboard" className="btn-secondary text-sm px-3 py-2">← Dashboard</a>
+            <a href="/dashboard" className="btn-secondary text-sm px-3 py-2">Dashboard</a>
           </div>
 
-          {/* Section tabs */}
-          <div className="flex gap-1 bg-jungle-deeper border border-jungle-border rounded-xl p-1">
-            {(["profile", "training", "nutrition", "account"] as const).map((sec) => (
+          {/* Section tabs — with icons */}
+          <div className="grid grid-cols-4 gap-1 bg-jungle-deeper border border-jungle-border rounded-xl p-1">
+            {([
+              { key: "profile" as const, label: "Profile", icon: "M" },
+              { key: "training" as const, label: "Training", icon: "T" },
+              { key: "nutrition" as const, label: "Nutrition", icon: "N" },
+              { key: "account" as const, label: "Account", icon: "A" },
+            ]).map(({ key, label, icon }) => (
               <button
-                key={sec}
-                onClick={() => setActiveSection(sec)}
-                className={`flex-1 py-2 text-xs sm:text-sm rounded-lg transition-colors capitalize font-medium ${
-                  activeSection === sec
-                    ? "bg-jungle-accent text-jungle-dark"
-                    : "text-jungle-muted hover:text-jungle-accent"
+                key={key}
+                onClick={() => setActiveSection(key)}
+                className={`py-2.5 rounded-lg transition-all text-center ${
+                  activeSection === key
+                    ? "bg-jungle-accent text-jungle-dark shadow-sm"
+                    : "text-jungle-muted hover:text-jungle-accent hover:bg-jungle-card/50"
                 }`}
               >
-                {sec}
+                <span className={`block text-lg font-bold leading-none ${activeSection === key ? "" : "opacity-50"}`}>{icon}</span>
+                <span className="block text-[10px] mt-0.5 font-medium">{label}</span>
               </button>
             ))}
           </div>
@@ -381,7 +387,7 @@ export default function SettingsPage() {
           {activeSection === "profile" && (
             <div className="space-y-5">
               <div className="card space-y-4">
-                <SectionHeader>Identity</SectionHeader>
+                <SectionHeader description="Basic profile information used across all engines">Identity</SectionHeader>
 
                 {/* Display name */}
                 <div>
@@ -457,7 +463,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="card space-y-4">
-                <SectionHeader>Competition</SectionHeader>
+                <SectionHeader description="Competition details drive peak week protocol timing">Competition</SectionHeader>
 
                 <div>
                   <label className="label-field">Division</label>
@@ -508,7 +514,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="card space-y-4">
-                <SectionHeader>Body Composition</SectionHeader>
+                <SectionHeader description="Structural measurements for genetic ceiling calculations">Body Composition</SectionHeader>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -594,7 +600,7 @@ export default function SettingsPage() {
           {activeSection === "training" && (
             <div className="space-y-5">
               <div className="card space-y-4">
-                <SectionHeader>Schedule</SectionHeader>
+                <SectionHeader description="Training frequency and timing — drives meal plan scheduling">Schedule</SectionHeader>
 
                 <div>
                   <label className="label-field">Training Days per Week</label>
@@ -792,7 +798,7 @@ export default function SettingsPage() {
 
               {/* Food Source Preferences */}
               <div className="card space-y-4">
-                <SectionHeader>Food Source Preferences</SectionHeader>
+                <SectionHeader description="Select your preferred foods — the meal planner will prioritize these choices">Food Source Preferences</SectionHeader>
                 <p className="text-[10px] text-jungle-dim -mt-2">
                   Select your preferred sources for each macro. The meal planner will prioritize these choices.
                 </p>
@@ -1052,35 +1058,50 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Save button — profile, training, nutrition tabs */}
-          {activeSection !== "account" && (
-            <button
-              onClick={saveProfile}
-              disabled={saving || syncing}
-              className="btn-primary w-full disabled:opacity-50"
-            >
-              {saved
-                ? "Saved & Engines Updated!"
-                : syncing
-                ? "Updating Plan..."
-                : saving
-                ? "Saving..."
-                : "Save Changes"}
-            </button>
-          )}
         </div>
       </main>
 
-      <div className="md:hidden h-16" />
+      {/* Sticky save bar — professional apps keep save always visible */}
+      {activeSection !== "account" && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-jungle-card/95 backdrop-blur-md border-t border-jungle-border safe-bottom">
+          <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="flex-1 text-xs text-jungle-dim">
+              {saved ? (
+                <span className="text-green-400 font-medium">All changes saved and engines updated</span>
+              ) : syncing ? (
+                <span className="text-jungle-accent">Syncing with training and nutrition engines...</span>
+              ) : (
+                <span>Changes will sync training program and meal plan</span>
+              )}
+            </div>
+            <button
+              onClick={saveProfile}
+              disabled={saving || syncing}
+              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 ${
+                saved
+                  ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                  : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover shadow-lg shadow-jungle-accent/20"
+              }`}
+            >
+              {saved ? "Saved" : syncing ? "Syncing..." : saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="h-20" />
     </div>
   );
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
+function SectionHeader({ children, description }: { children: React.ReactNode; description?: string }) {
   return (
-    <h2 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider">{children}</h2>
+    <div className="mb-1">
+      <h2 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider">{children}</h2>
+      {description && <p className="text-[10px] text-jungle-dim mt-0.5">{description}</p>}
+    </div>
   );
 }
 

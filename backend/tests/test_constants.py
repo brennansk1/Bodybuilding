@@ -4,8 +4,8 @@ from app.constants.exercises import SEED_EXERCISES
 
 
 class TestDivisionVectors:
-    def test_all_six_divisions_present(self):
-        expected = {"mens_open", "classic_physique", "mens_physique", "womens_figure", "womens_bikini", "womens_physique"}
+    def test_all_divisions_present(self):
+        expected = {"mens_open", "classic_physique", "mens_physique", "womens_figure", "womens_bikini", "womens_physique", "wellness"}
         assert set(DIVISION_VECTORS.keys()) == expected
 
     def test_all_divisions_have_same_sites(self):

@@ -28,6 +28,7 @@ class FoodItem:
     phase_tags: tuple = ("all",)  # all, prep, bulk, maintain
     exclude_tags: tuple = ()  # dietary tags that exclude this food
     # e.g. ("vegetarian",) means excluded if user is vegetarian
+    meal_affinity: tuple = ("any",)  # "breakfast", "lunch_dinner", "snack", "any"
 
 
 # ─── Protein Sources ─────────────────────────────────────────────────────────
@@ -73,13 +74,17 @@ PROTEINS = [
 
     # Dairy & Eggs
     FoodItem("Whole Eggs", "protein", 13.0, 1.1, 11.0, 155, 100, 50, 200,
-             phase_tags=("bulk", "maintain"), exclude_tags=("vegan", "dairy_free")),
+             phase_tags=("bulk", "maintain"), exclude_tags=("vegan", "dairy_free"),
+             meal_affinity=("breakfast", "any")),
     FoodItem("Egg Whites", "protein", 11.0, 0.7, 0.2, 52, 150, 80, 300,
-             peri_workout=True, phase_tags=("all",), exclude_tags=("vegan",)),
+             peri_workout=True, phase_tags=("all",), exclude_tags=("vegan",),
+             meal_affinity=("breakfast", "any")),
     FoodItem("Greek Yogurt (nonfat)", "protein", 10.0, 3.6, 0.7, 59, 200, 100, 300,
-             phase_tags=("all",), exclude_tags=("vegan", "dairy_free")),
+             phase_tags=("all",), exclude_tags=("vegan", "dairy_free"),
+             meal_affinity=("breakfast", "snack")),
     FoodItem("Cottage Cheese (low-fat)", "protein", 11.0, 3.4, 1.0, 72, 200, 100, 300,
-             phase_tags=("all",), exclude_tags=("vegan", "dairy_free")),
+             phase_tags=("all",), exclude_tags=("vegan", "dairy_free"),
+             meal_affinity=("breakfast", "snack")),
 
     # Plant-based
     FoodItem("Tofu (firm)", "protein", 17.0, 2.0, 9.0, 144, 150, 100, 250,
@@ -97,59 +102,71 @@ PROTEINS = [
 CARBS = [
     # Complex / slow-digesting
     FoodItem("Oats (rolled)", "carb", 13.0, 68.0, 7.0, 389, 80, 40, 150,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("breakfast", "snack")),
     FoodItem("Sweet Potato", "carb", 1.6, 20.0, 0.1, 86, 200, 100, 350,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("lunch_dinner",)),
     FoodItem("Brown Rice (cooked)", "carb", 2.6, 23.0, 0.9, 111, 200, 100, 350,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("lunch_dinner", "any")),
     FoodItem("Quinoa (cooked)", "carb", 4.4, 21.0, 1.9, 120, 180, 100, 300,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("lunch_dinner",)),
     FoodItem("Cream of Rice (dry)", "carb", 7.0, 79.0, 0.5, 358, 50, 30, 100,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("breakfast", "snack")),
     FoodItem("Ezekiel Bread", "carb", 8.0, 36.0, 1.0, 200, 60, 30, 120,
-             phase_tags=("all",), exclude_tags=("gluten_free",)),
+             phase_tags=("all",), exclude_tags=("gluten_free",),
+             meal_affinity=("breakfast", "snack")),
 
     # Simple / fast-digesting (peri-workout)
     FoodItem("White Rice (cooked)", "carb", 2.7, 28.0, 0.3, 130, 200, 100, 400,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("lunch_dinner", "any")),
     FoodItem("Jasmine Rice (cooked)", "carb", 2.7, 28.0, 0.3, 130, 200, 100, 400,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("lunch_dinner", "any")),
     FoodItem("Rice Cakes", "carb", 8.0, 82.0, 2.8, 387, 30, 15, 60,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("snack", "any")),
     FoodItem("Russet Potato (baked)", "carb", 2.5, 21.0, 0.1, 97, 250, 150, 400,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("lunch_dinner",)),
     FoodItem("Red Potato (boiled)", "carb", 1.9, 20.0, 0.1, 87, 250, 150, 400,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("lunch_dinner",)),
 ]
 
 # ─── Vegetables ──────────────────────────────────────────────────────────────
 
 VEGETABLES = [
     FoodItem("Broccoli", "vegetable", 2.8, 7.0, 0.4, 34, 150, 80, 250,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Asparagus", "vegetable", 2.2, 3.9, 0.1, 20, 150, 80, 250,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Spinach", "vegetable", 2.9, 3.6, 0.4, 23, 100, 50, 200,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Green Beans", "vegetable", 1.8, 7.0, 0.1, 31, 150, 80, 250,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Bell Peppers", "vegetable", 1.0, 6.0, 0.3, 26, 120, 60, 200,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Zucchini", "vegetable", 1.2, 3.1, 0.3, 17, 150, 80, 250,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Cucumber", "vegetable", 0.7, 3.6, 0.1, 15, 120, 60, 200,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Kale", "vegetable", 4.3, 9.0, 0.9, 49, 80, 40, 150,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
     FoodItem("Cauliflower", "vegetable", 1.9, 5.0, 0.3, 25, 150, 80, 250,
-             phase_tags=("all",), exclude_tags=()),
+             phase_tags=("all",), exclude_tags=(), meal_affinity=("lunch_dinner",)),
 ]
 
 # ─── Fruits ──────────────────────────────────────────────────────────────────
 
 FRUITS = [
     FoodItem("Banana", "fruit", 1.1, 23.0, 0.3, 89, 120, 80, 150,
-             peri_workout=True, phase_tags=("all",), exclude_tags=()),
+             peri_workout=True, phase_tags=("all",), exclude_tags=(),
+             meal_affinity=("breakfast", "snack", "any")),
     FoodItem("Blueberries", "fruit", 0.7, 14.0, 0.3, 57, 80, 40, 150,
              phase_tags=("all",), exclude_tags=()),
     FoodItem("Strawberries", "fruit", 0.7, 8.0, 0.3, 32, 100, 50, 200,

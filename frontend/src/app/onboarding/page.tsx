@@ -7,12 +7,13 @@ import { useAuth } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 
 const DIVISIONS = [
-  { value: "mens_open", label: "Men's Open" },
-  { value: "classic_physique", label: "Classic Physique" },
-  { value: "mens_physique", label: "Men's Physique" },
-  { value: "womens_figure", label: "Women's Figure" },
-  { value: "womens_bikini", label: "Women's Bikini" },
-  { value: "womens_physique", label: "Women's Physique" },
+  { value: "mens_open", label: "Men's Open", desc: "Maximum muscle mass and conditioning" },
+  { value: "classic_physique", label: "Classic Physique", desc: "Aesthetic V-taper with size limits" },
+  { value: "mens_physique", label: "Men's Physique", desc: "Beach muscle — upper body focus" },
+  { value: "womens_figure", label: "Women's Figure", desc: "Athletic muscle with X-frame" },
+  { value: "womens_bikini", label: "Women's Bikini", desc: "Lean, toned with rounded glutes" },
+  { value: "womens_physique", label: "Women's Physique", desc: "Full muscularity and balance" },
+  { value: "wellness", label: "Wellness", desc: "Lower body dominant — large glutes and thighs" },
 ];
 
 const SPLITS = [
@@ -180,7 +181,13 @@ export default function OnboardingPage() {
     }
   };
 
-  const stepTitles = ["Profile", "Measurements", "Strength", "Preferences", "Launch"];
+  const stepInfo = [
+    { title: "Profile", desc: "Tell us about yourself — height, division, and competition goals" },
+    { title: "Measurements", desc: "Body weight, tape measurements, and optional skinfold data" },
+    { title: "Strength Baselines", desc: "Your current estimated 1RM for key compound lifts" },
+    { title: "Preferences", desc: "Training schedule, food choices, and meal plan setup" },
+    { title: "Launch", desc: "Review and activate your personalized coaching system" },
+  ];
 
   return (
     <main className="min-h-screen bg-canopy-gradient p-4 sm:p-8">
@@ -188,22 +195,25 @@ export default function OnboardingPage() {
         <div className="text-center">
           <Logo size="md" />
           <h2 className="text-xl font-semibold mt-4">
-            {stepTitles[step - 1]}{" "}
-            <span className="text-jungle-accent">({step}/5)</span>
+            {stepInfo[step - 1].title}
           </h2>
+          <p className="text-jungle-dim text-sm mt-1">{stepInfo[step - 1].desc}</p>
           {/* Progress bar */}
-          <div className="flex gap-1.5 justify-center mt-4">
-            {[1, 2, 3, 4, 5].map((s) => (
-              <div
-                key={s}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  s <= step
-                    ? "w-14 bg-jungle-accent"
-                    : "w-10 bg-jungle-border"
-                }`}
-              />
+          <div className="flex gap-1 justify-center mt-4">
+            {stepInfo.map((s, i) => (
+              <div key={i} className="flex flex-col items-center gap-1 flex-1">
+                <div
+                  className={`h-1.5 w-full rounded-full transition-all duration-300 ${
+                    i + 1 <= step ? "bg-jungle-accent" : "bg-jungle-border"
+                  }`}
+                />
+                <span className={`text-[8px] font-medium ${i + 1 <= step ? "text-jungle-accent" : "text-jungle-dim"}`}>
+                  {s.title}
+                </span>
+              </div>
             ))}
           </div>
+          <p className="text-[10px] text-jungle-dim mt-2">Step {step} of 5</p>
         </div>
 
         <div className="card space-y-4">
@@ -214,60 +224,94 @@ export default function OnboardingPage() {
           )}
 
           {step === 1 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-5">
+              {/* Basic Info */}
               <div>
-                <label className="label-field">Sex</label>
-                <select value={sex} onChange={(e) => setSex(e.target.value)} className="input-field">
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                </select>
+                <h3 className="text-xs font-semibold text-jungle-accent uppercase tracking-wider mb-3">Basic Info</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="label-field">Sex</label>
+                    <select value={sex} onChange={(e) => setSex(e.target.value)} className="input-field">
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-field">Age</label>
+                    <input type="number" value={age} onChange={(e) => setAge(e.target.value)} className="input-field" placeholder="25" />
+                  </div>
+                  <div>
+                    <label className="label-field">Height (cm) *</label>
+                    <input type="number" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} required className="input-field" placeholder="178" />
+                  </div>
+                </div>
               </div>
+
+              {/* Division Selection */}
               <div>
-                <label className="label-field">Age</label>
-                <input type="number" value={age} onChange={(e) => setAge(e.target.value)} className="input-field" placeholder="25" />
-              </div>
-              <div>
-                <label className="label-field">Height (cm)</label>
-                <input type="number" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} required className="input-field" placeholder="178" />
-              </div>
-              <div>
-                <label className="label-field">Division</label>
-                <select value={division} onChange={(e) => setDivision(e.target.value)} className="input-field">
-                  {DIVISIONS.map((d) => (
-                    <option key={d.value} value={d.value}>{d.label}</option>
+                <h3 className="text-xs font-semibold text-jungle-accent uppercase tracking-wider mb-3">Competition Division</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {DIVISIONS.filter(d => sex === "male" ? !d.value.startsWith("womens") && d.value !== "wellness" : d.value.startsWith("womens") || d.value === "wellness").map((d) => (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => setDivision(d.value)}
+                      className={`text-left p-3 rounded-xl border transition-all ${
+                        division === d.value
+                          ? "border-jungle-accent bg-jungle-accent/10"
+                          : "border-jungle-border bg-jungle-deeper hover:border-jungle-accent/40"
+                      }`}
+                    >
+                      <p className={`text-sm font-semibold ${division === d.value ? "text-jungle-accent" : "text-jungle-text"}`}>{d.label}</p>
+                      <p className="text-[10px] text-jungle-dim mt-0.5">{d.desc}</p>
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
+
+              {/* Experience & Competition */}
               <div>
-                <label className="label-field">Experience (years)</label>
-                <input type="number" value={experience} onChange={(e) => setExperience(e.target.value)} className="input-field" placeholder="5" />
+                <h3 className="text-xs font-semibold text-jungle-accent uppercase tracking-wider mb-3">Experience & Competition</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label-field">Training Experience (years)</label>
+                    <input type="number" value={experience} onChange={(e) => setExperience(e.target.value)} className="input-field" placeholder="5" />
+                  </div>
+                  <div>
+                    <label className="label-field">Competition Date (optional)</label>
+                    <input type="date" value={competitionDate} onChange={(e) => setCompetitionDate(e.target.value)} className="input-field" />
+                  </div>
+                  <div>
+                    <label className="label-field">Current Phase</label>
+                    <select value={currentPhase} onChange={(e) => setCurrentPhase(e.target.value)} className="input-field">
+                      <option value="">Auto-detect from competition date</option>
+                      <option value="bulk">Bulk (Off-Season)</option>
+                      <option value="lean_bulk">Lean Bulk</option>
+                      <option value="cut">Cut (Contest Prep)</option>
+                      <option value="maintain">Maintain</option>
+                    </select>
+                  </div>
+                </div>
               </div>
+
+              {/* Structural Measurements */}
               <div>
-                <label className="label-field">Target Comm Date (optional)</label>
-                <input type="date" value={competitionDate} onChange={(e) => setCompetitionDate(e.target.value)} className="input-field" />
-              </div>
-              <div>
-                <label className="label-field">Wrist Circumference (cm)</label>
-                <input type="number" step="0.1" value={wrist} onChange={(e) => setWrist(e.target.value)} className="input-field" placeholder="17.5" />
-              </div>
-              <div>
-                <label className="label-field">Ankle Circumference (cm)</label>
-                <input type="number" step="0.1" value={ankle} onChange={(e) => setAnkle(e.target.value)} className="input-field" placeholder="23.0" />
-              </div>
-              <div>
-                <label className="label-field">Body Fat % <span className="text-jungle-dim font-normal">(optional — if you know it)</span></label>
-                <input type="number" step="0.5" min="3" max="50" value={manualBodyFatPct} onChange={(e) => setManualBodyFatPct(e.target.value)} className="input-field" placeholder="e.g. 15" />
-                <p className="text-[10px] text-jungle-dim mt-1">Leave blank — the engine will estimate from your measurements.</p>
-              </div>
-              <div>
-                <label className="label-field">Current Phase <span className="text-jungle-dim font-normal">(optional)</span></label>
-                <select value={currentPhase} onChange={(e) => setCurrentPhase(e.target.value)} className="input-field">
-                  <option value="">Auto-detect from competition date</option>
-                  <option value="bulk">Bulk (Off-Season)</option>
-                  <option value="lean_bulk">Lean Bulk</option>
-                  <option value="cut">Cut (Contest Prep)</option>
-                  <option value="maintain">Maintain</option>
-                </select>
+                <h3 className="text-xs font-semibold text-jungle-accent uppercase tracking-wider mb-3">Structural Anchors (optional)</h3>
+                <p className="text-[10px] text-jungle-dim -mt-2 mb-3">Wrist and ankle circumference help calculate your genetic muscle ceiling. Body fat is estimated from measurements if left blank.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="label-field">Wrist (cm)</label>
+                    <input type="number" step="0.1" value={wrist} onChange={(e) => setWrist(e.target.value)} className="input-field" placeholder="17.5" />
+                  </div>
+                  <div>
+                    <label className="label-field">Ankle (cm)</label>
+                    <input type="number" step="0.1" value={ankle} onChange={(e) => setAnkle(e.target.value)} className="input-field" placeholder="23.0" />
+                  </div>
+                  <div>
+                    <label className="label-field">Body Fat %</label>
+                    <input type="number" step="0.5" min="3" max="50" value={manualBodyFatPct} onChange={(e) => setManualBodyFatPct(e.target.value)} className="input-field" placeholder="e.g. 15" />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -275,15 +319,29 @@ export default function OnboardingPage() {
           {step === 2 && (
             <>
               <div>
-                <label className="label-field">Body Weight (kg)</label>
+                <label className="label-field">Body Weight (kg) *</label>
                 <input type="number" step="0.1" value={bodyWeight} onChange={(e) => setBodyWeight(e.target.value)} required className="input-field" placeholder="90.0" />
+                <p className="text-[10px] text-jungle-dim mt-1">Fasted morning weight is most accurate</p>
               </div>
               <h3 className="text-sm font-semibold text-jungle-accent uppercase tracking-wide pt-2">Tape Measurements (cm)</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {TAPE_SITES.map((site) => (
+              <p className="text-[10px] text-jungle-dim -mt-1 mb-2">Measure relaxed, at the widest point of each site. All measurements are optional but improve accuracy.</p>
+
+              <p className="text-[10px] text-jungle-muted font-semibold uppercase tracking-wider mb-1">Upper Body</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                {["neck", "shoulders", "chest", "left_bicep", "right_bicep", "left_forearm", "right_forearm"].map((site) => (
                   <div key={site}>
                     <label className="block text-xs text-jungle-muted mb-1 capitalize">{site.replace(/_/g, " ")}</label>
-                    <input type="number" step="0.1" value={tape[site] || ""} onChange={(e) => setTape({ ...tape, [site]: e.target.value })} className="input-field text-sm" />
+                    <input type="number" step="0.1" value={tape[site] || ""} onChange={(e) => setTape({ ...tape, [site]: e.target.value })} className="input-field text-sm" placeholder="cm" />
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[10px] text-jungle-muted font-semibold uppercase tracking-wider mb-1">Lower Body</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {["waist", "hips", "left_thigh", "right_thigh", "left_calf", "right_calf"].map((site) => (
+                  <div key={site}>
+                    <label className="block text-xs text-jungle-muted mb-1 capitalize">{site.replace(/_/g, " ")}</label>
+                    <input type="number" step="0.1" value={tape[site] || ""} onChange={(e) => setTape({ ...tape, [site]: e.target.value })} className="input-field text-sm" placeholder="cm" />
                   </div>
                 ))}
               </div>
@@ -314,15 +372,23 @@ export default function OnboardingPage() {
 
           {step === 3 && (
             <>
-              <p className="text-sm text-jungle-muted">Enter estimated 1RM (kg) for each lift</p>
+              <p className="text-sm text-jungle-muted">Enter your estimated 1-rep max (1RM) for each lift in kg.</p>
+              <div className="bg-jungle-deeper border border-jungle-border rounded-lg px-3 py-2 mb-2">
+                <p className="text-[10px] text-jungle-dim leading-relaxed">
+                  If you don't know your 1RM, estimate from your best working set:
+                  multiply your weight by (1 + reps/30). Example: 100kg x 8 reps = ~127kg estimated 1RM.
+                  Leave blank if unsure — baselines can be set later.
+                </p>
+              </div>
               <div className="space-y-3">
                 {CORE_LIFTS.map((lift) => (
-                  <div key={lift}>
-                    <label className="label-field">{lift}</label>
-                    <input type="number" step="0.5" value={strengths[lift] || ""} onChange={(e) => setStrengths({ ...strengths, [lift]: e.target.value })} placeholder="kg" className="input-field" />
+                  <div key={lift} className="flex items-center gap-3">
+                    <label className="label-field mb-0 w-40 shrink-0 text-sm">{lift}</label>
+                    <input type="number" step="0.5" value={strengths[lift] || ""} onChange={(e) => setStrengths({ ...strengths, [lift]: e.target.value })} placeholder="kg" className="input-field flex-1" />
                   </div>
                 ))}
               </div>
+              <p className="text-[10px] text-jungle-dim mt-2">These baselines are used to calculate your initial training loads. The system refines them as you log workouts.</p>
             </>
           )}
 
@@ -463,18 +529,29 @@ export default function OnboardingPage() {
           )}
 
           {step === 5 && (
-            <div className="text-center py-8 space-y-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-jungle-primary/20 flex items-center justify-center">
+            <div className="text-center py-6 space-y-5">
+              <div className="w-16 h-16 mx-auto rounded-full bg-jungle-accent/20 flex items-center justify-center">
                 <svg className="w-8 h-8 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
               <h3 className="text-lg font-semibold">Ready to Launch</h3>
               <p className="text-jungle-muted text-sm max-w-sm mx-auto">
-                Coronado will run initial diagnostics, compute your Physique
-                Development Score, and generate your first training and
-                nutrition prescription.
+                When you click Launch, Coronado will run all three engines and build your personalized system. This takes about 10 seconds.
               </p>
+              <div className="text-left max-w-sm mx-auto space-y-2">
+                {[
+                  { engine: "Engine 1", action: "Analyze your physique against division standards" },
+                  { engine: "Engine 2", action: "Generate your training program and split" },
+                  { engine: "Engine 3", action: "Calculate macros and build your meal plan" },
+                ].map(({ engine, action }) => (
+                  <div key={engine} className="flex items-start gap-2 bg-jungle-deeper rounded-lg px-3 py-2">
+                    <span className="text-jungle-accent text-[10px] font-bold shrink-0 mt-0.5">{engine}</span>
+                    <span className="text-xs text-jungle-muted">{action}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-jungle-dim">You can update all of these settings later from the Settings page.</p>
             </div>
           )}
 
