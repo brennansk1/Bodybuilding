@@ -10,21 +10,26 @@ import math
 
 
 def categorize_body_fat(bf_pct: float, sex: str) -> str:
-    """Return a descriptive category for a body fat percentage."""
+    """Return a descriptive category for a body fat percentage.
+
+    Ranges adjusted for DEXA-verified contest conditioning.
+    Skinfold methods underestimate by 2-4% at low BF — these cutoffs
+    account for that systematic bias.
+    """
     s = sex.strip().lower()
     if s == "male":
-        if bf_pct < 5:   return "contest_ready"
-        if bf_pct < 8:   return "peak_condition"
-        if bf_pct < 12:  return "lean"
-        if bf_pct < 16:  return "moderate"
-        if bf_pct < 20:  return "average"
+        if bf_pct < 6:   return "contest_ready"   # DEXA ~4-5%
+        if bf_pct < 10:  return "peak_condition"   # DEXA ~6-8%
+        if bf_pct < 14:  return "lean"
+        if bf_pct < 18:  return "moderate"
+        if bf_pct < 22:  return "average"
         return "above_average"
     else:
-        if bf_pct < 12:  return "contest_ready"
-        if bf_pct < 15:  return "peak_condition"
-        if bf_pct < 20:  return "lean"
-        if bf_pct < 25:  return "moderate"
-        if bf_pct < 30:  return "average"
+        if bf_pct < 14:  return "contest_ready"    # DEXA ~10-12%
+        if bf_pct < 17:  return "peak_condition"   # DEXA ~13-15%
+        if bf_pct < 22:  return "lean"
+        if bf_pct < 27:  return "moderate"
+        if bf_pct < 32:  return "average"
         return "above_average"
 
 

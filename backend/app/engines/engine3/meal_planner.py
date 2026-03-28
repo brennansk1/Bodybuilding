@@ -114,10 +114,17 @@ def _scale_food_to_fat(food: FoodItem, target_fat_g: float) -> MealIngredient:
     return _scale_food(food, qty)
 
 
-def _pick_unique(foods: list[FoodItem], used: set[str], count: int = 1) -> list[FoodItem]:
-    """Pick foods not yet used, preserving preference order. Falls back to any if all used."""
-    available = [f for f in foods if f.name not in used]
+def _pick_unique(foods: list[FoodItem], used: set[str], count: int = 1, slot_type: str = "any") -> list[FoodItem]:
+    """Pick foods not yet used, filtered by meal slot type. Falls back gracefully."""
+    # First try: unused foods matching the slot type
+    available = [f for f in foods
+                 if f.name not in used
+                 and (slot_type in f.meal_affinity or "any" in f.meal_affinity)]
     if not available:
+        # Fallback: any unused food (ignore affinity)
+        available = [f for f in foods if f.name not in used]
+    if not available:
+        # Last resort: reuse foods
         available = list(foods)
     return available[:count]
 
@@ -129,8 +136,14 @@ def _build_time_slots(
     training_start_time: str,
     training_duration_min: int,
     is_training_day: bool,
-) -> list[tuple[int, str, bool]]:
-    """Return list of (minutes_from_midnight, label, is_peri)."""
+) -> list[tuple[int, str, bool, str]]:
+    """Return list of (minutes_from_midnight, label, is_peri, slot_type).
+
+    slot_type determines which foods are appropriate:
+      - "breakfast": before 10:00 AM (oats, eggs, yogurt)
+      - "lunch_dinner": 10:00 AM onwards (rice, potato, meat + veg)
+      - "any": peri-workout slots (macro-driven, affinity ignored)
+    """
     try:
         h, m = map(int, training_start_time.split(":"))
         train_start = h * 60 + m
@@ -140,8 +153,9 @@ def _build_time_slots(
     train_end = train_start + training_duration_min
     day_start = 6 * 60
     day_end = 22 * 60
+    breakfast_cutoff = 10 * 60  # 10:00 AM
 
-    slots: list[tuple[int, str, bool]] = []
+    slots: list[tuple[int, str, bool, str]] = []
 
     if is_training_day and meal_count >= 3:
         pre_time = max(day_start, train_start - 60)
@@ -154,20 +168,22 @@ def _build_time_slots(
         before_span = pre_time - day_start
         for i in range(before_count):
             t = day_start + int(before_span * (i + 1) / (before_count + 1))
-            slots.append((t, "Meal", False))
+            stype = "breakfast" if t < breakfast_cutoff else "lunch_dinner"
+            slots.append((t, "Meal", False, stype))
 
-        slots.append((pre_time, "Pre-Workout", True))
-        slots.append((post_time, "Post-Workout", True))
+        slots.append((pre_time, "Pre-Workout", True, "any"))
+        slots.append((post_time, "Post-Workout", True, "any"))
 
         after_span = day_end - post_time
         for i in range(after_count):
             t = post_time + int(after_span * (i + 1) / (after_count + 1))
-            slots.append((t, "Meal", False))
+            slots.append((t, "Meal", False, "lunch_dinner"))
     else:
         span = day_end - day_start
         for i in range(meal_count):
             t = day_start + int(span * i / max(1, meal_count - 1)) if meal_count > 1 else day_start + span // 2
-            slots.append((t, "Meal", False))
+            stype = "breakfast" if t < breakfast_cutoff else "lunch_dinner"
+            slots.append((t, "Meal", False, stype))
 
     slots.sort(key=lambda x: x[0])
     return slots
@@ -269,11 +285,11 @@ def generate_meal_plan(
     # carbohydrate allocation to fuel training and drive recovery. Fat is
     # isolated AWAY from peri-workout for gastric emptying speed. Protein
     # is distributed evenly across all meals for MPS optimization.
-    peri_count = sum(1 for _, _, p in slots if p)
+    peri_count = sum(1 for _, _, p, _ in slots if p)
     non_peri_count = len(slots) - peri_count
 
     # Peri-workout gets 40-50% of carbs (up from old 35% default)
-    effective_peri_pct = max(peri_workout_carb_pct, 0.40) if is_training_day else 0
+    effective_peri_pct = max(peri_workout_carb_pct, 0.35) if is_training_day else 0
     peri_carb_total = carbs_g * effective_peri_pct if is_training_day else 0
     other_carb_total = carbs_g - peri_carb_total
 
@@ -290,7 +306,7 @@ def generate_meal_plan(
 
     meals: list[Meal] = []
 
-    for idx, (mins, label, is_peri) in enumerate(slots):
+    for idx, (mins, label, is_peri, slot_type) in enumerate(slots):
         meal_num = idx + 1
         label_str = f"Meal {meal_num} – {label}" if label != "Meal" else f"Meal {meal_num}"
         time_str = _mins_to_time(mins)
@@ -301,23 +317,22 @@ def generate_meal_plan(
         m_carbs = per_peri_carbs if is_peri else per_other_carbs
         m_fat = 0.0 if is_peri else per_meal_fat
 
-        # ── 1. Protein source ──
+        # ── 1. Protein source (slot-type aware) ──
         pool = peri_proteins if is_peri else proteins
-        picks = _pick_unique(pool, used_proteins)
+        picks = _pick_unique(pool, used_proteins, slot_type=slot_type)
         if picks:
             protein_food = picks[0]
             used_proteins.add(protein_food.name)
             item = _scale_food_to_protein(protein_food, m_protein)
             meal.ingredients.append(item)
-            # Subtract protein already provided
             remaining_protein = max(0, m_protein - item.protein_g)
         else:
             remaining_protein = m_protein
 
-        # ── 2. Carb source ──
+        # ── 2. Carb source (slot-type aware) ──
         if m_carbs > 5:
             pool = peri_carbs if is_peri else sustained_carbs
-            picks = _pick_unique(pool, used_carbs)
+            picks = _pick_unique(pool, used_carbs, slot_type=slot_type)
             if picks:
                 carb_food = picks[0]
                 used_carbs.add(carb_food.name)
@@ -326,16 +341,16 @@ def generate_meal_plan(
 
         # ── 3. Fat source (not peri-workout) ──
         if not is_peri and m_fat > 3:
-            picks = _pick_unique(fats, used_fats)
+            picks = _pick_unique(fats, used_fats, slot_type=slot_type)
             if picks:
                 fat_food = picks[0]
                 used_fats.add(fat_food.name)
                 item = _scale_food_to_fat(fat_food, m_fat)
                 meal.ingredients.append(item)
 
-        # ── 4. Vegetable (non-peri, non-refeed) ──
-        if not is_peri and not is_refeed and vegetables:
-            picks = _pick_unique(vegetables, used_vegs)
+        # ── 4. Vegetable (non-peri, non-refeed, lunch/dinner only) ──
+        if not is_peri and not is_refeed and vegetables and slot_type != "breakfast":
+            picks = _pick_unique(vegetables, used_vegs, slot_type=slot_type)
             if picks:
                 veg_food = picks[0]
                 used_vegs.add(veg_food.name)

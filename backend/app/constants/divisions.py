@@ -51,6 +51,14 @@ DIVISION_VECTORS = {
         "back_width": 0.220,
         "shoulder_to_waist": 1.358, "v_taper": 1.358,
     },
+    "wellness": {
+        # Wellness: large glutes/thighs with tight waist. Lower body dominates.
+        "neck": 0.198, "shoulders": 0.595, "chest": 0.520,
+        "bicep": 0.168, "forearm": 0.145, "waist": 0.395,
+        "hips": 0.600, "thigh": 0.370, "calf": 0.210,
+        "back_width": 0.230,
+        "shoulder_to_waist": 1.506, "v_taper": 1.380,
+    },
 }
 
 # Division ceiling factors: what fraction of Casey Butt genetic maximum
@@ -88,6 +96,11 @@ DIVISION_CEILING_FACTORS = {
         "neck": 0.85, "shoulders": 0.90, "chest": 0.88,
         "bicep": 0.87, "forearm": 0.85, "thigh": 0.87, "calf": 0.85,
         "back_width": 0.87,
+    },
+    "wellness": {
+        "neck": 0.72, "shoulders": 0.78, "chest": 0.72,
+        "bicep": 0.72, "forearm": 0.72, "thigh": 0.90, "calf": 0.72,
+        "back_width": 0.75,
     },
 }
 

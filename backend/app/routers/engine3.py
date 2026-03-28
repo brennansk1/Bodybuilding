@@ -1182,3 +1182,72 @@ async def get_daily_totals(
             "guidance": mps_guidance,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Shopping List
+# ---------------------------------------------------------------------------
+
+@router.get("/shopping-list/weekly")
+async def get_weekly_shopping_list(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate a consolidated weekly shopping list from the current meal plan.
+    Aggregates training-day and rest-day ingredients, rounds to purchase
+    quantities, and organizes by grocery section.
+    """
+    from app.engines.engine3.shopping_list import generate_weekly_shopping_list
+
+    profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
+    profile = profile_result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Complete onboarding first")
+
+    rx_result = await db.execute(
+        select(NutritionPrescription)
+        .where(NutritionPrescription.user_id == user.id, NutritionPrescription.is_active == True)
+        .order_by(desc(NutritionPrescription.created_at)).limit(1)
+    )
+    rx = rx_result.scalar_one_or_none()
+    if not rx:
+        raise HTTPException(status_code=404, detail="No active nutrition prescription")
+
+    prefs = profile.preferences or {}
+    days_per_week = prefs.get("training_days_per_week", profile.days_per_week or 5)
+
+    # Generate both day types
+    training_meals = await _build_meal_plan(db, user, profile, rx, "training")
+    rest_meals = await _build_meal_plan(db, user, profile, rx, "rest")
+
+    shopping_list = generate_weekly_shopping_list(
+        training_day_meals=training_meals,
+        rest_day_meals=rest_meals,
+        training_days_per_week=days_per_week,
+    )
+
+    return shopping_list
+
+
+# ---------------------------------------------------------------------------
+# Supplement Protocol
+# ---------------------------------------------------------------------------
+
+@router.get("/supplements/current")
+async def get_supplement_protocol(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the evidence-based supplement stack for the user's current phase."""
+    rx_result = await db.execute(
+        select(NutritionPrescription)
+        .where(NutritionPrescription.user_id == user.id, NutritionPrescription.is_active == True)
+        .order_by(desc(NutritionPrescription.created_at)).limit(1)
+    )
+    rx = rx_result.scalar_one_or_none()
+    phase = rx.phase if rx else "maintain"
+
+    from app.engines.engine3.supplements import get_supplement_protocol
+    protocol = get_supplement_protocol(phase)
+    return {"phase": phase, "supplements": protocol, "count": len(protocol)}

@@ -69,7 +69,7 @@ _DIVISION_IMPORTANCE: dict[str, dict[str, float]] = {
         "front_delt": 0.8, "side_delt": 1.0, "rear_delt": 0.5,
         "biceps": 0.3, "triceps": 0.3, "forearms": 0.1,
         "traps": 0.2, "abs": 0.8,
-        "quads": 0.6, "hamstrings": 0.9, "glutes": 1.2, "calves": 0.2,
+        "quads": 0.6, "hamstrings": 1.2, "glutes": 1.5, "calves": 0.2,
     },
     "womens_figure": {
         "chest": 0.5, "back": 0.9,
@@ -84,6 +84,14 @@ _DIVISION_IMPORTANCE: dict[str, dict[str, float]] = {
         "biceps": 0.8, "triceps": 0.8, "forearms": 0.5,
         "traps": 0.7, "abs": 0.8,
         "quads": 0.9, "hamstrings": 0.9, "glutes": 0.9, "calves": 0.7,
+    },
+    "wellness": {
+        # Wellness: glutes and thighs are THE priority, upper body secondary
+        "chest": 0.4, "back": 0.7,
+        "front_delt": 0.7, "side_delt": 1.0, "rear_delt": 0.6,
+        "biceps": 0.4, "triceps": 0.4, "forearms": 0.2,
+        "traps": 0.3, "abs": 0.6,
+        "quads": 1.0, "hamstrings": 1.2, "glutes": 1.5, "calves": 0.3,
     },
 }
 

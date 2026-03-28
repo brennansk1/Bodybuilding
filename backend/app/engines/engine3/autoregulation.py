@@ -15,13 +15,17 @@ from typing import Dict, Any, List
 
 # Division-specific body fat floor targets (%)
 # Engine 3 should halt the cut phase when these floors are reached
+# Floors bumped +1-2% to account for caliper-derived BF underestimation.
+# Calipers read ~2-4% lower than DEXA at contest conditioning, so these
+# floors trigger slightly earlier to protect the athlete.
 _DIVISION_BF_FLOOR: Dict[str, float] = {
-    "mens_open": 4.0,
-    "classic_physique": 5.0,
-    "mens_physique": 6.0,
-    "womens_physique": 8.0,
-    "womens_figure": 8.0,
-    "womens_bikini": 11.0,
+    "mens_open": 5.0,         # DEXA-verified ~3-4% at this caliper reading
+    "classic_physique": 6.0,  # DEXA ~4-5%
+    "mens_physique": 7.0,     # DEXA ~5-6%
+    "womens_physique": 9.0,   # DEXA ~7-8%
+    "womens_figure": 9.0,     # DEXA ~7-8%
+    "womens_bikini": 12.0,    # DEXA ~10-11%
+    "wellness": 12.0,         # similar to bikini
 }
 
 

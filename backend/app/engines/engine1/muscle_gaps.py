@@ -227,6 +227,12 @@ _DIVISION_VISIBILITY: dict[str, dict[str, float]] = {
         "forearm": 0.9, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
         "back_width": 1.0,
     },
+    "wellness": {
+        # Glutes and thighs dominate; upper body secondary
+        "neck": 0.8, "shoulders": 1.0, "chest": 0.6, "bicep": 0.5,
+        "forearm": 0.3, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 0.4,
+        "back_width": 0.8,
+    },
 }
 _DEFAULT_VISIBILITY: dict[str, float] = {
     "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,

@@ -11,3 +11,5 @@ from app.models.nutrition import (  # noqa: F401
     IngredientMaster, NutritionPrescription, UserMeal, MealItem,
     NutritionLog, AdherenceLog, WeeklyCheckin,
 )
+from app.models.posing import PosingLog  # noqa: F401
+from app.models.sleep import SleepLog  # noqa: F401

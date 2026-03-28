@@ -31,9 +31,10 @@ _DIVISION_WEIGHTS: dict[str, tuple[float, float, float, float]] = {
     "mens_open":        (0.30, 0.40, 0.15, 0.15),
     "classic_physique": (0.45, 0.25, 0.15, 0.15),
     "mens_physique":    (0.40, 0.20, 0.25, 0.15),
-    "womens_bikini":    (0.30, 0.15, 0.35, 0.20),
+    "womens_bikini":    (0.35, 0.10, 0.30, 0.25),  # presentation/aesthetic > conditioning
     "womens_figure":    (0.35, 0.25, 0.25, 0.15),
     "womens_physique":  (0.35, 0.35, 0.15, 0.15),
+    "wellness":         (0.30, 0.15, 0.25, 0.30),  # lower body symmetry + glute mass
 }
 _DEFAULT_WEIGHTS = (0.40, 0.30, 0.20, 0.10)
 

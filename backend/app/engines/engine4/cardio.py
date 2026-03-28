@@ -106,11 +106,6 @@ def compute_energy_flux_prescription(
         burn_per_session = _CARDIO_BURN_ESTIMATES["zone2_cycling"]
         modality_note = "Zone 2 cycling for VO2max and insulin sensitivity"
 
-    # Safety validation: ensure cardio prescription doesn't indirectly
-    # push effective intake below the thermodynamic floor
-    # Max cardio deficit = current calories - intercept (don't eat into the floor)
-    max_safe_cardio_deficit = max(0, current_calories - intercept - food_cut if room_to_cut < target_deficit else target_deficit)
-
     # Decision logic
     if room_to_cut >= target_deficit:
         # Plenty of room — reduce food normally
@@ -128,6 +123,7 @@ def compute_energy_flux_prescription(
 
     # Approaching the floor — use cardio to cover the gap
     food_cut = min(room_to_cut, target_deficit * 0.4)  # max 40% from food
+    max_safe_cardio_deficit = max(0, current_calories - intercept - food_cut)
     cardio_deficit_needed = min(target_deficit - food_cut, max_safe_cardio_deficit)
 
     sessions_needed = min(
