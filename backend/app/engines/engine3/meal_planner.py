@@ -200,14 +200,28 @@ def _build_time_slots(
     slots: list[tuple[int, str, bool, str]] = []
 
     if is_training_day and meal_count >= 3:
-        pre_time = max(day_start, train_start - 60)
+        pre_time = max(day_start, train_start - 90)   # pre-WO 90min before (digestion)
         post_time = min(day_end, train_end + 30)
 
         non_peri = meal_count - 2
-        before_count = max(0, non_peri // 2)
-        after_count = non_peri - before_count
-
         before_span = pre_time - day_start
+
+        # If there's less than 90 min before pre-WO, no room for a separate meal.
+        # Athletes training at 5-6am train fasted or use pre-WO as first meal.
+        if before_span < 90:
+            before_count = 0
+            after_count = non_peri
+        else:
+            # Distribute based on available time windows
+            hours_before = before_span / 60
+            hours_after = (day_end - post_time) / 60
+            total_hours = hours_before + hours_after
+            if total_hours > 0:
+                before_count = max(1, round(non_peri * hours_before / total_hours))
+            else:
+                before_count = max(1, non_peri // 2)
+            after_count = non_peri - before_count
+
         for i in range(before_count):
             t = day_start + int(before_span * (i + 1) / (before_count + 1))
             stype = "breakfast" if t < breakfast_cutoff else "lunch_dinner"
@@ -220,6 +234,14 @@ def _build_time_slots(
         for i in range(after_count):
             t = post_time + int(after_span * (i + 1) / (after_count + 1))
             slots.append((t, "Meal", False, "lunch_dinner"))
+
+        # Guarantee: the FIRST meal of the day is always breakfast-type
+        # (a real athlete eats eggs at 6-7am, not chicken)
+        if slots:
+            slots.sort(key=lambda x: x[0])
+            first = slots[0]
+            if not first[2] and first[0] < 12 * 60:  # non-peri and before noon
+                slots[0] = (first[0], first[1], first[2], "breakfast")
     else:
         span = day_end - day_start
         for i in range(meal_count):
@@ -339,7 +361,21 @@ def generate_meal_plan(
     fat_staple_count = 1 if is_strict_phase else 2
     veg_staple_count = 1 if is_strict_phase else 2
 
-    daily_proteins = _select_daily_staples(proteins, protein_staple_count, slot_types_in_plan)
+    # Ensure breakfast proteins are included in the daily staple pool
+    # A real coach always has eggs or yogurt in the AM — chicken at 6am is not coaching
+    _BF_PROTEIN_NAMES = {"Egg Whites", "Whole Eggs", "Greek Yogurt (nonfat)", "Cottage Cheese (low-fat)"}
+    has_breakfast_slot = "breakfast" in slot_types_in_plan
+    if has_breakfast_slot:
+        # Force at least one breakfast protein into the staple pool
+        bf_prots = [p for p in proteins if p.name in _BF_PROTEIN_NAMES]
+        non_bf_prots = [p for p in proteins if p.name not in _BF_PROTEIN_NAMES]
+        if bf_prots:
+            # Take 1 breakfast protein + rest from ranked list
+            daily_proteins = bf_prots[:1] + _select_daily_staples(non_bf_prots, max(1, protein_staple_count - 1), slot_types_in_plan)
+        else:
+            daily_proteins = _select_daily_staples(proteins, protein_staple_count, slot_types_in_plan)
+    else:
+        daily_proteins = _select_daily_staples(proteins, protein_staple_count, slot_types_in_plan)
     daily_carbs = _select_daily_staples(sustained_carbs, carb_staple_count, slot_types_in_plan)
     daily_peri_carbs = _select_daily_staples(peri_carbs, min(2, len(peri_carbs)), ["any"])
     daily_fats = _select_daily_staples(fats, fat_staple_count, slot_types_in_plan)
@@ -375,23 +411,47 @@ def generate_meal_plan(
 
     meals: list[Meal] = []
 
+    # Build dedicated breakfast protein pool — prioritize eggs, yogurt, cottage
+    # cheese over chicken/beef for the first meal. A real competitor's breakfast
+    # is eggs + oats, NOT chicken breast + rice (that's a lunch/dinner meal).
+    _BREAKFAST_PROTEIN_NAMES = {
+        "Egg Whites", "Whole Eggs", "Greek Yogurt (nonfat)",
+        "Cottage Cheese (low-fat)",
+    }
+    breakfast_proteins = [p for p in proteins if p.name in _BREAKFAST_PROTEIN_NAMES]
+    if not breakfast_proteins:
+        # No breakfast proteins in available pool (all blacklisted/filtered) — fall back
+        breakfast_proteins = daily_proteins
+
     for idx, (mins, label, is_peri, slot_type) in enumerate(slots):
         meal_num = idx + 1
         label_str = f"Meal {meal_num} – {label}" if label != "Meal" else f"Meal {meal_num}"
         time_str = _mins_to_time(mins)
+        is_pre = label == "Pre-Workout"
+        is_post = label == "Post-Workout"
         meal = Meal(meal_number=meal_num, label=label_str, time_str=time_str, is_peri=is_peri)
 
         # Per-meal targets
         m_protein = per_meal_protein
         m_carbs = per_peri_carbs if is_peri else per_other_carbs
+        # Peri-workout meals: fat should be ZERO or near-zero for gastric emptying
         m_fat = 0.0 if is_peri else per_meal_fat
 
-        # ── 1. Protein source (round-robin from daily staples) ──
+        # ── 1. Protein source ──
+        # Slot-aware protein selection:
+        #   Breakfast → eggs/yogurt (NOT chicken at 6am)
+        #   Pre-workout → fast-digesting lean protein (chicken breast, egg whites)
+        #   Post-workout → same as pre (fast protein for MPS)
+        #   Lunch/dinner → standard rotation (chicken, turkey, beef, fish)
+        protein_food = None
+
         if is_peri and daily_peri_proteins:
             protein_food = daily_peri_proteins[_peri_prot_idx % len(daily_peri_proteins)]
             _peri_prot_idx += 1
+        elif slot_type == "breakfast" and breakfast_proteins:
+            protein_food = breakfast_proteins[_prot_idx % len(breakfast_proteins)]
+            _prot_idx += 1
         elif daily_proteins:
-            # Pick affinity-matching staple when possible
             affinity_match = [f for f in daily_proteins
                              if slot_type in f.meal_affinity or "any" in f.meal_affinity]
             if affinity_match:
@@ -399,18 +459,20 @@ def generate_meal_plan(
             else:
                 protein_food = daily_proteins[_prot_idx % len(daily_proteins)]
             _prot_idx += 1
-        else:
-            protein_food = None
 
         if protein_food:
             item = _scale_food_to_protein(protein_food, m_protein)
             meal.ingredients.append(item)
-            # Subtract incidental carbs/fat from remaining macro budget
             m_carbs = max(0, m_carbs - item.carbs_g)
             m_fat = max(0, m_fat - item.fat_g)
 
-        # ── 2. Carb source (round-robin from daily staples) ──
+        # ── 2. Carb source ──
+        # Pre/post-workout: MUST use fast-digesting carbs (white rice, cream of
+        # rice, rice cakes) — NOT slow carbs (oats, quinoa, sweet potato)
+        # Breakfast: oats or cream of rice (traditional bodybuilding breakfast)
+        # Lunch/dinner: rice, potato, sweet potato
         if m_carbs > 5:
+            carb_food = None
             if is_peri and daily_peri_carbs:
                 carb_food = daily_peri_carbs[_peri_carb_idx % len(daily_peri_carbs)]
                 _peri_carb_idx += 1
@@ -422,16 +484,15 @@ def generate_meal_plan(
                 else:
                     carb_food = daily_carbs[_carb_idx % len(daily_carbs)]
                 _carb_idx += 1
-            else:
-                carb_food = None
 
             if carb_food:
                 item = _scale_food_to_carbs(carb_food, m_carbs)
                 meal.ingredients.append(item)
-                # Subtract incidental fat from remaining budget
                 m_fat = max(0, m_fat - item.fat_g)
 
-        # ── 3. Fat source (not peri-workout, round-robin) ──
+        # ── 3. Fat source (NOT in peri-workout meals) ──
+        # Coach protocol: fat slows gastric emptying → keep peri-workout meals
+        # fat-free for faster nutrient delivery to muscle tissue
         if not is_peri and m_fat > 3 and daily_fats:
             fat_food = daily_fats[_fat_idx % len(daily_fats)]
             _fat_idx += 1
@@ -439,6 +500,7 @@ def generate_meal_plan(
             meal.ingredients.append(item)
 
         # ── 4. Vegetable (non-peri, non-refeed, lunch/dinner only) ──
+        # No vegetables in peri-workout (fiber slows absorption) or breakfast
         if not is_peri and not is_refeed and daily_vegs and slot_type != "breakfast":
             veg_food = daily_vegs[_veg_idx % len(daily_vegs)]
             _veg_idx += 1

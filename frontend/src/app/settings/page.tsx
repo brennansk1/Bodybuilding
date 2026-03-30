@@ -765,12 +765,22 @@ export default function SettingsPage() {
 
                 <div>
                   <label className="label-field">Meals per Day</label>
-                  <div className="grid grid-cols-6 gap-2 mt-2">
+                  <div className="grid grid-cols-7 gap-1.5 mt-2">
+                    <button
+                      onClick={() => setMealCount("0")}
+                      className={`py-2.5 rounded-xl text-[10px] font-semibold transition-colors col-span-1 ${
+                        mealCount === "0"
+                          ? "bg-jungle-accent text-jungle-dark"
+                          : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
+                      }`}
+                    >
+                      Auto
+                    </button>
                     {[3, 4, 5, 6, 7, 8].map((n) => (
                       <button
                         key={n}
                         onClick={() => setMealCount(n.toString())}
-                        className={`py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                        className={`py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                           mealCount === n.toString()
                             ? "bg-jungle-accent text-jungle-dark"
                             : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
@@ -781,7 +791,9 @@ export default function SettingsPage() {
                     ))}
                   </div>
                   <p className="text-[10px] text-jungle-dim mt-2">
-                    {parseInt(mealCount) >= 6
+                    {mealCount === "0"
+                      ? "Auto: engine calculates optimal meals based on your macros, weight, and MPS research"
+                      : parseInt(mealCount) >= 6
                       ? "Competition-level frequency — maximizes MPS stimulation"
                       : parseInt(mealCount) >= 4
                       ? "Optimal for protein distribution across the day"
