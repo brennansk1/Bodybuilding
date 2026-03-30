@@ -247,40 +247,104 @@ def _recommend_phase(
             "confidence": "high",
         }
 
-    # --- Priority 3: Close to show (<20 weeks) and BF above stage-ready ---
-    if weeks_out is not None and weeks_out <= 20 and bf > lean_threshold:
-        return {
-            "recommended_phase": "cut",
-            "reason": f"{weeks_out} weeks to show at {bf:.1f}% BF — time to cut for stage conditioning.",
-            "confidence": "high",
-        }
+    # --- Priority 3: Competition scheduled — use smart prep planner ---
+    if weeks_out is not None and competition_date is not None and body_fat_pct is not None:
+        from app.engines.engine1.prep_timeline import (
+            estimate_cut_duration, get_stage_bf_target, compute_smart_phase_plan,
+        )
+        from datetime import date as _date
 
-    # --- Priority 4: Far from show (>20 weeks) — prioritize muscle building ---
-    if weeks_out is not None and weeks_out > 20:
-        if avg_pct < 80:
-            phase = "bulk" if avg_pct < 70 else "lean_bulk"
-            return {
-                "recommended_phase": phase,
-                "reason": (
-                    f"Muscle development at {avg_pct:.0f}% of ideal with {weeks_out} weeks to show — "
-                    f"prioritize building mass now, cut later."
-                ),
-                "confidence": "high",
+        comp_d = competition_date
+        if isinstance(comp_d, str):
+            try:
+                comp_d = _date.fromisoformat(comp_d)
+            except ValueError:
+                comp_d = None
+
+        if comp_d:
+            division_key = (profile_prefs or {}).get("division", "classic_physique")
+            target_bf = get_stage_bf_target(division_key, sex)
+            cut_est = estimate_cut_duration(bf, target_bf, 85.0, sex)  # weight placeholder
+            cut_needed = cut_est["weeks_needed"]
+
+            # Build feasibility info to attach to the recommendation
+            prep_info = {
+                "cut_weeks_needed": cut_needed,
+                "weeks_available": weeks_out,
+                "target_stage_bf_pct": target_bf,
+                "fat_to_lose_kg": cut_est["fat_kg_to_lose"],
+                "projected_stage_weight_kg": cut_est["projected_stage_weight"],
+                "feasible": weeks_out >= (cut_needed + 1),
             }
-        elif bf > fat_threshold:
-            # Above fat threshold but still far out and well-muscled → lean bulk or mini-cut
-            if bf > fat_threshold + 5:
+
+            if weeks_out <= 1:
+                pass  # Handled by Priority 2 above
+
+            elif bf <= target_bf + 1.5:
+                # Already lean enough — maintain or light cut
+                return {
+                    "recommended_phase": "maintain" if bf <= target_bf + 0.5 else "cut",
+                    "reason": f"Already at {bf:.1f}% BF (target {target_bf:.1f}%). "
+                              f"{'Maintain conditioning.' if bf <= target_bf + 0.5 else 'Light deficit to dial in final conditioning.'}",
+                    "confidence": "high",
+                    "prep_plan": prep_info,
+                }
+
+            elif weeks_out <= cut_needed + 1:
+                # Tight timeline — start cutting NOW, get as close as possible
+                if weeks_out < cut_needed - 2:
+                    from app.engines.engine1.prep_timeline import _simulate_cut_to_deadline
+                    sim = _simulate_cut_to_deadline(bf, target_bf, 85.0, max(0, weeks_out - 1))
+                    prep_info["projected_stage_bf_pct"] = sim["projected_bf_pct"]
+                    prep_info["ideal_conditioning"] = sim["reached_target"]
                 return {
                     "recommended_phase": "cut",
-                    "reason": f"Body fat at {bf:.1f}% is elevated — brief cut to improve insulin sensitivity before resuming growth.",
-                    "confidence": "medium",
+                    "reason": (
+                        f"{weeks_out} weeks to show. Ideal cut is ~{cut_needed} weeks "
+                        f"({bf:.1f}% → {target_bf:.1f}% BF). "
+                        f"{'Start cutting immediately — ' if weeks_out <= cut_needed else 'Begin cut now — '}"
+                        f"maximizing conditioning within the available timeline."
+                    ),
+                    "confidence": "high",
+                    "prep_plan": prep_info,
                 }
+
             else:
-                return {
-                    "recommended_phase": "lean_bulk",
-                    "reason": f"BF at {bf:.1f}% is slightly elevated but {weeks_out} weeks to show — lean bulk to add quality mass.",
-                    "confidence": "medium",
-                }
+                # Extra time — lean bulk first, then cut
+                bulk_weeks = weeks_out - cut_needed - 1  # -1 for peak week
+                if avg_pct < 80:
+                    phase = "bulk" if avg_pct < 70 and bulk_weeks > 8 else "lean_bulk"
+                    return {
+                        "recommended_phase": phase,
+                        "reason": (
+                            f"Muscle at {avg_pct:.0f}% of ideal with {weeks_out} weeks to show. "
+                            f"{phase.replace('_', ' ').title()} for {bulk_weeks} weeks, "
+                            f"then {cut_needed}-week cut to reach {target_bf:.1f}% BF."
+                        ),
+                        "confidence": "high",
+                        "prep_plan": prep_info,
+                    }
+                elif bf > fat_threshold + 5:
+                    return {
+                        "recommended_phase": "cut",
+                        "reason": (
+                            f"BF at {bf:.1f}% is elevated. Brief cut to improve insulin sensitivity, "
+                            f"then lean bulk before the main {cut_needed}-week contest cut."
+                        ),
+                        "confidence": "medium",
+                        "prep_plan": prep_info,
+                    }
+                else:
+                    return {
+                        "recommended_phase": "lean_bulk",
+                        "reason": (
+                            f"Good position: {bf:.1f}% BF, {weeks_out} weeks to show. "
+                            f"Lean bulk for {bulk_weeks} weeks to maximize stage size, "
+                            f"then {cut_needed}-week cut to reach {target_bf:.1f}% BF."
+                        ),
+                        "confidence": "high",
+                        "prep_plan": prep_info,
+                    }
 
     # --- No competition date: use standard logic with muscle adequacy ---
     if avg_pct < 75 and bf < health_threshold:

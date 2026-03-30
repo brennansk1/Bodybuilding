@@ -776,6 +776,11 @@ async def get_cardio_prescription(
     if rx and rx.created_at:
         weeks_in_phase = max(0, (date_cls.today() - rx.created_at.date()).days // 7)
 
+    # Determine user's cardio preferences
+    prefs = profile.preferences or {}
+    fasted_pref = prefs.get("fasted_cardio", True)  # default True during cut
+    preferred_machine = prefs.get("cardio_machine", "treadmill")
+
     from app.engines.engine4.cardio import compute_total_expenditure_plan
     plan = compute_total_expenditure_plan(
         phase=phase,
@@ -788,7 +793,90 @@ async def get_cardio_prescription(
         weight_stall=weight_stall,
     )
 
+    # Override fasted flag based on user preference and phase
+    if plan.get("cardio"):
+        # During cut/peak, fasted cardio is the coach standard if user allows it
+        if phase in ("cut", "peak", "peak_week"):
+            plan["cardio"]["fasted"] = fasted_pref
+        else:
+            plan["cardio"]["fasted"] = False  # no fasted cardio in bulk/offseason
+        plan["cardio"]["preferred_machine"] = preferred_machine
+
     return plan
+
+
+# ---------------------------------------------------------------------------
+# Cardio logging
+# ---------------------------------------------------------------------------
+
+class CardioLogRequest(BaseModel):
+    activity_type: str = Field(default="treadmill")
+    duration_min: int = Field(default=30, ge=5, le=120)
+    intensity: str = Field(default="low")
+    recorded_date: str = Field(default="")
+    fasted: bool = Field(default=False)
+    speed_mph: float | None = None       # treadmill speed
+    incline_pct: int | None = None       # treadmill incline
+    stair_level: int | None = None       # stairmaster level
+
+
+@router.post("/cardio/log")
+async def log_cardio(
+    data: CardioLogRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Log a cardio session with machine-specific parameters."""
+    from app.models.nutrition import NutritionLog
+
+    rec_date = date_cls.fromisoformat(data.recorded_date) if data.recorded_date else date_cls.today()
+
+    # Estimate calorie burn based on machine type and duration
+    base_per_min = {
+        "treadmill": 6.5,
+        "stairmaster": 8.5,
+        "stationary_bike": 7.0,
+        "elliptical": 7.5,
+    }.get(data.activity_type, 7.0)
+
+    # Treadmill: adjust for speed and incline
+    if data.activity_type == "treadmill":
+        speed = data.speed_mph or 3.0
+        incline = data.incline_pct or 0
+        # Higher speed and incline = more calories
+        speed_factor = speed / 3.0  # normalized to 3.0 mph walk
+        incline_factor = 1.0 + (incline * 0.03)  # each 1% incline adds ~3%
+        base_per_min = 6.5 * speed_factor * incline_factor
+    elif data.activity_type == "stairmaster":
+        level = data.stair_level or 6
+        base_per_min = 5.0 + level * 0.5  # level 6 = 8 kcal/min
+
+    estimated_kcal = round(data.duration_min * base_per_min)
+
+    # Store as a cardio-specific note in the response (no dedicated table needed
+    # for MVP — the caloric impact is what matters to the engines)
+    details = {
+        "type": "cardio",
+        "machine": data.activity_type,
+        "duration_min": data.duration_min,
+        "fasted": data.fasted,
+        "estimated_kcal": estimated_kcal,
+    }
+    if data.speed_mph:
+        details["speed_mph"] = data.speed_mph
+    if data.incline_pct is not None:
+        details["incline_pct"] = data.incline_pct
+    if data.stair_level is not None:
+        details["stair_level"] = data.stair_level
+
+    return {
+        "message": "Cardio logged",
+        "estimated_kcal": estimated_kcal,
+        "duration_min": data.duration_min,
+        "machine": data.activity_type,
+        "fasted": data.fasted,
+        "details": details,
+    }
 
 
 # ---------------------------------------------------------------------------

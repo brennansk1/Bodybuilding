@@ -32,6 +32,7 @@ interface Profile {
     dietary_restrictions?: string[];
     display_name?: string;
     cardio_machine?: string;
+    fasted_cardio?: boolean;
     cut_threshold_bf_pct?: number;
     cheat_meals_per_week?: number;
     intra_workout_nutrition?: boolean;
@@ -137,6 +138,7 @@ export default function SettingsPage() {
   const [trainingStartTime, setTrainingStartTime] = useState("10:00");
   const [trainingDuration, setTrainingDuration] = useState("75");
   const [cardioMachine, setCardioMachine] = useState("treadmill");
+  const [fastedCardio, setFastedCardio] = useState(true);
   const [intraWorkout, setIntraWorkout] = useState(false);
   const [equipment, setEquipment] = useState<string[]>([]);
   const [dislikedRaw, setDislikedRaw] = useState("");
@@ -193,6 +195,7 @@ export default function SettingsPage() {
         setTrainingStartTime(p.training_start_time ?? "10:00");
         setTrainingDuration(p.training_duration_min?.toString() ?? "75");
         setCardioMachine(prefs.cardio_machine ?? "treadmill");
+        setFastedCardio(prefs.fasted_cardio ?? true);
         setIntraWorkout(prefs.intra_workout_nutrition ?? false);
         setEquipment(p.available_equipment ?? []);
         setDislikedRaw((p.disliked_exercises ?? []).join(", "));
@@ -247,6 +250,7 @@ export default function SettingsPage() {
           meal_count: parseInt(mealCount),
           dietary_restrictions: dietaryRestrictions,
           cardio_machine: cardioMachine,
+          fasted_cardio: fastedCardio,
           cut_threshold_bf_pct: cutThreshold ? parseFloat(cutThreshold) : null,
           cheat_meals_per_week: cheatMeals ? parseInt(cheatMeals) : 0,
           intra_workout_nutrition: intraWorkout,
@@ -699,15 +703,31 @@ export default function SettingsPage() {
                 />
 
                 <div>
-                  <label className="label-field">Cardio Machine</label>
+                  <label className="label-field">Preferred Cardio Machine</label>
                   <select
                     value={cardioMachine}
                     onChange={(e) => setCardioMachine(e.target.value)}
                     className="input-field mt-1"
                   >
-                    <option value="treadmill">Treadmill</option>
+                    <option value="treadmill">Treadmill (incline walk)</option>
                     <option value="stairmaster">StairMaster</option>
+                    <option value="stationary_bike">Stationary Bike</option>
+                    <option value="elliptical">Elliptical</option>
                   </select>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="label-field">Fasted Morning Cardio</label>
+                    <p className="text-[10px] text-jungle-dim mt-0.5">AM cardio before eating — maximizes fat oxidation during prep</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFastedCardio(!fastedCardio)}
+                    className={`w-12 h-6 rounded-full transition-colors shrink-0 ml-3 ${fastedCardio ? "bg-jungle-accent" : "bg-jungle-border"}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${fastedCardio ? "translate-x-6" : "translate-x-0.5"}`} />
+                  </button>
                 </div>
 
                 <div>

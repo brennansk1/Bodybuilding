@@ -71,15 +71,90 @@ _ISOLATION_PATTERNS: set[str] = {
     "curl", "extension", "lateral", "fly", "raise",
 }
 
-# Fatigue multipliers per tier.
-_FATIGUE_MULTIPLIER_HEAVY: float = 2.0
-_FATIGUE_MULTIPLIER_MEDIUM: float = 1.0
-_FATIGUE_MULTIPLIER_ISOLATION: float = 0.3
+# Fatigue multipliers per tier — upgraded with more granular movement costs.
+# A barbell squat at RPE 9 taxes the CNS far more than a cable fly at RPE 9.
+_FATIGUE_MULTIPLIER_HEAVY: float = 2.5        # squat, deadlift, hip hinge (high axial load)
+_FATIGUE_MULTIPLIER_MEDIUM_COMPOUND: float = 1.5  # bench press, rows, OHP (moderate CNS)
+_FATIGUE_MULTIPLIER_MACHINE_COMPOUND: float = 1.0  # smith machine, leg press (guided path, less stabilizer)
+_FATIGUE_MULTIPLIER_MEDIUM: float = 1.0       # legacy compat
+_FATIGUE_MULTIPLIER_CABLE: float = 0.6        # cable movements (constant tension, low CNS)
+_FATIGUE_MULTIPLIER_ISOLATION: float = 0.3    # curls, extensions, raises
 
-# Daily CNS budget limits.
-_MAX_HIGH_RPE_EXERCISES: int = 2         # Max exercises at RPE 8+
-_MAX_COMPOUND_RPE_WEIGHTED_SETS: float = 40.0  # e.g. 5 sets x RPE 8 = 40
-_MAX_FATIGUE_BUDGET: float = 100.0       # Normalization ceiling
+# Equipment-specific CNS cost overrides (a coach knows smith squats < barbell squats)
+_EQUIPMENT_CNS_MODIFIER: dict[str, float] = {
+    "barbell": 1.0,
+    "dumbbell": 0.90,     # less axial loading, more stabilizer but lower absolute loads
+    "smith_machine": 0.75, # guided path, less neural demand
+    "machine": 0.65,       # fully guided, lowest CNS cost
+    "cable": 0.60,
+    "bodyweight": 0.80,
+}
+
+# Daily CNS budget limits — now ARI-aware via get_daily_cns_budget().
+_BASE_HIGH_RPE_EXERCISES: int = 2           # base max exercises at RPE 8+
+_MAX_HIGH_RPE_EXERCISES: int = 2            # backward compat alias
+_MAX_COMPOUND_RPE_WEIGHTED_SETS: float = 40.0
+_MAX_FATIGUE_BUDGET: float = 100.0
+
+
+def get_daily_cns_budget(ari: float = 70.0, training_years: int = 3) -> dict:
+    """Return ARI-aware daily CNS budget limits.
+
+    A real coach watches their athlete's readiness and adjusts the session
+    complexity accordingly. Low ARI = simpler session, fewer heavy compounds.
+
+    Returns dict with max_high_rpe_exercises, max_compound_sets, fatigue_budget.
+    """
+    # Base capacity scales with training experience
+    if training_years >= 8:
+        base_exercises = 3
+    elif training_years >= 4:
+        base_exercises = 2
+    else:
+        base_exercises = 1
+
+    # ARI gating: poor recovery → fewer heavy exercises
+    if ari >= 75:
+        ari_modifier = 1.0     # green zone — full capacity
+    elif ari >= 55:
+        ari_modifier = 0.75    # yellow zone — reduce complexity
+    else:
+        ari_modifier = 0.50    # red zone — minimal heavy work
+
+    max_exercises = max(1, round(base_exercises * ari_modifier))
+    max_sets = _MAX_COMPOUND_RPE_WEIGHTED_SETS * ari_modifier
+    budget = _MAX_FATIGUE_BUDGET * ari_modifier
+
+    return {
+        "max_high_rpe_exercises": max_exercises,
+        "max_compound_rpe_weighted_sets": round(max_sets, 1),
+        "fatigue_budget": round(budget, 1),
+    }
+
+
+def get_fatigue_multiplier(movement_pattern: str, equipment: str = "barbell") -> float:
+    """Return CNS fatigue multiplier for a specific movement + equipment combo.
+
+    A barbell squat has ~2.5x the CNS cost of a machine leg press, even
+    though both train quads. A real coach factors this into session design.
+    """
+    pattern = movement_pattern.strip().lower()
+    equip = equipment.strip().lower()
+
+    # Base multiplier from movement pattern
+    if pattern in _HEAVY_COMPOUND_PATTERNS:
+        base = _FATIGUE_MULTIPLIER_HEAVY
+    elif pattern in _MEDIUM_COMPOUND_PATTERNS:
+        base = _FATIGUE_MULTIPLIER_MEDIUM_COMPOUND
+    elif pattern in _ISOLATION_PATTERNS:
+        base = _FATIGUE_MULTIPLIER_ISOLATION
+    else:
+        base = _FATIGUE_MULTIPLIER_MEDIUM_COMPOUND
+
+    # Modify by equipment type
+    equip_mod = _EQUIPMENT_CNS_MODIFIER.get(equip, 1.0)
+
+    return round(base * equip_mod, 2)
 
 # Consecutive-day fatigue threshold.
 _CONSECUTIVE_HEAVY_THRESHOLD: float = 70.0
