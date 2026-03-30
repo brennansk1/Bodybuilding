@@ -54,9 +54,9 @@ def prep_phase_for_date(
         if days_past <= 84:  # 1-84 days (12 weeks) post-show
             return "restoration"
         return "offseason"   # past competition — new offseason
-    if days_out <= 1:
-        return "contest"
-    if days_out <= 21:       # ≤ 3 weeks out
+    if days_out == 0:
+        return "contest"     # show day only
+    if days_out <= 7:        # ≤ 1 week out — true peak week (7 days)
         return "peak_week"
     if days_out <= 84:       # ≤ 12 weeks out
         return "cut"
@@ -251,9 +251,9 @@ def generate_annual_calendar(
             "description": "Controlled surplus to build quality tissue while minimising fat gain.",
         })
 
-    # 3. Cut: start at max(ref, 12w out), end at 3w out
+    # 3. Cut: start at max(ref, 12w out), end at 1w out (day before peak week)
     cut_start = max(ref, comp - timedelta(weeks=12))
-    cut_end = comp - timedelta(weeks=3) - timedelta(days=1)
+    cut_end = comp - timedelta(weeks=1) - timedelta(days=1)
     if cut_start < cut_end:
         calendar.append({
             "phase": "cut",
@@ -264,17 +264,17 @@ def generate_annual_calendar(
             "description": "Caloric deficit to achieve contest conditioning while retaining muscle.",
         })
 
-    # 4. Peak week: start at max(ref, 3w out), end at comp-1d
-    peak_start = max(ref, comp - timedelta(weeks=3))
+    # 4. Peak week: final 7 days before show (Mon–Fri/Sat before stage)
+    peak_start = max(ref, comp - timedelta(weeks=1))
     peak_end = comp - timedelta(days=1)
     if peak_start <= peak_end:
         calendar.append({
             "phase": "peak_week",
             "start_date": peak_start.isoformat(),
             "end_date": peak_end.isoformat(),
-            "weeks": (peak_end - peak_start).days // 7 + 1,
-            "recommended_meso_weeks": 2,
-            "description": "Final manipulation of water, carbs, and sodium for stage appearance.",
+            "weeks": 1,
+            "recommended_meso_weeks": 1,
+            "description": "Final 7-day manipulation of water, carbs, and sodium for stage appearance.",
         })
 
     # 5. Contest day

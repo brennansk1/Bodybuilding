@@ -197,7 +197,7 @@ def _recommend_phase(
 
     Phase priority:
       1. If competition is <20 weeks out and BF is high → cut (no choice)
-      2. If competition is <3 weeks out → peak_week
+      2. If competition is ≤1 week out → peak_week
       3. If far out (>30 weeks) and undermuscled → bulk/lean_bulk regardless of BF
       4. If moderate BF (>fat_threshold) but >20 weeks out and undermuscled → lean_bulk
          (build muscle in a slight surplus; BF will come down during the cut phase later)
@@ -239,8 +239,8 @@ def _recommend_phase(
             "confidence": "high",
         }
 
-    # --- Priority 2: Peak week (≤3 weeks out) ---
-    if weeks_out is not None and weeks_out <= 3:
+    # --- Priority 2: Peak week (≤1 week out) ---
+    if weeks_out is not None and weeks_out <= 1:
         return {
             "recommended_phase": "peak_week",
             "reason": f"{weeks_out} weeks to show — peak week protocol.",
