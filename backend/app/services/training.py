@@ -100,12 +100,16 @@ _DIVISION_EXERCISE_BANS: dict[str, set[str]] = {
         "barbell pull-over",
         # Traps: no shrugs (thick traps compress V-taper)
         "barbell shrug", "dumbbell shrug", "shrug", "farmer",
-        # Shoulders: no standing barbell press (spinal loading + trap activation)
+        # Shoulders: no barbell pressing (spinal loading + trap activation)
         "military press", "standing barbell press", "behind-the-head",
-        "overhead barbell press", "behind neck",
+        "overhead barbell press", "behind neck", "snatch-grip",
+        "barbell shoulder press", "seated barbell",
+        "bradford", "push-press", "clean and press",
         # Quads: no heavy barbell squats (spinal compression, waist thickening)
         "barbell back squat", "barbell squat", "barbell full squat",
-        "front squat",
+        "front squat", "barbell bulgarian",
+        # General: no olympic lifts (trap/erector development)
+        "clean and jerk", "snatch", "jerk balance",
     },
 }
 
