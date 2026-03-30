@@ -166,7 +166,7 @@ _VOLUME_LANDMARKS: dict[str, tuple[int, int, int]] = {
     "biceps":     (4, 14, 20),
     "triceps":    (4, 14, 20),
     "calves":     (6, 16, 22),
-    "abs":        (0, 16, 25),
+    "abs":        (6, 12, 20),    # abs should always be trained — core stability for compounds
     "traps":      (0, 8, 16),
     "forearms":   (0, 8, 16),
 }
@@ -178,7 +178,7 @@ _UNMEASURED_GAP_DEFAULTS: dict[str, float] = {
     "side_delt": 2.0,
     "rear_delt": 3.0,
     "triceps": 2.0,
-    "abs": 0.0,
+    "abs": 2.0,      # always include abs — core stability for all compounds
 }
 
 ALL_MUSCLES = list(_VOLUME_LANDMARKS.keys())

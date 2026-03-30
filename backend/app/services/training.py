@@ -70,9 +70,9 @@ def _compound_sort_key(exercise_entry):
 
 _MUSCLE_TO_DB: dict[str, str] = {
     "chest":      "chest",
-    "front_delt": "shoulders",
-    "side_delt":  "shoulders",
-    "rear_delt":  "shoulders",
+    "front_delt": "front_delt",   # DB now has proper sub-group tagging
+    "side_delt":  "side_delt",
+    "rear_delt":  "rear_delt",
     "triceps":    "triceps",
     "back":       "back",
     "biceps":     "biceps",
@@ -694,8 +694,14 @@ async def generate_program_sessions(
         "calves":     hqi_gaps.get("calf", 3.0),
         "traps":      hqi_gaps.get("neck", 3.0),
         "forearms":   hqi_gaps.get("forearm", 2.0),
-        "abs":        _UNMEASURED_GAP_DEFAULTS.get("abs", 0.0),
+        "abs":        2.0,  # always include abs — core stability for compounds
     }
+
+    # Map delt sub-groups into the gap map so the split designer sees them
+    shoulder_gap = hqi_gaps.get("shoulders", 3.0)
+    _MUSCLE_GAP_MAP["front_delt"] = shoulder_gap * 0.6   # pressing covers most
+    _MUSCLE_GAP_MAP["side_delt"] = shoulder_gap * 1.2    # prioritize — most visible
+    _MUSCLE_GAP_MAP["rear_delt"] = shoulder_gap * 1.0    # back double biceps
 
     # Use the split designer's volume budget — it includes per-delt-head
     # volumes and all fine-grained muscle names that match the custom template
@@ -852,10 +858,8 @@ async def generate_program_sessions(
                     global_spillover[db_muscle] = global_spillover.get(db_muscle, 0) + excess
                     total_sets = 12
 
-                # Shoulder delt sub-role filtering
-                delt_role = (
-                    roles[0] if (db_muscle == "shoulders" and len(roles) == 1) else None
-                )
+                # Shoulder delt sub-role filtering (legacy — now exercises are tagged directly)
+                delt_role = None
 
                 # Priority (0-10) from HQI — default 5.0 (neutral)
                 priority = muscle_priority.get(db_muscle, 5.0)
@@ -894,6 +898,19 @@ async def generate_program_sessions(
                                 last_ex, last_sets, last_rmin, last_rmax = assignments[-1]
                                 assignments[-1] = (candidate_ex, last_sets, last_rmin, last_rmax)
                                 break
+
+                # Calf exercise variety: ensure at least 2 distinct exercises
+                # (standing for gastrocnemius + seated for soleus) when volume allows
+                if db_muscle == "calves" and len(assignments) == 1 and total_sets >= 4:
+                    used_ids = {ex.id for ex, _, _, _ in assignments}
+                    for cand in candidates:
+                        if cand.id not in used_ids:
+                            # Split sets: give half to each exercise
+                            old_ex, old_sets, old_rmin, old_rmax = assignments[0]
+                            split = max(2, old_sets // 2)
+                            assignments[0] = (old_ex, old_sets - split, old_rmin, old_rmax)
+                            assignments.append((cand, split, old_rmin, old_rmax))
+                            break
 
                 need_warmup = db_muscle not in first_exercise_done
 
