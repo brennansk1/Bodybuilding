@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import { api } from "@/lib/api";
+import { showToast } from "@/components/Toast";
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,9 @@ export default function NutritionPage() {
     try {
       const res = await api.post<MealPlan>("/engine3/meal-plan/generate", {});
       setMealPlan(res);
-    } catch { /* */ }
+    } catch {
+      showToast("Failed to regenerate meal plan", "error");
+    }
     setRegenerating(false);
   };
 
@@ -136,7 +139,9 @@ export default function NutritionPage() {
         recorded_date: today,
       });
       setCardioLogged(true);
-    } catch { /* */ }
+    } catch {
+      showToast("Failed to log cardio", "error");
+    }
   };
 
   if (loading || !user || fetching) return null;

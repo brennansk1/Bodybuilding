@@ -83,6 +83,7 @@ class HRVLog(Base):
     sleep_quality: Mapped[float | None] = mapped_column(Float, nullable=True)  # 1-10
     soreness_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 1-10
     sore_muscles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     recorded_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -428,8 +428,8 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
                 hips_cm=tape.hips,
             )
             bf_source = "navy_circumference"
-        except Exception:
-            pass
+        except (ValueError, ZeroDivisionError) as e:
+            logger.warning("Navy BF in diagnostic failed: %s", e)
 
     averaged = _average_sites(tape_dict)
     division_vector = DIVISION_VECTORS.get(profile.division, DIVISION_VECTORS["mens_open"])
@@ -569,8 +569,8 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
         pds_history = await get_pds_history(db, user.id)
         if len(pds_history) >= 3:
             response_profile = compute_response_ratio(pds_history)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Response profile computation failed: %s", e)
 
     # Trajectory (next 52 weeks) — personalized if response data available
     ceiling_pds = min(95.0, pds_score + 30)

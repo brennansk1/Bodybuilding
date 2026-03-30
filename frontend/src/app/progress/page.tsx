@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import { api } from "@/lib/api";
+import { showToast } from "@/components/Toast";
 import MiniLineChart from "@/components/MiniLineChart";
 import WeightTrendChart from "@/components/WeightTrendChart";
 
@@ -173,10 +174,16 @@ export default function ProgressPage() {
   useEffect(() => {
     if (!loading && !user) { router.push("/auth/login"); return; }
     if (user) {
-      api.get<WeightEntry[]>("/checkin/weight-history?days=120").then(setWeights).catch(() => {});
-      api.get<PDSData>("/engine1/pds").then(setPds).catch(() => {});
-      api.get<LCSAData>("/engine1/lcsa").then(setLcsa).catch(() => {});
-      api.get<DiagnosticResult>("/engine1/diagnostic").then(setDiagnostic).catch(() => {});
+      let fails = 0;
+      const sf = <T,>(p: string, s: (v: T) => void) => api.get<T>(p).then(s).catch(() => { fails++; });
+      Promise.all([
+        sf<WeightEntry[]>("/checkin/weight-history?days=120", setWeights),
+        sf<PDSData>("/engine1/pds", setPds),
+        sf<LCSAData>("/engine1/lcsa", setLcsa),
+        sf<DiagnosticResult>("/engine1/diagnostic", setDiagnostic),
+      ]).then(() => {
+        if (fails > 2) showToast("Some progress data failed to load", "warning");
+      });
     }
   }, [user, loading, router]);
 

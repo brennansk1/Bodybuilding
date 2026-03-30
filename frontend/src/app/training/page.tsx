@@ -7,6 +7,7 @@ import NavBar from "@/components/NavBar";
 import PlateLoadingSVG from "@/components/PlateLoadingSVG";
 import SessionProgressRing from "@/components/SessionProgressRing";
 import { api } from "@/lib/api";
+import { showToast } from "@/components/Toast";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -633,7 +634,9 @@ export default function TrainingPage() {
         estimated_1rm: res.estimated_1rm,
       }, ...prev.slice(0, 9)]);
       setTimeout(() => setSLogged(false), 2500);
-    } catch { /* silent */ } finally { setSLogging(false); }
+    } catch {
+      showToast("Failed to log strength test", "error");
+    } finally { setSLogging(false); }
   };
 
   const generateProgram = async () => {
@@ -641,7 +644,9 @@ export default function TrainingPage() {
     try {
       const p = await api.post<Program & { sessions_created: number; message: string }>("/engine2/program/generate");
       setProgram(p);
-    } catch { /* */ } finally { setGenerating(false); }
+    } catch {
+      showToast("Failed to generate program", "error");
+    } finally { setGenerating(false); }
   };
 
   const saveSession = async () => {
@@ -672,7 +677,9 @@ export default function TrainingPage() {
       localStorage.removeItem("cpos_workout_completed");
       localStorage.removeItem("cpos_workout_sets");
       setTimeout(() => setSaved(false), 3000);
-    } catch { /* */ } finally { setSaving(false); }
+    } catch {
+      showToast("Failed to save workout session", "error");
+    } finally { setSaving(false); }
   };
 
   // ── Helpers ──

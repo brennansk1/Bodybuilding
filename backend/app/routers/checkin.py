@@ -73,6 +73,7 @@ async def submit_daily(
         sleep_quality=sleep_quality,
         soreness_score=soreness_score,
         sore_muscles=data.sore_muscles,
+        notes=data.notes,
         recorded_date=today,
     )
     db.add(hrv)
@@ -460,10 +461,295 @@ async def submit_weekly(
         response["lbm_risk"] = True
         response["lbm_risk_detail"] = lbm_risk_detail
 
+    # ── Build coaching feedback report ────────────────────────────────────
+    feedback_items: list[dict] = []
+
+    # Weight analysis
+    bw_history_result2 = await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+        .order_by(desc(BodyWeightLog.recorded_date), desc(BodyWeightLog.created_at)).limit(14)
+    )
+    bw_hist = bw_history_result2.scalars().all()
+    if len(bw_hist) >= 7:
+        week1 = [b.weight_kg for b in bw_hist[:7]]
+        week2 = [b.weight_kg for b in bw_hist[7:14]] if len(bw_hist) >= 10 else []
+        avg1 = sum(week1) / len(week1)
+        avg2 = sum(week2) / len(week2) if week2 else avg1
+        delta = avg1 - avg2
+        rate_lbs = delta * 2.20462
+        if rx and rx.phase in ("cut", "peak"):
+            if delta < -0.1:
+                feedback_items.append({
+                    "category": "weight",
+                    "icon": "check",
+                    "text": f"Weight trending down ({rate_lbs:+.1f} lbs/week). On track for prep.",
+                })
+            elif delta > 0.1:
+                feedback_items.append({
+                    "category": "weight",
+                    "icon": "warning",
+                    "text": f"Weight trending up ({rate_lbs:+.1f} lbs/week) during {rx.phase}. Review adherence or consider calorie reduction.",
+                })
+            else:
+                feedback_items.append({
+                    "category": "weight",
+                    "icon": "info",
+                    "text": "Weight stable this week. May need to increase deficit if progress has stalled.",
+                })
+        elif rx and rx.phase in ("bulk", "lean_bulk"):
+            if 0 < delta <= 0.35:
+                feedback_items.append({
+                    "category": "weight",
+                    "icon": "check",
+                    "text": f"Weight gaining at a controlled rate ({rate_lbs:+.1f} lbs/week). Good surplus management.",
+                })
+            elif delta > 0.35:
+                feedback_items.append({
+                    "category": "weight",
+                    "icon": "warning",
+                    "text": f"Gaining too fast ({rate_lbs:+.1f} lbs/week). Risk of excess fat gain — consider reducing surplus.",
+                })
+            elif delta < -0.05:
+                feedback_items.append({
+                    "category": "weight",
+                    "icon": "warning",
+                    "text": f"Losing weight ({rate_lbs:+.1f} lbs/week) during bulk. Increase calories.",
+                })
+
+    # Adherence analysis
+    if latest_adh:
+        if latest_adh.overall_adherence_pct >= 90:
+            feedback_items.append({
+                "category": "adherence",
+                "icon": "check",
+                "text": f"Adherence excellent at {latest_adh.overall_adherence_pct:.0f}%. Keep it up.",
+            })
+        elif latest_adh.overall_adherence_pct >= 75:
+            feedback_items.append({
+                "category": "adherence",
+                "icon": "info",
+                "text": f"Adherence at {latest_adh.overall_adherence_pct:.0f}%. Room for improvement — consistency drives results.",
+            })
+        else:
+            feedback_items.append({
+                "category": "adherence",
+                "icon": "warning",
+                "text": f"Adherence low at {latest_adh.overall_adherence_pct:.0f}%. Macros locked until above 85%. Focus on hitting the plan.",
+            })
+
+    # Recovery / ARI analysis
+    if ari_score is not None:
+        if ari_zone == "green":
+            feedback_items.append({
+                "category": "recovery",
+                "icon": "check",
+                "text": f"Recovery optimal (ARI {ari_score}). Full volume prescribed for next week.",
+            })
+        elif ari_zone == "yellow":
+            feedback_items.append({
+                "category": "recovery",
+                "icon": "info",
+                "text": f"Recovery moderate (ARI {ari_score}). Volume maintained but watch sleep and stress.",
+            })
+        else:
+            feedback_items.append({
+                "category": "recovery",
+                "icon": "warning",
+                "text": f"Recovery compromised (ARI {ari_score}). Autoregulated volume reduction in effect.",
+            })
+
+    # Calorie changes for next week
+    if calorie_adjustment:
+        direction = "increased" if calorie_adjustment > 0 else "decreased"
+        feedback_items.append({
+            "category": "nutrition",
+            "icon": "change",
+            "text": f"Calories {direction} by {abs(int(calorie_adjustment))} kcal/day for the upcoming week based on your weight trend.",
+        })
+    elif rx and not adherence_locked:
+        feedback_items.append({
+            "category": "nutrition",
+            "icon": "check",
+            "text": "No calorie changes needed. Current prescription maintained for next week.",
+        })
+
+    # Deload recommendation
+    if early_deload_recommended:
+        feedback_items.append({
+            "category": "training",
+            "icon": "warning",
+            "text": "ARI has been red zone for 5+ days. Deload recommended next week — reduce volume 40% and intensity 10%.",
+        })
+
+    # PDS progress
+    if engine1_result and engine1_result.get("pds"):
+        pds_data = engine1_result["pds"]
+        feedback_items.append({
+            "category": "physique",
+            "icon": "info",
+            "text": f"Physique Development Score: {pds_data['score']} ({pds_data.get('tier', 'N/A')} tier).",
+        })
+
+    # Phase mismatch
+    if phase_mismatch:
+        feedback_items.append({
+            "category": "phase",
+            "icon": "warning",
+            "text": phase_mismatch_detail,
+        })
+
+    # LBM risk
+    if lbm_risk:
+        feedback_items.append({
+            "category": "muscle_preservation",
+            "icon": "warning",
+            "text": lbm_risk_detail,
+        })
+
+    response["feedback_report"] = {
+        "week": week_number,
+        "summary": f"Week {week_number} analysis complete. {len([f for f in feedback_items if f['icon'] == 'check'])} items on track, {len([f for f in feedback_items if f['icon'] == 'warning'])} items need attention.",
+        "items": feedback_items,
+    }
+
     return response
 
 
 
+
+
+@router.get("/posing-recommendation")
+async def get_posing_recommendation_endpoint(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return posing practice recommendations based on division and competition proximity."""
+    profile_result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Complete onboarding first")
+
+    division = (profile.preferences or {}).get("division", "mens_open")
+    weeks_out = None
+    if profile.competition_date:
+        delta = (profile.competition_date - date.today()).days
+        weeks_out = max(0, delta // 7)
+
+    from app.constants.posing import get_posing_recommendation
+    return get_posing_recommendation(division, weeks_out)
+
+
+@router.get("/timeline")
+async def get_timeline(
+    days: int = 365,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a comprehensive timeline of all check-ins, weight, and key metrics."""
+    from sqlalchemy import and_
+    from app.models.diagnostic import PDSLog
+
+    cutoff = date.today() - timedelta(days=days)
+
+    # Weight history
+    bw_result = await db.execute(
+        select(BodyWeightLog)
+        .where(and_(BodyWeightLog.user_id == user.id, BodyWeightLog.recorded_date >= cutoff))
+        .order_by(BodyWeightLog.recorded_date)
+    )
+    bw_logs = bw_result.scalars().all()
+
+    # Weekly check-ins
+    checkin_result = await db.execute(
+        select(WeeklyCheckin)
+        .where(and_(WeeklyCheckin.user_id == user.id, WeeklyCheckin.checkin_date >= cutoff))
+        .order_by(WeeklyCheckin.checkin_date)
+    )
+    checkins = checkin_result.scalars().all()
+
+    # Daily HRV/notes
+    from app.models.training import HRVLog
+    hrv_result = await db.execute(
+        select(HRVLog)
+        .where(and_(HRVLog.user_id == user.id, HRVLog.recorded_date >= cutoff))
+        .order_by(HRVLog.recorded_date)
+    )
+    hrv_logs = hrv_result.scalars().all()
+
+    # PDS history
+    pds_result = await db.execute(
+        select(PDSLog)
+        .where(and_(PDSLog.user_id == user.id, PDSLog.recorded_date >= cutoff))
+        .order_by(PDSLog.recorded_date)
+    )
+    pds_logs = pds_result.scalars().all()
+
+    # Build timeline entries
+    entries = []
+
+    for bw in bw_logs:
+        entries.append({
+            "date": str(bw.recorded_date),
+            "type": "weight",
+            "weight_kg": bw.weight_kg,
+        })
+
+    for c in checkins:
+        entry: dict = {
+            "date": str(c.checkin_date),
+            "type": "weekly_checkin",
+            "week_number": c.week_number,
+            "body_weight_kg": c.body_weight_kg,
+            "pds_score": c.pds_score,
+            "ari_score": c.ari_score,
+            "nutrition_adherence_pct": c.nutrition_adherence_pct,
+            "training_adherence_pct": c.training_adherence_pct,
+            "notes": c.notes,
+            "photos": {
+                "front": c.front_photo_url,
+                "back": c.back_photo_url,
+                "side_left": c.side_left_photo_url,
+                "side_right": c.side_right_photo_url,
+                "front_pose": c.front_pose_photo_url,
+                "back_pose": c.back_pose_photo_url,
+            },
+        }
+        entries.append(entry)
+
+    for h in hrv_logs:
+        entry = {
+            "date": str(h.recorded_date),
+            "type": "daily_checkin",
+            "rmssd": h.rmssd,
+            "sleep_quality": h.sleep_quality,
+            "soreness_score": h.soreness_score,
+            "notes": h.notes,
+        }
+        entries.append(entry)
+
+    for p in pds_logs:
+        entries.append({
+            "date": str(p.recorded_date),
+            "type": "pds",
+            "pds_score": p.pds_score,
+            "tier": p.tier,
+        })
+
+    # Deduplicate: remove standalone weight entries for dates that already have
+    # a daily or weekly check-in (which embed weight data)
+    checkin_dates = {e["date"] for e in entries if e["type"] in ("daily_checkin", "weekly_checkin")}
+    entries = [e for e in entries if not (e["type"] == "weight" and e["date"] in checkin_dates)]
+
+    # Deduplicate: remove standalone PDS entries for dates that have a weekly check-in
+    weekly_dates = {e["date"] for e in entries if e["type"] == "weekly_checkin"}
+    entries = [e for e in entries if not (e["type"] == "pds" and e["date"] in weekly_dates)]
+
+    # Sort all entries by date (most recent first)
+    entries.sort(key=lambda e: e["date"], reverse=True)
+
+    return {"entries": entries}
 
 
 @router.get("/weight-history")

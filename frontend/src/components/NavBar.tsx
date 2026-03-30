@@ -40,6 +40,7 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
     { href: "/training", label: "Training" },
     { href: "/training/program", label: "Program" },
     { href: "/nutrition", label: "Nutrition" },
+    { href: "/timeline", label: "Timeline" },
     { href: "/progress", label: "Progress" },
   ];
 
@@ -57,7 +58,10 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-1">
             {navLinks.map((link) => {
-              const active = pathname === link.href || pathname.startsWith(link.href + "/");
+              // Exact match or starts-with, but don't match parent if a more specific nav link exists
+              const otherLinks = navLinks.filter(l => l.href !== link.href);
+              const moreSpecificMatch = otherLinks.some(l => l.href.startsWith(link.href + "/") && (pathname === l.href || pathname.startsWith(l.href + "/")));
+              const active = !moreSpecificMatch && (pathname === link.href || pathname.startsWith(link.href + "/"));
               return (
                 <a
                   key={link.href}
@@ -160,7 +164,9 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
         {mobileOpen && (
           <div className="md:hidden pb-4 border-t border-jungle-border mt-2 pt-3 space-y-1">
             {navLinks.map((link) => {
-              const active = pathname === link.href || pathname.startsWith(link.href + "/");
+              const otherLinks = navLinks.filter(l => l.href !== link.href);
+              const moreSpecificMatch = otherLinks.some(l => l.href.startsWith(link.href + "/") && (pathname === l.href || pathname.startsWith(l.href + "/")));
+              const active = !moreSpecificMatch && (pathname === link.href || pathname.startsWith(link.href + "/"));
               return (
                 <a
                   key={link.href}

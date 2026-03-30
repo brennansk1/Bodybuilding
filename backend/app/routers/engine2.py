@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from collections import defaultdict
 from datetime import date, timedelta
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -363,8 +366,8 @@ async def generate_program(
                 mev, _mav, mrv = VOLUME_LANDMARKS.get(muscle, (6, 12, 20))
                 gap_norm = min(1.0, max(0.0, gap / 10.0))
                 volume_allocation[muscle] = round(mev + gap_norm * (mrv - mev))
-    except Exception:
-        pass
+    except (ValueError, KeyError) as e:
+        logger.warning("HQI-driven volume allocation failed: %s", e)
 
     # Deactivate old programs
     old_result = await db.execute(
