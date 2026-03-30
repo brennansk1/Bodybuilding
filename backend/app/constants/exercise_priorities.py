@@ -103,12 +103,19 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
             {"name": "Single-Arm Cable Pulldown",     "keywords": ["single-arm cable pulldown", "single arm pulldown"], "max_sets": 3, "load_type": "cable"},
         ],
-        "shoulders": [
-            {"name": "Overhead Barbell Press",        "keywords": ["overhead press", "barbell overhead press"],  "max_sets": 4, "load_type": "plates"},
-            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press"],                   "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Lateral Raise",                 "keywords": ["lateral raise"],                             "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Rear Delt Fly",                 "keywords": ["rear delt fly", "rear delt", "face pull"],  "max_sets": 4, "load_type": "machine_plates"},
-            {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 3, "load_type": "cable"},
+        "side_delt": [
+            {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 4, "load_type": "dumbbells"},
+            {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 4, "load_type": "cable"},
+            {"name": "Machine Lateral Raise",         "keywords": ["machine lateral raise"],                     "max_sets": 3, "load_type": "machine_plates"},
+        ],
+        "front_delt": [
+            {"name": "Overhead Barbell Press",        "keywords": ["overhead press", "barbell overhead press", "military press"], "max_sets": 4, "load_type": "plates"},
+            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press", "dumbbell press"], "max_sets": 4, "load_type": "dumbbells"},
+        ],
+        "rear_delt": [
+            {"name": "Cable Face Pull",               "keywords": ["face pull"],                                 "max_sets": 4, "load_type": "cable"},
+            {"name": "Reverse Pec Deck",              "keywords": ["reverse pec deck", "rear delt fly"],         "max_sets": 4, "load_type": "machine_plates"},
+            {"name": "Dumbbell Rear Delt Fly",        "keywords": ["dumbbell rear delt fly", "rear delt"],       "max_sets": 3, "load_type": "dumbbells"},
         ],
         "quads": [
             {"name": "Barbell Back Squat",            "keywords": ["barbell back squat", "barbell squat"],       "max_sets": 4, "load_type": "plates"},
@@ -169,54 +176,58 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
     },
 
     # =========================================================================
-    # MEN'S PHYSIQUE — V-taper; side delts P1; width-first back;
-    # leg extension leads quads (machines preferred, no heavy axial squat);
-    # flat barbell pressing excluded; cables/DBs preferred throughout.
+    # MEN'S PHYSIQUE — V-taper dominant; side delts P1; width-first back;
+    # NO back-thickening movements (deadlifts, T-bar rows, barbell rows);
+    # NO trap work (thick traps compress clavicular width);
+    # cables/DBs preferred throughout; machines for legs.
     # =========================================================================
     "mens_physique": {
         "chest": [
-            {"name": "Incline Barbell Press",         "keywords": ["incline barbell", "incline barbell press"],   "max_sets": 4, "load_type": "plates"},
             {"name": "Incline Dumbbell Press",        "keywords": ["incline dumbbell", "incline dumbbell press"], "max_sets": 4, "load_type": "dumbbells"},
             {"name": "Cable Fly / Crossover",         "keywords": ["cable fly", "cable crossover"],               "max_sets": 4, "load_type": "cable"},
+            {"name": "Incline Barbell Press",         "keywords": ["incline barbell", "incline barbell press"],   "max_sets": 3, "load_type": "plates"},
             {"name": "Pec Deck",                      "keywords": ["pec deck"],                                   "max_sets": 3, "load_type": "machine_plates"},
-            # Flat barbell capped low — lower chest mass detracts from aesthetics
-            {"name": "Barbell Bench Press",           "keywords": ["barbell bench press", "dumbbell bench press"], "max_sets": 2, "load_type": "plates"},
         ],
-        # Width-first for V-taper lat development
+        # WIDTH ONLY — no thickness exercises (no T-bar rows, no barbell rows)
         "back": [
             {"name": "Lat Pulldown",                  "keywords": ["lat pulldown", "pulldown"],                  "max_sets": 4, "load_type": "cable"},
             {"name": "Weighted Pull-Up",              "keywords": ["weighted pull-up", "pull-up", "pullup"],     "max_sets": 4, "load_type": "bodyweight"},
             {"name": "Seated Cable Row",              "keywords": ["seated cable row", "cable row"],             "max_sets": 4, "load_type": "cable"},
-            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
-            {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 3, "load_type": "dumbbells"},
-            {"name": "T-Bar Row",                     "keywords": ["t-bar row"],                                 "max_sets": 3, "load_type": "plates"},
-            # Barbell row capped low — trap recruitment compresses V-taper
-            {"name": "Barbell Row",                   "keywords": ["barbell row"],                               "max_sets": 2, "load_type": "plates"},
+            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 4, "load_type": "cable"},
+            # Dumbbell row at low cap — minimal thickness contribution
+            {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 2, "load_type": "dumbbells"},
         ],
-        "shoulders": [
-            {"name": "Lateral Raise",                 "keywords": ["lateral raise"],                             "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 4, "load_type": "cable"},
-            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press"],                   "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Rear Delt Fly",                 "keywords": ["rear delt fly", "rear delt", "face pull"],  "max_sets": 4, "load_type": "machine_plates"},
-            # BB overhead press capped — upper trap growth narrows V-taper
-            {"name": "Overhead Barbell Press",        "keywords": ["overhead press", "barbell overhead press"],  "max_sets": 2, "load_type": "plates"},
+        # Split into sub-groups — side delts are THE priority for MP
+        "side_delt": [
+            {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 5, "load_type": "dumbbells"},
+            {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 5, "load_type": "cable"},
+            {"name": "Machine Lateral Raise",         "keywords": ["machine lateral raise"],                     "max_sets": 4, "load_type": "machine_plates"},
         ],
-        # Machine/DB preferred; no heavy axial squat
+        "front_delt": [
+            # Seated DB press preferred — no spinal loading unlike standing BB press
+            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press", "dumbbell press"], "max_sets": 4, "load_type": "dumbbells"},
+            # Standing military press avoided — thickens traps and loads spine
+        ],
+        "rear_delt": [
+            {"name": "Cable Face Pull",               "keywords": ["face pull"],                                 "max_sets": 4, "load_type": "cable"},
+            {"name": "Reverse Pec Deck",              "keywords": ["reverse pec deck", "rear delt fly"],         "max_sets": 4, "load_type": "machine_plates"},
+            {"name": "Dumbbell Rear Delt Fly",        "keywords": ["dumbbell rear delt fly", "rear delt"],       "max_sets": 3, "load_type": "dumbbells"},
+        ],
+        # Machine/DB preferred; NO heavy axial squats
         "quads": [
             {"name": "Leg Extension",                 "keywords": ["leg extension"],                             "max_sets": 4, "load_type": "machine_plates"},
-            {"name": "Walking Lunge",                 "keywords": ["walking lunge"],                             "max_sets": 3, "load_type": "dumbbells"},
-            {"name": "Leg Press",                     "keywords": ["leg press"],                                 "max_sets": 3, "load_type": "plate_loaded"},
-            {"name": "Bulgarian Split Squat",         "keywords": ["bulgarian split"],                           "max_sets": 3, "load_type": "dumbbells"},
+            {"name": "Leg Press",                     "keywords": ["leg press"],                                 "max_sets": 4, "load_type": "plate_loaded"},
             {"name": "Hack Squat",                    "keywords": ["hack squat"],                                "max_sets": 3, "load_type": "plate_loaded"},
+            {"name": "Walking Lunge",                 "keywords": ["walking lunge"],                             "max_sets": 3, "load_type": "dumbbells"},
         ],
+        # NO DEADLIFTS — they thicken the erectors/lower back and destroy V-taper.
+        # Leg curls ONLY for hamstrings in MP.
         "hamstrings": [
-            {"name": "Lying Leg Curl",                "keywords": ["lying leg curl"],                            "max_sets": 4, "load_type": "machine_plates"},
-            {"name": "Romanian Deadlift",             "keywords": ["romanian deadlift"],                         "max_sets": 3, "load_type": "plates"},
-            {"name": "Seated Leg Curl",               "keywords": ["seated leg curl"],                           "max_sets": 3, "load_type": "machine_plates"},
-            {"name": "Stiff-Leg Deadlift",            "keywords": ["stiff-leg deadlift"],                       "max_sets": 3, "load_type": "plates"},
+            {"name": "Lying Leg Curl",                "keywords": ["lying leg curl"],                            "max_sets": 5, "load_type": "machine_plates"},
+            {"name": "Seated Leg Curl",               "keywords": ["seated leg curl"],                           "max_sets": 5, "load_type": "machine_plates"},
         ],
         "glutes": [
-            {"name": "Hip Thrust",                    "keywords": ["hip thrust"],                                "max_sets": 3, "load_type": "plates"},
+            {"name": "Hip Thrust",                    "keywords": ["hip thrust"],                                "max_sets": 4, "load_type": "plates"},
             {"name": "Cable Pull-Through",            "keywords": ["cable pull-through", "pull-through"],        "max_sets": 3, "load_type": "cable"},
             {"name": "Glute Bridge",                  "keywords": ["glute bridge"],                              "max_sets": 3, "load_type": "plates"},
         ],
@@ -225,35 +236,27 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Cable Curl",                    "keywords": ["cable curl"],                                "max_sets": 4, "load_type": "cable"},
             {"name": "Hammer Curl",                   "keywords": ["hammer curl"],                               "max_sets": 3, "load_type": "dumbbells"},
             {"name": "Preacher Curl",                 "keywords": ["preacher curl"],                             "max_sets": 3, "load_type": "plates"},
-            {"name": "Barbell Curl",                  "keywords": ["barbell curl"],                              "max_sets": 2, "load_type": "plates"},
         ],
         "triceps": [
             {"name": "Overhead Tricep Extension",     "keywords": ["overhead tricep extension", "overhead tricep ext"], "max_sets": 4, "load_type": "cable"},
             {"name": "Tricep Pushdown",               "keywords": ["tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
-            {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 3, "load_type": "plates"},
             {"name": "Cable Kickback",                "keywords": ["cable kickback"],                            "max_sets": 3, "load_type": "cable"},
-            {"name": "Close-Grip Bench Press",        "keywords": ["close-grip bench press", "close grip bench"], "max_sets": 2, "load_type": "plates"},
+            {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 2, "load_type": "plates"},
         ],
         "calves": [
             {"name": "Standing Calf Raise",           "keywords": ["standing calf raise"],                       "max_sets": 4, "load_type": "machine_plates"},
-            {"name": "Seated Calf Raise",             "keywords": ["seated calf raise"],                         "max_sets": 4, "load_type": "plate_loaded"},
+            {"name": "Seated Calf Raise",             "keywords": ["seated calf raise"],                         "max_sets": 4, "load_type": "machine_plates"},
             {"name": "Leg Press Calf Raise",          "keywords": ["leg press calf raise"],                      "max_sets": 3, "load_type": "plate_loaded"},
-            {"name": "Single-Leg DB Calf Raise",      "keywords": ["single-leg", "single leg"],                  "max_sets": 3, "load_type": "dumbbells"},
         ],
         "abs": [
             {"name": "Cable Crunch",                  "keywords": ["cable crunch"],                              "max_sets": 4, "load_type": "cable"},
             {"name": "Hanging Leg Raise",             "keywords": ["hanging leg raise"],                         "max_sets": 4, "load_type": "bodyweight"},
-            {"name": "Ab Wheel Rollout",              "keywords": ["ab wheel"],                                  "max_sets": 3, "load_type": "bodyweight"},
             {"name": "Plank",                         "keywords": ["plank"],                                     "max_sets": 3, "load_type": "bodyweight"},
         ],
-        "traps": [
-            # Strictly minimal — visible traps visually compress the clavicles
-            {"name": "Dumbbell Shrug",                "keywords": ["dumbbell shrug"],                            "max_sets": 2, "load_type": "dumbbells"},
-            {"name": "Farmer's Carry",                "keywords": ["farmer"],                                    "max_sets": 2, "load_type": "dumbbells"},
-        ],
+        # NO TRAPS — thick traps visually compress clavicular width, destroying V-taper
+        "traps": [],
         "forearms": [
             {"name": "Wrist Curl",                    "keywords": ["wrist curl"],                                "max_sets": 2, "load_type": "plates"},
-            {"name": "Reverse Wrist Curl",            "keywords": ["reverse wrist curl"],                        "max_sets": 2, "load_type": "plates"},
         ],
     },
 
@@ -280,12 +283,17 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Weighted Pull-Up",              "keywords": ["weighted pull-up", "pull-up", "pullup"],     "max_sets": 3, "load_type": "bodyweight"},
             {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
         ],
-        "shoulders": [
-            {"name": "Overhead Barbell Press",        "keywords": ["overhead press", "barbell overhead press"],  "max_sets": 4, "load_type": "plates"},
-            {"name": "Lateral Raise",                 "keywords": ["lateral raise"],                             "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press"],                   "max_sets": 3, "load_type": "dumbbells"},
-            {"name": "Rear Delt Fly",                 "keywords": ["rear delt fly", "rear delt", "face pull"],  "max_sets": 4, "load_type": "machine_plates"},
-            {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 3, "load_type": "cable"},
+        "front_delt": [
+            {"name": "Overhead Barbell Press",        "keywords": ["overhead press", "barbell overhead press", "military press"], "max_sets": 4, "load_type": "plates"},
+            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press", "dumbbell press"], "max_sets": 3, "load_type": "dumbbells"},
+        ],
+        "side_delt": [
+            {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 4, "load_type": "dumbbells"},
+            {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 4, "load_type": "cable"},
+        ],
+        "rear_delt": [
+            {"name": "Cable Face Pull",               "keywords": ["face pull"],                                 "max_sets": 4, "load_type": "cable"},
+            {"name": "Reverse Pec Deck",              "keywords": ["reverse pec deck", "rear delt fly", "rear delt"], "max_sets": 4, "load_type": "machine_plates"},
         ],
         "quads": [
             {"name": "Barbell Back Squat",            "keywords": ["barbell back squat", "barbell squat"],       "max_sets": 4, "load_type": "plates"},
@@ -375,11 +383,16 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 3, "load_type": "dumbbells"},
             {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
         ],
-        "shoulders": [
-            {"name": "Lateral Raise",                 "keywords": ["lateral raise"],                             "max_sets": 4, "load_type": "dumbbells"},
+        "side_delt": [
+            {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 4, "load_type": "dumbbells"},
             {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 4, "load_type": "cable"},
-            {"name": "Rear Delt Fly",                 "keywords": ["rear delt fly", "rear delt", "face pull"],  "max_sets": 3, "load_type": "machine_plates"},
-            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press"],                   "max_sets": 2, "load_type": "dumbbells"},
+        ],
+        "front_delt": [
+            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press", "dumbbell press"], "max_sets": 3, "load_type": "dumbbells"},
+        ],
+        "rear_delt": [
+            {"name": "Cable Face Pull",               "keywords": ["face pull"],                                 "max_sets": 3, "load_type": "cable"},
+            {"name": "Reverse Pec Deck",              "keywords": ["reverse pec deck", "rear delt fly", "rear delt"], "max_sets": 3, "load_type": "machine_plates"},
         ],
         "chest": [
             {"name": "Cable Fly",                     "keywords": ["cable fly", "cable crossover"],              "max_sets": 3, "load_type": "cable"},
@@ -443,11 +456,16 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Cable Pull-Through",            "keywords": ["cable pull-through", "pull-through"],        "max_sets": 3, "load_type": "cable"},
             {"name": "Bulgarian Split Squat",         "keywords": ["bulgarian split"],                           "max_sets": 3, "load_type": "dumbbells"},
         ],
-        "shoulders": [
-            {"name": "Lateral Raise",                 "keywords": ["lateral raise"],                             "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press"],                   "max_sets": 4, "load_type": "dumbbells"},
+        "side_delt": [
+            {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 4, "load_type": "dumbbells"},
             {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 3, "load_type": "cable"},
-            {"name": "Rear Delt Fly",                 "keywords": ["rear delt fly", "rear delt", "face pull"],  "max_sets": 4, "load_type": "machine_plates"},
+        ],
+        "front_delt": [
+            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press", "dumbbell press"], "max_sets": 4, "load_type": "dumbbells"},
+        ],
+        "rear_delt": [
+            {"name": "Cable Face Pull",               "keywords": ["face pull"],                                 "max_sets": 4, "load_type": "cable"},
+            {"name": "Reverse Pec Deck",              "keywords": ["reverse pec deck", "rear delt fly", "rear delt"], "max_sets": 4, "load_type": "machine_plates"},
         ],
         "quads": [
             {"name": "Leg Press",                     "keywords": ["leg press"],                                 "max_sets": 4, "load_type": "plate_loaded"},
@@ -523,11 +541,16 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Barbell Row",                   "keywords": ["barbell row"],                               "max_sets": 3, "load_type": "plates"},
             {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
         ],
-        "shoulders": [
-            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press"],                   "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Lateral Raise",                 "keywords": ["lateral raise"],                             "max_sets": 4, "load_type": "dumbbells"},
+        "front_delt": [
+            {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press", "dumbbell press"], "max_sets": 4, "load_type": "dumbbells"},
+        ],
+        "side_delt": [
+            {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 4, "load_type": "dumbbells"},
             {"name": "Cable Lateral Raise",           "keywords": ["cable lateral raise"],                       "max_sets": 4, "load_type": "cable"},
-            {"name": "Rear Delt Fly",                 "keywords": ["rear delt fly", "rear delt", "face pull"],  "max_sets": 4, "load_type": "machine_plates"},
+        ],
+        "rear_delt": [
+            {"name": "Cable Face Pull",               "keywords": ["face pull"],                                 "max_sets": 4, "load_type": "cable"},
+            {"name": "Reverse Pec Deck",              "keywords": ["reverse pec deck", "rear delt fly", "rear delt"], "max_sets": 4, "load_type": "machine_plates"},
         ],
         "quads": [
             {"name": "Leg Press",                     "keywords": ["leg press"],                                 "max_sets": 4, "load_type": "plate_loaded"},
