@@ -47,7 +47,7 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
   const firstLetter = username ? username.charAt(0).toUpperCase() : "?";
 
   return (
-    <nav className="sticky top-0 z-50 bg-jungle-deeper/90 backdrop-blur-md border-b border-jungle-border">
+    <nav className="sticky top-0 z-50 bg-jungle-deeper/80 backdrop-blur-xl border-b border-jungle-border/40 shadow-lg shadow-black/10">
       <div className="container-app">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo */}
@@ -66,10 +66,10 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
                 <a
                   key={link.href}
                   href={link.href}
-                  className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                  className={`px-3 py-1.5 text-[13px] rounded-lg transition-all duration-150 ${
                     active
-                      ? "text-jungle-accent font-medium"
-                      : "text-jungle-muted hover:text-jungle-accent"
+                      ? "text-jungle-accent font-semibold bg-jungle-accent/10"
+                      : "text-jungle-muted hover:text-jungle-text hover:bg-jungle-card/50"
                   }`}
                 >
                   {link.label}

@@ -37,10 +37,15 @@
 
 html {
   background-color: #0b1410;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   color: #e8efe9;
+  font-feature-settings: "cv11", "ss01";
+  letter-spacing: 0.01em;
 }
 
 /* Desktop background image — hidden on mobile for performance */
@@ -51,21 +56,21 @@ body {
     inset: 0;
     z-index: -1;
     background: url("/bg.jpg") center center / cover no-repeat fixed;
-    opacity: 0.18;
+    opacity: 0.12;
     pointer-events: none;
   }
 }
 
 /* Scrollbar theming */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b1410;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: #1a3328;
-  border-radius: 3px;
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #245a3a;
@@ -73,8 +78,25 @@ body {
 
 /* Gold accent glow for focus states */
 *:focus-visible {
-  outline: 2px solid #c8a84e;
+  outline: 2px solid rgba(200, 168, 78, 0.6);
   outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Smooth page transitions */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes fadeScale {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 /* Responsive breakpoints for desktop/mobile */
@@ -82,22 +104,46 @@ body {
   .container-app {
     @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
   }
+
   .card {
-    @apply bg-jungle-card border border-jungle-border rounded-xl p-4 sm:p-6;
+    @apply bg-jungle-card/80 backdrop-blur-sm border border-jungle-border/60 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20;
   }
+
   .card-hover {
-    @apply hover:bg-jungle-card-hover hover:border-jungle-border-hover transition-all duration-200;
+    @apply hover:bg-jungle-card-hover hover:border-jungle-border-hover hover:shadow-xl hover:shadow-black/30 transition-all duration-200 cursor-pointer;
   }
+
   .btn-primary {
-    @apply px-6 py-2.5 bg-jungle-accent hover:bg-jungle-accent-hover text-jungle-dark font-semibold rounded-lg transition-colors;
+    @apply px-6 py-2.5 bg-jungle-accent hover:bg-jungle-accent-hover active:scale-[0.98]
+           text-jungle-dark font-semibold rounded-xl transition-all duration-150
+           shadow-md shadow-jungle-accent/20 hover:shadow-lg hover:shadow-jungle-accent/30;
   }
+
   .btn-secondary {
-    @apply px-6 py-2.5 bg-jungle-card border border-jungle-border hover:border-jungle-accent text-jungle-text rounded-lg transition-colors;
+    @apply px-6 py-2.5 bg-jungle-card/60 backdrop-blur-sm border border-jungle-border/60
+           hover:border-jungle-accent/50 hover:bg-jungle-card active:scale-[0.98]
+           text-jungle-text rounded-xl transition-all duration-150;
   }
+
   .input-field {
-    @apply w-full px-3 py-2.5 bg-jungle-deeper border border-jungle-border rounded-lg focus:border-jungle-accent focus:outline-none text-jungle-text placeholder:text-jungle-dim transition-colors;
+    @apply w-full px-3.5 py-2.5 bg-jungle-deeper/80 border border-jungle-border/50
+           rounded-xl focus:border-jungle-accent/70 focus:ring-1 focus:ring-jungle-accent/20
+           focus:outline-none text-jungle-text placeholder:text-jungle-dim/60
+           transition-all duration-150;
   }
+
   .label-field {
-    @apply block text-sm text-jungle-muted mb-1.5 font-medium;
+    @apply block text-sm text-jungle-muted mb-1.5 font-medium tracking-wide;
   }
+
+  /* Page entry animation */
+  .page-enter {
+    animation: fadeIn 0.3s ease-out;
+  }
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(200, 168, 78, 0.25);
+  color: #e8efe9;
 }

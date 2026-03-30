@@ -29,17 +29,20 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4 bg-canopy-gradient">
-      <div className="w-full max-w-md space-y-6">
+    <main className="flex min-h-screen items-center justify-center p-4 bg-canopy-gradient relative overflow-hidden">
+      {/* Ambient glow */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] bg-jungle-accent/4 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="w-full max-w-md space-y-6 relative z-10 page-enter">
         <div className="text-center">
           <Logo size="lg" />
-          <p className="text-jungle-dim text-sm mt-2">Competitive Physique Optimization</p>
+          <p className="text-jungle-dim text-xs mt-2 tracking-widest uppercase">Competitive Physique Optimization</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="card space-y-4">
-          <h2 className="text-xl font-semibold text-center">Welcome Back</h2>
+        <form onSubmit={handleSubmit} className="card space-y-5">
+          <h2 className="text-lg font-semibold text-center text-jungle-text">Welcome Back</h2>
           {error && (
-            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm py-2.5 px-3 rounded-lg">
+            <div className="flex items-center gap-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-sm py-2.5 px-3.5 rounded-xl">
               <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -71,12 +74,12 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="input-field pr-10"
+                className="input-field pr-14"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-jungle-dim hover:text-jungle-muted text-xs"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-jungle-dim hover:text-jungle-muted text-xs font-medium transition-colors"
               >
                 {showPassword ? "Hide" : "Show"}
               </button>
@@ -85,7 +88,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading || !username || !password}
-            className="btn-primary w-full disabled:opacity-50 flex items-center justify-center gap-2"
+            className="btn-primary w-full disabled:opacity-50 flex items-center justify-center gap-2 py-3"
           >
             {loading && (
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -97,7 +100,7 @@ export default function LoginPage() {
           </button>
           <p className="text-center text-sm text-jungle-muted">
             New here?{" "}
-            <a href="/auth/register" className="text-jungle-accent hover:underline font-medium">
+            <a href="/auth/register" className="text-jungle-accent hover:text-jungle-accent-hover font-medium transition-colors">
               Create an account
             </a>
           </p>
