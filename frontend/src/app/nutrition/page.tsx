@@ -84,12 +84,6 @@ export default function NutritionPage() {
   const [dayTab, setDayTab] = useState<"training" | "rest">("training");
   const [eatenMeals, setEatenMeals] = useState<Set<number>>(new Set());
 
-  // Cardio
-  const [cardioType, setCardioType] = useState("Running");
-  const [cardioDuration, setCardioDuration] = useState("30");
-  const [cardioIntensity, setCardioIntensity] = useState<"Low" | "Moderate" | "High">("Moderate");
-  const [cardioLogged, setCardioLogged] = useState(false);
-
   useEffect(() => {
     if (!loading && !user) { router.push("/auth/login"); return; }
     if (!user) return;
@@ -130,20 +124,6 @@ export default function NutritionPage() {
     });
   };
 
-  const logCardio = async () => {
-    try {
-      await api.post("/engine3/cardio/log", {
-        activity_type: cardioType,
-        duration_min: parseInt(cardioDuration) || 30,
-        intensity: cardioIntensity.toLowerCase(),
-        recorded_date: today,
-      });
-      setCardioLogged(true);
-    } catch {
-      showToast("Failed to log cardio", "error");
-    }
-  };
-
   if (loading || !user || fetching) return null;
 
   const activeMacros: DayMacros | null = (() => {
@@ -159,8 +139,6 @@ export default function NutritionPage() {
   const pPct = activeMacros ? Math.round((activeMacros.protein_g * 4 / activeMacros.calories) * 100) : 0;
   const cPct = activeMacros ? Math.round((activeMacros.carbs_g * 4 / activeMacros.calories) * 100) : 0;
   const fPct = activeMacros ? 100 - pPct - cPct : 0;
-
-  const estCardioKcal = Math.round((parseInt(cardioDuration) || 30) * (cardioIntensity === "High" ? 10 : cardioIntensity === "Moderate" ? 7 : 5));
 
   return (
     <div className="min-h-screen">
@@ -312,45 +290,6 @@ export default function NutritionPage() {
                     })}
                   </div>
                 </>
-              )}
-            </div>
-
-            {/* ── Cardio ── */}
-            <div className="card space-y-3">
-              <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Cardio</h2>
-              {cardioLogged ? (
-                <p className="text-xs text-green-400 text-center py-2">Cardio logged for today</p>
-              ) : (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[9px] text-jungle-dim uppercase">Type</label>
-                      <select value={cardioType} onChange={e => setCardioType(e.target.value)} className="input-field mt-0.5 text-xs">
-                        <option>Running</option><option>Walking</option><option>Cycling</option>
-                        <option>StairMaster</option><option>Elliptical</option><option>Swimming</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] text-jungle-dim uppercase">Duration (min)</label>
-                      <input type="number" value={cardioDuration} onChange={e => setCardioDuration(e.target.value)} className="input-field mt-0.5 text-xs" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-jungle-dim uppercase">Intensity</label>
-                    <div className="flex gap-1 mt-0.5">
-                      {(["Low", "Moderate", "High"] as const).map(level => (
-                        <button key={level} onClick={() => setCardioIntensity(level)}
-                          className={`flex-1 py-1.5 rounded text-[10px] font-medium transition-colors ${cardioIntensity === level ? "bg-jungle-accent text-jungle-dark" : "bg-jungle-deeper text-jungle-muted"}`}>
-                          {level}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-jungle-dim">Est. {estCardioKcal} kcal</span>
-                    <button onClick={logCardio} className="btn-primary text-xs px-4 py-1.5">Log Cardio</button>
-                  </div>
-                </div>
               )}
             </div>
 

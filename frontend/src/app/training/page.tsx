@@ -269,6 +269,25 @@ export default function TrainingPage() {
   const [sLogging, setSLogging] = useState(false);
   const [sLogged, setSLogged] = useState(false);
 
+  // ── Cardio prescription + logging state ──
+  const [cardioPrescription, setCardioPrescription] = useState<{
+    cardio: {
+      sessions_per_week: number; duration_min: number; modality: string;
+      modality_options: string[]; fasted: boolean; notes: string[];
+      estimated_weekly_burn_kcal: number;
+    };
+    neat: { step_target: number; kcal_estimate: number; note: string };
+    summary: { total_weekly_expenditure_kcal: number; cardio_sessions: number; step_target: number };
+  } | null>(null);
+  const [cardioMachine, setCardioMachine] = useState("treadmill");
+  const [cardioSpeed, setCardioSpeed] = useState("3.0");
+  const [cardioIncline, setCardioIncline] = useState("12");
+  const [cardioStairLevel, setCardioStairLevel] = useState("6");
+  const [cardioDuration, setCardioDuration] = useState("30");
+  const [cardioFasted, setCardioFasted] = useState(true);
+  const [cardioLogged, setCardioLogged] = useState(false);
+  const [cardioLogging, setCardioLogging] = useState(false);
+
   // ── Set completion (no sequential locking — any set, any order) ──
   // Persisted to localStorage so in-progress workout survives logout/phone-off
   const [completedSets, setCompletedSets] = useState<Record<string, { reps: string; weight: string; rpe: string }>>(() => {
@@ -402,6 +421,13 @@ export default function TrainingPage() {
     if (user) {
       api.get<Program>("/engine2/program/current").then(setProgram).catch(() => {});
       api.get<StrengthEntry[]>("/engine2/strength-log?limit=10").then(setStrengthLog).catch(() => {});
+      api.get<typeof cardioPrescription>("/engine3/cardio/prescription").then(rx => {
+        if (rx) {
+          setCardioPrescription(rx);
+          setCardioDuration(String(rx.cardio?.duration_min || 30));
+          setCardioFasted(rx.cardio?.fasted ?? true);
+        }
+      }).catch(() => {});
       // Reset session state before fetching new date
       setSession(null);
       setSets({});
@@ -690,6 +716,40 @@ export default function TrainingPage() {
     return group.workingSets.filter((s) => completedSets[s.id]).length;
   };
 
+  const logCardioSession = async () => {
+    setCardioLogging(true);
+    try {
+      const payload: Record<string, unknown> = {
+        activity_type: cardioMachine,
+        duration_min: parseInt(cardioDuration) || 30,
+        intensity: "low",
+        recorded_date: new Date().toISOString().split("T")[0],
+        fasted: cardioFasted,
+      };
+      if (cardioMachine === "treadmill") {
+        payload.speed_mph = parseFloat(cardioSpeed) || 3.0;
+        payload.incline_pct = parseInt(cardioIncline) || 12;
+      } else if (cardioMachine === "stairmaster") {
+        payload.stair_level = parseInt(cardioStairLevel) || 6;
+      }
+      await api.post("/engine3/cardio/log", payload);
+      setCardioLogged(true);
+    } catch {
+      showToast("Failed to log cardio", "error");
+    } finally {
+      setCardioLogging(false);
+    }
+  };
+
+  // Estimate calorie burn
+  const estCardioBurn = (() => {
+    const dur = parseInt(cardioDuration) || 30;
+    const basePerMin = cardioMachine === "stairmaster" ? 8.5
+      : cardioMachine === "treadmill" ? (parseFloat(cardioSpeed) >= 4.0 ? 8 : 6.5)
+      : 7;
+    return Math.round(dur * basePerMin);
+  })();
+
   // ── Render ──
   return (
     <div className="min-h-screen">
@@ -763,6 +823,142 @@ export default function TrainingPage() {
               </button>
             </div>
           </div>
+
+          {/* ── Cardio Prescription + Logger ── */}
+          {isToday && cardioPrescription && (
+            <div className="card space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Cardio</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] px-2 py-0.5 rounded bg-jungle-accent/15 text-jungle-accent font-medium">
+                    {cardioPrescription.cardio.sessions_per_week}x/week • {cardioPrescription.cardio.duration_min}min
+                  </span>
+                  {cardioPrescription.cardio.fasted && (
+                    <span className="text-[9px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">Fasted AM</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Prescription notes */}
+              {cardioPrescription.cardio.notes.length > 0 && (
+                <div className="space-y-1">
+                  {cardioPrescription.cardio.notes.slice(0, 2).map((note, i) => (
+                    <p key={i} className="text-[10px] text-jungle-dim leading-relaxed">{note}</p>
+                  ))}
+                </div>
+              )}
+
+              {/* NEAT / Steps */}
+              <div className="flex items-center justify-between bg-jungle-deeper rounded-lg px-3 py-2">
+                <div>
+                  <p className="text-[9px] text-jungle-dim uppercase tracking-wider">Daily Steps</p>
+                  <p className="text-lg font-bold text-jungle-accent">{cardioPrescription.neat.step_target.toLocaleString()}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] text-jungle-dim uppercase tracking-wider">Weekly Burn</p>
+                  <p className="text-sm font-semibold text-jungle-muted">{cardioPrescription.summary.total_weekly_expenditure_kcal.toLocaleString()} kcal</p>
+                </div>
+              </div>
+
+              {/* Logger */}
+              {cardioLogged ? (
+                <div className="text-center py-2">
+                  <p className="text-xs text-green-400 font-medium">Cardio logged for today</p>
+                </div>
+              ) : (
+                <div className="space-y-2 border-t border-jungle-border pt-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Machine selector */}
+                    <div>
+                      <label className="text-[9px] text-jungle-dim uppercase">Machine</label>
+                      <select value={cardioMachine} onChange={e => setCardioMachine(e.target.value)}
+                        className="input-field mt-0.5 text-xs">
+                        <option value="treadmill">Treadmill</option>
+                        <option value="stairmaster">StairMaster</option>
+                        <option value="stationary_bike">Stationary Bike</option>
+                        <option value="elliptical">Elliptical</option>
+                      </select>
+                    </div>
+                    {/* Duration */}
+                    <div>
+                      <label className="text-[9px] text-jungle-dim uppercase">Duration (min)</label>
+                      <input type="number" value={cardioDuration}
+                        onChange={e => setCardioDuration(e.target.value)}
+                        className="input-field mt-0.5 text-xs" />
+                    </div>
+                  </div>
+
+                  {/* Treadmill-specific controls */}
+                  {cardioMachine === "treadmill" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Speed (mph)</label>
+                        <select value={cardioSpeed} onChange={e => setCardioSpeed(e.target.value)}
+                          className="input-field mt-0.5 text-xs">
+                          <option value="2.5">2.5 — Slow walk</option>
+                          <option value="3.0">3.0 — Walk</option>
+                          <option value="3.3">3.3 — Brisk walk</option>
+                          <option value="3.5">3.5 — Power walk</option>
+                          <option value="3.8">3.8 — Fast walk</option>
+                          <option value="4.0">4.0 — Walk/jog</option>
+                          <option value="4.3">4.3 — Light jog</option>
+                          <option value="5.0">5.0 — Jog</option>
+                          <option value="6.0">6.0 — Run</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Incline (%)</label>
+                        <select value={cardioIncline} onChange={e => setCardioIncline(e.target.value)}
+                          className="input-field mt-0.5 text-xs">
+                          <option value="0">0% — Flat</option>
+                          <option value="3">3%</option>
+                          <option value="6">6%</option>
+                          <option value="8">8%</option>
+                          <option value="10">10%</option>
+                          <option value="12">12% — Standard LISS</option>
+                          <option value="15">15% — Steep</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* StairMaster-specific controls */}
+                  {cardioMachine === "stairmaster" && (
+                    <div>
+                      <label className="text-[9px] text-jungle-dim uppercase">Level / Speed</label>
+                      <select value={cardioStairLevel} onChange={e => setCardioStairLevel(e.target.value)}
+                        className="input-field mt-0.5 text-xs">
+                        <option value="3">Level 3 — Easy</option>
+                        <option value="4">Level 4 — Light</option>
+                        <option value="5">Level 5 — Moderate</option>
+                        <option value="6">Level 6 — Standard LISS</option>
+                        <option value="7">Level 7 — Brisk</option>
+                        <option value="8">Level 8 — Hard</option>
+                        <option value="9">Level 9 — Very hard</option>
+                        <option value="10">Level 10 — Max</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Fasted toggle + log button */}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => setCardioFasted(!cardioFasted)}
+                        className={`w-9 h-5 rounded-full transition-colors ${cardioFasted ? "bg-blue-500" : "bg-jungle-border"}`}>
+                        <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${cardioFasted ? "translate-x-4" : "translate-x-0.5"}`} />
+                      </button>
+                      <span className="text-[10px] text-jungle-muted">Fasted</span>
+                      <span className="text-[10px] text-jungle-dim ml-2">Est. {estCardioBurn} kcal</span>
+                    </div>
+                    <button onClick={logCardioSession} disabled={cardioLogging}
+                      className="btn-primary text-xs px-4 py-1.5 disabled:opacity-50">
+                      {cardioLogging ? "Logging..." : "Log Cardio"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Read-only banner for non-today views */}
           {!isToday && session && (

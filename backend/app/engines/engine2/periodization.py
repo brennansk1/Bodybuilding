@@ -70,9 +70,26 @@ _SPLIT_TEMPLATES: dict[str, list[dict[str, list[str]]]] = {
     ],
 }
 
-# Deload cadence and magnitude.
+# Deload cadence and magnitude — now phase-aware.
 _DELOAD_EVERY_N_WEEKS: int = 6
 _DELOAD_VOLUME_FRACTION: float = 0.50
+
+# Phase-specific deload cadence: cutting athletes fatigue faster and need
+# more frequent deloads. Bulk phases allow longer accumulation blocks.
+_PHASE_DELOAD_CADENCE: dict[str, int] = {
+    "offseason": 8,       # long accumulation — CNS fresh, surplus fuels recovery
+    "bulk": 8,
+    "lean_bulk": 6,       # standard 6-week mesocycle
+    "cut": 5,             # deficit impairs recovery — shorter blocks
+    "peak_week": 0,       # no deload needed — already reduced volume
+    "peak": 5,
+    "restoration": 4,     # de-conditioned post-show — gentle ramp
+    "maintain": 6,
+}
+
+def get_deload_cadence(phase: str = "lean_bulk") -> int:
+    """Return deload frequency in weeks for the current training phase."""
+    return _PHASE_DELOAD_CADENCE.get(phase, _DELOAD_EVERY_N_WEEKS)
 
 # ---------------------------------------------------------------------------
 # 6-week mesocycle phase map (bodybuilding-specific)
@@ -157,29 +174,117 @@ _WEEKLY_SCHEDULE: dict[int, list[int]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Volume Landmarks (sets/week) — Israetel MEV / MAV / MRV estimates
+# Volume Landmarks (sets/week) — Adaptive, RP-aligned
 # MEV = minimum effective volume  (below = junk volume territory)
 # MAV = maximum adaptive volume   (sweet spot center)
 # MRV = maximum recoverable volume (above = excess fatigue)
+#
+# Base values are for an intermediate male athlete (~3-5 years training).
+# Scaled dynamically by sex, training age, and prep phase via
+# get_volume_landmarks().
 # ---------------------------------------------------------------------------
-VOLUME_LANDMARKS: dict[str, tuple[int, int, int]] = {
+_BASE_VOLUME_LANDMARKS: dict[str, tuple[int, int, int]] = {
     # muscle:       (MEV, MAV, MRV) — RP-aligned (Renaissance Periodization)
-    "chest":        (6,  14, 22),    # MAV bumped from 12 → 14
-    "back":         (10, 18, 25),    # MEV bumped from 8 → 10, MAV 16 → 18
-    "quads":        (8,  14, 20),    # MEV bumped from 6 → 8, MAV 12 → 14
-    "hamstrings":   (6,  12, 16),    # MEV bumped from 4 → 6, MAV 10 → 12
-    "glutes":       (4,   8, 16),    # MAV dropped from 10 → 8, MRV 18 → 16
-    "shoulders":    (6,  16, 22),    # combined (kept for backward compat)
-    "biceps":       (6,  16, 22),    # bumped across all landmarks
-    "triceps":      (4,  10, 16),    # MAV dropped 14 → 10, MRV 20 → 16 (indirect from pressing)
-    "calves":       (8,  14, 20),    # MEV bumped from 6 → 8, MAV/MRV dropped
-    "abs":          (0,  12, 20),    # dropped from 16/25
-    "traps":        (0,  12, 20),    # bumped MAV and MRV
-    "forearms":     (0,   8, 14),    # MRV dropped from 16 → 14
-    "front_delt":   (0,   6, 12),    # MEV is 0 — pressing covers it
-    "side_delt":    (8,  18, 24),    # major bump — tolerates high volume
-    "rear_delt":    (6,  14, 22),    # MEV bumped from 4 → 6, MAV 12 → 14
+    "chest":        (6,  14, 22),
+    "back":         (10, 18, 25),
+    "quads":        (8,  14, 20),
+    "hamstrings":   (6,  12, 16),
+    "glutes":       (4,   8, 16),
+    "shoulders":    (6,  16, 22),     # combined (backward compat)
+    "biceps":       (6,  16, 22),
+    "triceps":      (4,  10, 16),     # indirect from pressing accounted for
+    "calves":       (8,  14, 20),
+    "abs":          (0,  12, 20),
+    "traps":        (0,  12, 20),
+    "forearms":     (0,   8, 14),
+    "front_delt":   (0,   6, 12),     # MEV=0 — pressing covers it
+    "side_delt":    (8,  18, 24),     # tolerates high volume
+    "rear_delt":    (6,  14, 22),
 }
+
+# Sex-based scaling: females generally recover faster from volume (lower
+# absolute loads, less CNS demand per set) but have lower absolute MRV
+# ceilings. Males with high training age can tolerate more.
+_SEX_VOLUME_SCALE: dict[str, float] = {
+    "male": 1.0,
+    "female": 0.85,   # ~15% lower ceilings — preserves joint health, prevents overreaching
+}
+
+# Training experience scaling: novices need less stimulus, advanced athletes
+# need substantially more to continue progressing.
+_EXPERIENCE_VOLUME_SCALE: dict[str, float] = {
+    "beginner":     0.70,   # <1 year: low MEV, respond to minimal volume
+    "novice":       0.80,   # 1-2 years
+    "intermediate": 1.00,   # 3-5 years (baseline)
+    "advanced":     1.15,   # 5-10 years: higher MEV and MRV
+    "elite":        1.25,   # 10+ years: near-genetic ceiling, needs maximum stimulus
+}
+
+# Phase-based MRV ceiling modifier: during a caloric deficit recovery
+# capacity drops — MRV should be lower. During a surplus, athlete can
+# tolerate more volume.
+_PHASE_MRV_SCALE: dict[str, float] = {
+    "offseason": 1.10,     # surplus → higher ceiling
+    "bulk": 1.10,
+    "lean_bulk": 1.05,
+    "maintain": 1.00,
+    "cut": 0.85,           # deficit → lower ceiling (recovery impaired)
+    "peak_week": 0.65,     # heavily reduced
+    "peak": 0.85,
+    "restoration": 0.75,   # post-show: de-conditioned, gentle ramp
+}
+
+
+def _classify_experience(training_years: int) -> str:
+    """Map training years to experience tier."""
+    if training_years < 1:
+        return "beginner"
+    elif training_years < 3:
+        return "novice"
+    elif training_years < 6:
+        return "intermediate"
+    elif training_years < 10:
+        return "advanced"
+    return "elite"
+
+
+def get_volume_landmarks(
+    muscle: str,
+    sex: str = "male",
+    training_years: int = 3,
+    phase: str = "lean_bulk",
+) -> tuple[int, int, int]:
+    """Return (MEV, MAV, MRV) scaled for the athlete's profile and phase.
+
+    A real coach adjusts volume prescriptions based on:
+    - Sex: females tolerate ~15% less absolute volume
+    - Training age: advanced athletes need more stimulus (higher MEV)
+    - Phase: deficit phases lower MRV ceiling (recovery impaired)
+
+    The MEV is scaled by sex and experience (you need more stimulus as
+    you advance). The MRV is additionally scaled by phase (deficit =
+    lower ceiling). MAV is the midpoint.
+    """
+    base = _BASE_VOLUME_LANDMARKS.get(muscle, (6, 12, 18))
+    base_mev, base_mav, base_mrv = base
+
+    sex_scale = _SEX_VOLUME_SCALE.get(sex.strip().lower(), 1.0)
+    exp_tier = _classify_experience(training_years)
+    exp_scale = _EXPERIENCE_VOLUME_SCALE.get(exp_tier, 1.0)
+    phase_mrv = _PHASE_MRV_SCALE.get(phase, 1.0)
+
+    # MEV and MAV scale with sex and experience
+    mev = max(0, round(base_mev * sex_scale * exp_scale))
+    # MRV additionally scales with phase (recovery capacity)
+    mrv = max(mev + 2, round(base_mrv * sex_scale * exp_scale * phase_mrv))
+    # MAV is the midpoint
+    mav = round((mev + mrv) / 2)
+
+    return (mev, mav, mrv)
+
+
+# Keep the static dict for backward compatibility (used by split_designer etc.)
+VOLUME_LANDMARKS = _BASE_VOLUME_LANDMARKS
 
 # Minimum hours between training the same muscle (min recovery window)
 _MUSCLE_MIN_RECOVERY: dict[str, float] = {

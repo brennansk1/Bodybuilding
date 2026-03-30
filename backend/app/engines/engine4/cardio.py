@@ -33,8 +33,9 @@ _FLOOR_INTERCEPT = {
     "female": 1450,  # intercept 250 kcal above Engine 3's 1200 floor
 }
 
-# Cardio calories per session by modality (approximate, 30-min session)
-_CARDIO_BURN_ESTIMATES = {
+# Cardio calories per session by modality — BASE estimates for an 80 kg athlete
+# (30-min session). Actual burn is scaled by body weight via get_cardio_burn().
+_CARDIO_BURN_BASE = {
     "liss_incline_walk": 200,
     "liss_stairmaster": 250,
     "liss_cycling": 220,
@@ -44,6 +45,23 @@ _CARDIO_BURN_ESTIMATES = {
     "hiit_cycling": 300,
     "steady_state_elliptical": 230,
 }
+
+# Keep old name for backward compat
+_CARDIO_BURN_ESTIMATES = _CARDIO_BURN_BASE
+
+_CARDIO_BURN_REFERENCE_WEIGHT = 80.0  # kg — base estimates calibrated to this
+
+
+def get_cardio_burn(modality: str, weight_kg: float, duration_min: int = 30) -> float:
+    """Return estimated calorie burn scaled by body weight and duration.
+
+    A 120 kg athlete burns ~50% more than a 60 kg athlete doing the same
+    cardio. The base estimates assume 80 kg and 30 minutes.
+    """
+    base = _CARDIO_BURN_BASE.get(modality, 220)  # default to moderate
+    weight_factor = weight_kg / _CARDIO_BURN_REFERENCE_WEIGHT
+    duration_factor = duration_min / 30.0
+    return round(base * weight_factor * duration_factor)
 
 
 def compute_energy_flux_prescription(
@@ -170,17 +188,108 @@ def compute_energy_flux_prescription(
 _STEP_TARGETS_BY_PHASE = {
     "bulk": 8000,
     "lean_bulk": 8000,
+    "offseason": 8000,
     "maintain": 8000,
     "restoration": 6000,
     "cut": 10000,       # first escalation
-    "peak": 10000,      # maintain but don't increase (CNS fragile)
+    "peak": 8000,       # maintain but DON'T increase — CNS is fragile, muscles are flat
+    "peak_week": 6000,  # minimal NEAT — preserve glycogen, avoid cortisol
 }
 
 # Second escalation: when weight loss stalls during a cut
 _STEP_TARGET_STALL = 12000
 
-# Caloric estimate per 1000 steps (varies by bodyweight; ~30-50 kcal)
-_KCAL_PER_1000_STEPS = 40.0
+# Caloric estimate per 1000 steps — now body-weight scaled via get_neat_kcal()
+_BASE_KCAL_PER_1000_STEPS = 40.0
+
+
+def get_neat_kcal_per_1000_steps(weight_kg: float) -> float:
+    """Return NEAT calorie burn per 1000 steps, scaled by body weight.
+
+    Heavier athletes burn more per step. Base: 40 kcal/1000 steps at 80 kg.
+    """
+    return round(_BASE_KCAL_PER_1000_STEPS * (weight_kg / 80.0), 1)
+
+
+def get_step_target(phase: str, body_fat_pct: float | None = None, stall: bool = False) -> int:
+    """Return daily step target adjusted for phase and body fat.
+
+    A real coach knows that very lean athletes (<8% male) have severely
+    depressed NEAT naturally — pushing 12k steps at 5% BF risks CNS
+    burnout and muscle catabolism. Scale targets down for lean athletes.
+
+    Args:
+        phase: Current training phase.
+        body_fat_pct: Current body fat % (optional — adjusts for lean athletes).
+        stall: True if weight loss has stalled (triggers escalation).
+
+    Returns:
+        Daily step target.
+    """
+    base = _STEP_TARGETS_BY_PHASE.get(phase, 8000)
+
+    if stall and phase in ("cut", "peak"):
+        base = _STEP_TARGET_STALL
+
+    # Lean athlete adjustment: below 8% male / 14% female, NEAT naturally drops
+    # Don't force steps that the body can't sustain — it backfires
+    if body_fat_pct is not None and body_fat_pct < 10:
+        lean_factor = max(0.65, body_fat_pct / 10.0)  # scale down proportionally
+        base = round(base * lean_factor / 100) * 100   # round to nearest 100
+
+    return base
+
+
+def get_max_cardio_for_phase(phase: str, weeks_in_deficit: int = 0) -> dict:
+    """Return dynamic cardio ceilings based on prep phase and duration.
+
+    Early cut: 3 sessions/week, can use HIIT
+    Mid cut (4-8 weeks): 4-5 sessions, transition to LISS
+    Late cut (8+ weeks): up to 6 sessions, LISS only
+    Peak week: reduce to 2-3 sessions (preserve glycogen)
+
+    Returns dict with max_sessions, max_minutes, allowed_modalities.
+    """
+    if phase in ("peak", "peak_week"):
+        return {
+            "max_sessions": 3,
+            "max_minutes": 90,
+            "allowed_modalities": ["liss_incline_walk", "liss_cycling"],
+            "note": "Minimal cardio — preserve glycogen and muscle fullness.",
+        }
+    elif phase in ("cut",) and weeks_in_deficit > 8:
+        return {
+            "max_sessions": 6,
+            "max_minutes": 240,
+            "allowed_modalities": ["liss_incline_walk", "liss_stairmaster", "liss_cycling", "steady_state_elliptical"],
+            "note": "LISS only — CNS too fatigued for HIIT after 8+ weeks in deficit.",
+        }
+    elif phase in ("cut",) and weeks_in_deficit > 4:
+        return {
+            "max_sessions": 5,
+            "max_minutes": 200,
+            "allowed_modalities": ["liss_incline_walk", "liss_stairmaster", "liss_cycling", "zone2_cycling", "steady_state_elliptical"],
+            "note": "Moderate cardio. HIIT dropped — transition to pure LISS.",
+        }
+    elif phase in ("cut",):
+        return {
+            "max_sessions": 4,
+            "max_minutes": 150,
+            "allowed_modalities": list(_CARDIO_BURN_BASE.keys()),
+            "note": "Early cut — HIIT permitted 1-2x/week for metabolic flexibility.",
+        }
+    else:
+        # Offseason / bulk — cardio for health, not fat loss
+        return {
+            "max_sessions": 3,
+            "max_minutes": 120,
+            "allowed_modalities": ["zone2_cycling", "liss_incline_walk", "hiit_cycling"],
+            "note": "Health-focused cardio. Zone 2 preferred for cardiovascular base.",
+        }
+
+
+# Keep old constant for backward compat
+_KCAL_PER_1000_STEPS = _BASE_KCAL_PER_1000_STEPS
 
 
 def compute_step_prescription(

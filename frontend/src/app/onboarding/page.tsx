@@ -78,6 +78,7 @@ export default function OnboardingPage() {
   const [intraWorkoutNutrition, setIntraWorkoutNutrition] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [cardioMachine, setCardioMachine] = useState("treadmill");
+  const [fastedCardio, setFastedCardio] = useState(true);
   const [preferredProteins, setPreferredProteins] = useState<string[]>([]);
   const [preferredCarbs, setPreferredCarbs] = useState<string[]>([]);
   const [preferredFats, setPreferredFats] = useState<string[]>([]);
@@ -164,6 +165,7 @@ export default function OnboardingPage() {
           intra_workout_nutrition: intraWorkoutNutrition,
           display_name: displayName,
           cardio_machine: cardioMachine,
+          fasted_cardio: fastedCardio,
           preferred_proteins: preferredProteins,
           preferred_carbs: preferredCarbs,
           preferred_fats: preferredFats,
@@ -477,11 +479,26 @@ export default function OnboardingPage() {
                 />
               </div>
               <div>
-                <label className="label-field">Cardio Machine</label>
+                <label className="label-field">Preferred Cardio Machine</label>
                 <select value={cardioMachine} onChange={(e) => setCardioMachine(e.target.value)} className="input-field">
-                  <option value="treadmill">Treadmill</option>
+                  <option value="treadmill">Treadmill (incline walk)</option>
                   <option value="stairmaster">StairMaster</option>
+                  <option value="stationary_bike">Stationary Bike</option>
+                  <option value="elliptical">Elliptical</option>
                 </select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="label-field">Fasted Morning Cardio</label>
+                  <p className="text-[10px] text-jungle-dim">Do cardio before eating (maximizes fat oxidation during prep)</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFastedCardio(!fastedCardio)}
+                  className={`w-12 h-6 rounded-full transition-colors ${fastedCardio ? "bg-jungle-accent" : "bg-jungle-border"}`}
+                >
+                  <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${fastedCardio ? "translate-x-6" : "translate-x-0.5"}`} />
+                </button>
               </div>
 
               {/* Food Source Preferences */}

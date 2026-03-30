@@ -451,7 +451,8 @@ async def get_annual_calendar(
 ):
     """Return the annual phase calendar working backwards from competition date."""
     from app.models.profile import UserProfile
-    from app.engines.engine1.prep_timeline import generate_annual_calendar, prep_phase_for_date, weeks_out, phase_description
+    from app.engines.engine1.prep_timeline import generate_annual_calendar, prep_phase_for_date, weeks_out, phase_description, compute_smart_phase_plan
+    from app.models.measurement import BodyWeightLog, SkinfoldMeasurement
 
     result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
     profile = result.scalar_one_or_none()
@@ -459,15 +460,58 @@ async def get_annual_calendar(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     comp_date = getattr(profile, "competition_date", None)
-    calendar = generate_annual_calendar(comp_date) if comp_date else []
+
+    # Fetch latest body composition for smart calendar
+    bf_pct = getattr(profile, "manual_body_fat_pct", None)
+    if bf_pct is None:
+        sf_result = await db.execute(
+            select(SkinfoldMeasurement).where(SkinfoldMeasurement.user_id == user.id)
+            .order_by(desc(SkinfoldMeasurement.recorded_date)).limit(1)
+        )
+        sf = sf_result.scalar_one_or_none()
+        if sf:
+            bf_pct = sf.body_fat_pct
+
+    bw_result = await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+        .order_by(desc(BodyWeightLog.recorded_date)).limit(1)
+    )
+    bw = bw_result.scalar_one_or_none()
+    weight_kg = bw.weight_kg if bw else None
+
+    division = (profile.preferences or {}).get("division", "classic_physique")
+
+    calendar = generate_annual_calendar(
+        comp_date,
+        current_bf_pct=bf_pct,
+        current_weight_kg=weight_kg,
+        sex=profile.sex,
+        division=division,
+    ) if comp_date else []
+
     current_phase = prep_phase_for_date(comp_date)
 
-    return {
+    response: dict = {
         "competition_date": str(comp_date) if comp_date else None,
         "current_phase": current_phase,
         "weeks_out": weeks_out(comp_date),
         "calendar": calendar,
     }
+
+    # Include smart prep plan if we have body composition data
+    if comp_date and bf_pct is not None and weight_kg is not None:
+        wo = weeks_out(comp_date)
+        if wo is not None and wo > 0:
+            plan = compute_smart_phase_plan(
+                competition_date=comp_date,
+                current_bf_pct=bf_pct,
+                current_weight_kg=weight_kg,
+                sex=profile.sex,
+                division=division,
+            )
+            response["prep_plan"] = plan
+
+    return response
 
 
 @router.get("/symmetry")
