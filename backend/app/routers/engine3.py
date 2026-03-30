@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date as date_cls, timedelta
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -81,9 +84,9 @@ async def get_current_prescription(
         if bf_pct is None and tape and tape.waist and tape.neck:
             try:
                 bf_pct = navy_body_fat(tape.waist, tape.neck, profile.height_cm, profile.sex, tape.hips)
-            except Exception:
-                pass
-            
+            except (ValueError, ZeroDivisionError) as e:
+                logger.warning("Navy BF failed in prescription init: %s", e)
+
         rec = _recommend_phase(
             muscle_gaps=hqi.site_scores if hqi else {},
             pds_score=pds_val.pds_score if pds_val else 50.0,
@@ -156,9 +159,10 @@ async def get_current_prescription(
         skinfold = await get_latest_skinfold(db, user.id)
         bf_pct = skinfold.body_fat_pct if skinfold else None
         if bf_pct is None and tape and tape.waist and tape.neck:
-            try: bf_pct = navy_body_fat(tape.waist, tape.neck, profile.height_cm, profile.sex, tape.hips)
-            except Exception:
-                pass
+            try:
+                bf_pct = navy_body_fat(tape.waist, tape.neck, profile.height_cm, profile.sex, tape.hips)
+            except (ValueError, ZeroDivisionError) as e:
+                logger.warning("Navy BF failed in recalculate: %s", e)
 
         rec = _recommend_phase(
             muscle_gaps=hqi.site_scores if hqi else {},
@@ -408,8 +412,8 @@ async def run_autoregulation(
             rate_detail = compute_rate_of_change_detailed(weight_history, sex=sex, cycle_day=cycle_day)
             ewma_rate = rate_detail["rate_kg_per_week"]
             trend_direction = rate_detail["trend_direction"]
-        except (ValueError, Exception):
-            pass
+        except (ValueError, KeyError) as e:
+            logger.warning("Rate-of-change computation failed: %s", e)
 
     # Metabolic adaptation — compute weeks in deficit from prescription creation date
     from app.engines.engine3.thermodynamic import compute_adapted_tdee
@@ -445,8 +449,8 @@ async def run_autoregulation(
                 current_bf_pct=current_bf_pct,
                 sex=sex,
             )
-        except (ValueError, Exception):
-            pass
+        except (ValueError, KeyError) as e:
+            logger.warning("ARI-triggered refeed check failed: %s", e)
 
     # Adherence lock — applies macro reduction at <85% adherence
     adherence_pct = adh.overall_adherence_pct if adh else 100.0
@@ -754,8 +758,8 @@ async def get_cardio_prescription(
             rate_detail = compute_rate_of_change_detailed(weight_history, sex=sex)
             if abs(rate_detail["rate_kg_per_week"]) < 0.1:
                 weight_stall = True
-        except Exception:
-            pass
+        except (ValueError, KeyError) as e:
+            logger.warning("Weight stall check failed: %s", e)
 
     # Get average ARI for recovery-aware cardio adjustment
     avg_ari = None

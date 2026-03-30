@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { showToast } from "@/components/Toast";
 import NavBar from "@/components/NavBar";
 import { api } from "@/lib/api";
 import SpiderChart from "@/components/SpiderChart";
@@ -252,27 +253,36 @@ export default function DashboardPage() {
     setClassEstimate(null);
     setRecentWeights([]);
 
+    // Soft-fail helper: fetch data, set state on success, log on failure.
+    // Dashboard widgets are independent — one failure shouldn't block others.
+    let failCount = 0;
+    const softFetch = <T,>(path: string, setter: (v: T) => void) =>
+      api.get<T>(path).then(setter).catch(() => { failCount++; });
+
     // Load independent data immediately
-    api.get<ARIData>("/engine2/ari").then(setAri).catch(() => {});
-    api.get<AdherenceEntry[]>("/engine3/adherence").then(setAdherence).catch(() => {});
-    api.get<WeightEntry[]>("/checkin/weight-history?days=14").then(setRecentWeights).catch(() => {});
+    softFetch<ARIData>("/engine2/ari", setAri);
+    softFetch<AdherenceEntry[]>("/engine3/adherence", setAdherence);
+    softFetch<WeightEntry[]>("/checkin/weight-history?days=14", setRecentWeights);
 
     // Today's plan previews
     const todayStr = new Date().toISOString().split("T")[0];
-    api.get<any>(`/engine2/session/${todayStr}`).then(setTodaySession).catch(() => {});
-    api.get<any>("/engine3/prescription/current").then(setTodayMacros).catch(() => {});
+    softFetch<any>(`/engine2/session/${todayStr}`, setTodaySession);
+    softFetch<any>("/engine3/prescription/current", setTodayMacros);
 
     // Run diagnostics first, then fetch freshly computed Engine 1 outputs
     const runAndFetch = async () => {
-      try { await api.post("/engine1/run"); } catch { /* no measurements yet */ }
+      try { await api.post("/engine1/run"); } catch { /* no measurements yet — expected before first check-in */ }
       await Promise.all([
-        api.get<PDSData>("/engine1/pds").then(setPds).catch(() => {}),
-        api.get<MuscleGapsData>("/engine1/muscle-gaps").then(setMuscleGaps).catch(() => {}),
-        api.get<SymmetryData>("/engine1/symmetry").then(setSymmetry).catch(() => {}),
-        api.get<PhaseRecommendation>("/engine1/phase-recommendation").then(setPhaseRec).catch(() => {}),
-        api.get<DiagnosticData>("/engine1/diagnostic").then(setDiagnostic).catch(() => {}),
-        api.get<ClassEstimate>("/engine1/class-estimate").then(setClassEstimate).catch(() => {}),
+        softFetch<PDSData>("/engine1/pds", setPds),
+        softFetch<MuscleGapsData>("/engine1/muscle-gaps", setMuscleGaps),
+        softFetch<SymmetryData>("/engine1/symmetry", setSymmetry),
+        softFetch<PhaseRecommendation>("/engine1/phase-recommendation", setPhaseRec),
+        softFetch<DiagnosticData>("/engine1/diagnostic", setDiagnostic),
+        softFetch<ClassEstimate>("/engine1/class-estimate", setClassEstimate),
       ]);
+      if (failCount > 3) {
+        showToast("Some dashboard data failed to load. Check your connection.", "warning");
+      }
     };
     runAndFetch();
   }, [user, loading, router]);
@@ -294,8 +304,8 @@ export default function DashboardPage() {
       await api.post("/engine1/run");
       
       // Update dependent engines after the new state is measured
-      await api.post("/engine2/program/generate").catch(() => {});
-      await api.post("/engine3/autoregulation").catch(() => {});
+      await api.post("/engine2/program/generate").catch(() => { /* program may not exist yet */ });
+      await api.post("/engine3/autoregulation").catch(() => { /* rx may not exist yet */ });
       
       const [newPds, newGaps, newSymmetry, newPhaseRec, newDiag] = await Promise.all([
         api.get<PDSData>("/engine1/pds"),
@@ -312,8 +322,8 @@ export default function DashboardPage() {
       api.get<ClassEstimate>("/engine1/class-estimate").then(setClassEstimate).catch(() => {});
       api.get<WeightEntry[]>("/checkin/weight-history?days=14").then(setRecentWeights).catch(() => {});
       api.get<ARIData>("/engine2/ari").then(setAri).catch(() => {});
-    } catch {
-      //
+    } catch (e) {
+      showToast("Diagnostics failed to run. Try again.", "error");
     } finally {
       setRunningDiag(false);
     }

@@ -15,6 +15,67 @@ interface QuickCheckinResult {
 
 const MUSCLE_GROUPS = ["Chest", "Back", "Quads", "Hamstrings", "Delts", "Arms", "Calves", "Abs", "Glutes", "Lower Back"];
 
+const FEEDBACK_ICON_MAP: Record<string, { cls: string; svg: string }> = {
+  check: { cls: "bg-green-500/20 text-green-400", svg: "M5 13l4 4L19 7" },
+  warning: { cls: "bg-yellow-500/20 text-yellow-400", svg: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" },
+  info: { cls: "bg-blue-500/20 text-blue-400", svg: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+  change: { cls: "bg-jungle-accent/20 text-jungle-accent", svg: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" },
+};
+
+function FeedbackReportModal({
+  report,
+  onClose,
+}: {
+  report: { week: number; summary: string; items: { category: string; icon: string; text: string }[] };
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        className="bg-jungle-card border border-jungle-border rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-jungle-card border-b border-jungle-border px-5 py-4 flex items-center justify-between rounded-t-2xl">
+          <div>
+            <h2 className="text-lg font-bold text-jungle-text">
+              Week {report.week} <span className="text-jungle-accent">Feedback Report</span>
+            </h2>
+            <p className="text-[10px] text-jungle-dim mt-0.5">{report.summary}</p>
+          </div>
+          <button onClick={onClose} className="text-jungle-dim hover:text-jungle-muted text-xl leading-none ml-3">×</button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          {report.items.map((item, i) => {
+            const icon = FEEDBACK_ICON_MAP[item.icon] || FEEDBACK_ICON_MAP.info;
+            return (
+              <div key={i} className="flex gap-3 items-start">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${icon.cls}`}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon.svg} />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[9px] text-jungle-dim uppercase tracking-wider font-medium">{item.category.replace(/_/g, " ")}</span>
+                  <p className="text-sm text-jungle-text leading-relaxed mt-0.5">{item.text}</p>
+                </div>
+              </div>
+            );
+          })}
+          {report.items.length === 0 && (
+            <p className="text-jungle-muted text-sm text-center py-6">No feedback items this week. Keep doing what you&apos;re doing.</p>
+          )}
+        </div>
+        <div className="px-5 pb-5 pt-2 border-t border-jungle-border">
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 btn-secondary text-sm">Close</button>
+            <a href="/dashboard" className="flex-1 btn-primary text-center text-sm">Dashboard</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CheckinPage() {
   const router = useRouter();
   const { user, loading, logout } = useAuth();
@@ -23,6 +84,7 @@ export default function CheckinPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [showFeedbackReport, setShowFeedbackReport] = useState(false);
 
   // Unit preference
   const [useLbs, setUseLbs] = useState(false);
@@ -39,6 +101,7 @@ export default function CheckinPage() {
   const [quickSleep, setQuickSleep] = useState("7");
   const [quickSoreness, setQuickSoreness] = useState("3");
   const [quickSoreMuscles, setQuickSoreMuscles] = useState<string[]>([]);
+  const [quickNotes, setQuickNotes] = useState("");
   const [quickResult, setQuickResult] = useState<QuickCheckinResult | null>(null);
   const [quickSubmitting, setQuickSubmitting] = useState(false);
   const [quickError, setQuickError] = useState("");
@@ -71,6 +134,15 @@ export default function CheckinPage() {
   const [trainingAdherence, setTrainingAdherence] = useState("90");
   const [notes, setNotes] = useState("");
 
+  // Posing practice state
+  const [posingRec, setPosingRec] = useState<{
+    division: string; weeks_out: number | null; frequency: string;
+    duration_min: number; hold_seconds: number; intensity: string;
+    notes: string; poses: { name: string; cue: string }[];
+  } | null>(null);
+  const [posingPracticed, setPosingPracticed] = useState<Set<string>>(new Set());
+  const [posingDuration, setPosingDuration] = useState("");
+
   // Fit3D-specific state (all in original Fit3D units: lbs + inches)
   const [fit3dWeightLbs, setFit3dWeightLbs] = useState("");
   const [fit3dBodyFatPct, setFit3dBodyFatPct] = useState("");
@@ -92,6 +164,15 @@ export default function CheckinPage() {
   useEffect(() => {
     if (!loading && !user) router.push("/auth/login");
   }, [user, loading, router]);
+
+  // Fetch posing recommendation when any check-in mode is selected
+  useEffect(() => {
+    if (mode === "quick" || mode === "full") {
+      api.get<typeof posingRec>("/checkin/posing-recommendation")
+        .then(setPosingRec)
+        .catch(() => {});
+    }
+  }, [mode]);
 
   useEffect(() => {
     if (mode === "fit3d") {
@@ -190,6 +271,7 @@ export default function CheckinPage() {
         sleep_quality: parseFloat(quickSleep),
         soreness_score: parseFloat(quickSoreness),
         sore_muscles: quickSoreMuscles,
+        notes: quickNotes || undefined,
       });
       setQuickResult(res);
     } catch (e: unknown) {
@@ -353,13 +435,13 @@ export default function CheckinPage() {
                     </div>
                     <div>
                       <p className="font-semibold text-sm group-hover:text-jungle-accent transition-colors">
-                        Weekly Micro Check-In
+                        Weekly Full Check-In
                       </p>
-                      <p className="text-[10px] text-jungle-dim">~5 min</p>
+                      <p className="text-[10px] text-jungle-dim">~10 min</p>
                     </div>
                   </div>
                   <p className="text-xs text-jungle-muted">
-                    Weight, adherence, HRV, and recovery data. Engine 3 autoregulates macros from trends. No measurements.
+                    Full check-in: tape measurements, skinfolds, HRV, adherence, and progress photos. Recalibrates all engines.
                   </p>
                 </button>
 
@@ -413,14 +495,14 @@ export default function CheckinPage() {
               <div className="card space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="label-field">Weight (kg)</label>
+                    <label className="label-field">Weight ({unit})</label>
                     <input
                       type="number"
                       step="0.1"
                       value={quickWeight}
                       onChange={(e) => setQuickWeight(e.target.value)}
                       className="input-field mt-1"
-                      placeholder="e.g. 90.5"
+                      placeholder={useLbs ? "e.g. 200" : "e.g. 90.5"}
                     />
                   </div>
                   <div>
@@ -492,6 +574,76 @@ export default function CheckinPage() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Posing Practice */}
+                {posingRec && posingRec.poses.length > 0 && (
+                  <div className="pt-3 border-t border-jungle-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="label-field">Posing Practice</label>
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-jungle-accent/15 text-jungle-accent font-medium">
+                        {posingRec.frequency} • {posingRec.duration_min} min
+                      </span>
+                    </div>
+                    {posingRec.weeks_out !== null && (
+                      <p className="text-[10px] text-jungle-dim mb-2">
+                        {posingRec.weeks_out} weeks out — {posingRec.notes}
+                      </p>
+                    )}
+                    <div className="space-y-1">
+                      {posingRec.poses.map(pose => (
+                        <button
+                          key={pose.name}
+                          type="button"
+                          onClick={() => setPosingPracticed(prev => {
+                            const next = new Set(prev);
+                            next.has(pose.name) ? next.delete(pose.name) : next.add(pose.name);
+                            return next;
+                          })}
+                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors border text-xs ${
+                            posingPracticed.has(pose.name)
+                              ? "bg-green-500/10 border-green-500/30 text-green-400"
+                              : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-jungle-accent/30"
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                            posingPracticed.has(pose.name) ? "bg-green-500/30 border-green-500" : "border-jungle-border"
+                          }`}>
+                            {posingPracticed.has(pose.name) && (
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium">{pose.name}</span>
+                            <span className="text-jungle-dim ml-2">— {pose.cue}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-2">
+                      <label className="text-[9px] text-jungle-dim uppercase">Duration (min)</label>
+                      <input
+                        type="number"
+                        value={posingDuration}
+                        onChange={(e) => setPosingDuration(e.target.value)}
+                        className="input-field mt-0.5 text-sm"
+                        placeholder={String(posingRec.duration_min)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <label className="label-field">Notes (optional)</label>
+                  <textarea
+                    value={quickNotes}
+                    onChange={(e) => setQuickNotes(e.target.value)}
+                    rows={2}
+                    className="input-field resize-none text-sm mt-1"
+                    placeholder="How are you feeling today? Any observations..."
+                  />
                 </div>
 
                 <button
@@ -795,6 +947,73 @@ export default function CheckinPage() {
                       </div>
                     </div>
 
+                    {/* Posing Practice (weekly) */}
+                    {posingRec && posingRec.poses.length > 0 && (
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-sm font-semibold text-jungle-accent uppercase tracking-wide">Posing Practice</h3>
+                          <span className="text-[9px] px-2 py-0.5 rounded bg-jungle-accent/15 text-jungle-accent font-medium">
+                            {posingRec.frequency} • {posingRec.duration_min} min
+                          </span>
+                        </div>
+                        {posingRec.weeks_out !== null && (
+                          <p className="text-[10px] text-jungle-dim mb-2">
+                            {posingRec.weeks_out} weeks out — {posingRec.notes}
+                          </p>
+                        )}
+                        <div className="space-y-1">
+                          {posingRec.poses.map(pose => (
+                            <button
+                              key={pose.name}
+                              type="button"
+                              onClick={() => setPosingPracticed(prev => {
+                                const next = new Set(prev);
+                                next.has(pose.name) ? next.delete(pose.name) : next.add(pose.name);
+                                return next;
+                              })}
+                              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors border text-xs ${
+                                posingPracticed.has(pose.name)
+                                  ? "bg-green-500/10 border-green-500/30 text-green-400"
+                                  : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-jungle-accent/30"
+                              }`}
+                            >
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                                posingPracticed.has(pose.name) ? "bg-green-500/30 border-green-500" : "border-jungle-border"
+                              }`}>
+                                {posingPracticed.has(pose.name) && (
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="font-medium">{pose.name}</span>
+                                <span className="text-jungle-dim ml-2">— {pose.cue}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          <div>
+                            <label className="text-[9px] text-jungle-dim uppercase">Duration (min)</label>
+                            <input
+                              type="number"
+                              value={posingDuration}
+                              onChange={(e) => setPosingDuration(e.target.value)}
+                              className="input-field mt-0.5 text-sm"
+                              placeholder={String(posingRec.duration_min)}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-jungle-dim uppercase">Poses practiced</label>
+                            <p className="text-sm text-jungle-accent font-semibold mt-1.5">
+                              {posingPracticed.size} / {posingRec.poses.length}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-4">
                       <label className="label-field">Diary / Notes (optional)</label>
                       <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="input-field resize-none text-sm" placeholder="Anything noteworthy this week regarding sleep, performance, or bloating..." />
@@ -907,8 +1126,18 @@ export default function CheckinPage() {
                       </div>
                     )}
 
-                    <a href="/dashboard" className="btn-primary w-full text-center block">
-                      View Dashboard
+                    {/* Feedback report button */}
+                    {!!(result as Record<string, unknown>).feedback_report && (
+                      <button
+                        onClick={() => setShowFeedbackReport(true)}
+                        className="btn-primary w-full"
+                      >
+                        View Weekly Feedback Report
+                      </button>
+                    )}
+
+                    <a href="/dashboard" className="btn-secondary w-full text-center block">
+                      Go to Dashboard
                     </a>
                   </div>
                 )}
@@ -1118,6 +1347,19 @@ export default function CheckinPage() {
           )}
         </div>
       </main>
+
+      {/* ── Weekly Feedback Report Modal ── */}
+      {(() => {
+        if (!showFeedbackReport || !result) return null;
+        const fr = (result as Record<string, unknown>).feedback_report;
+        if (!fr) return null;
+        return (
+          <FeedbackReportModal
+            report={fr as { week: number; summary: string; items: { category: string; icon: string; text: string }[] }}
+            onClose={() => setShowFeedbackReport(false)}
+          />
+        );
+      })()}
     </div>
   );
 }

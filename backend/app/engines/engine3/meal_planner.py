@@ -129,6 +129,48 @@ def _pick_unique(foods: list[FoodItem], used: set[str], count: int = 1, slot_typ
     return available[:count]
 
 
+def _select_daily_staples(
+    foods: list[FoodItem],
+    max_picks: int,
+    slot_types: list[str],
+) -> list[FoodItem]:
+    """Select a small staple pool for the entire day from the ranked food list.
+
+    Real bodybuilding coaching principle: an athlete eats 3-4 protein sources,
+    2-3 carb sources, and 1-2 fat sources per day — repeating them across meals.
+    This reduces meal-prep complexity and mirrors how actual competitors eat.
+
+    The foods list is already ranked by phase priority, so we take the top N
+    ensuring at least one food matches each required slot_type (breakfast vs
+    lunch_dinner) when possible.
+    """
+    if max_picks >= len(foods):
+        return foods
+
+    staples: list[FoodItem] = []
+    used_names: set[str] = set()
+
+    # First pass: ensure coverage for each slot type
+    for st in slot_types:
+        for f in foods:
+            if f.name not in used_names and (
+                st in f.meal_affinity or "any" in f.meal_affinity
+            ):
+                staples.append(f)
+                used_names.add(f.name)
+                break
+
+    # Second pass: fill remaining slots from top-ranked foods
+    for f in foods:
+        if len(staples) >= max_picks:
+            break
+        if f.name not in used_names:
+            staples.append(f)
+            used_names.add(f.name)
+
+    return staples
+
+
 # ─── Meal time slot builder ──────────────────────────────────────────────────
 
 def _build_time_slots(
@@ -252,12 +294,11 @@ def generate_meal_plan(
 
     restrictions = dietary_restrictions or []
 
-    # Get phase-filtered food pools
+    # Get phase-filtered food pools (already ranked by coach-level priority)
     proteins = get_available_foods(phase, restrictions, "protein")
     carbs_all = get_available_foods(phase, restrictions, "carb")
     fats = get_available_foods(phase, restrictions, "fat")
     vegetables = get_available_foods(phase, restrictions, "vegetable")
-    fruits = get_available_foods(phase, restrictions, "fruit")
 
     # Apply user blacklist and preference ordering
     bl = blacklisted_foods or []
@@ -279,6 +320,32 @@ def generate_meal_plan(
     # Build time slots
     slots = _build_time_slots(meal_count, training_start_time, training_duration_min, is_training_day)
 
+    # ── Coach-realistic staple selection ──────────────────────────────────
+    #
+    # A real bodybuilding prep diet uses a SMALL set of foods repeated across
+    # meals. A typical day: 2-3 protein sources (e.g. chicken breast at most
+    # meals, egg whites at breakfast, white fish post-workout), 2-3 carb
+    # sources (white rice, oats, sweet potato), 1-2 fat sources (olive oil,
+    # almonds), and 1-2 vegetables (broccoli, asparagus).
+    #
+    # The staple pool sizes below mirror real competitor prep sheets.
+    # Phase tightening: peak/cut use fewer staples for GI predictability.
+    is_strict_phase = phase in ("peak", "cut")
+
+    slot_types_in_plan = list({st for _, _, _, st in slots if st != "any"})
+
+    protein_staple_count = 2 if is_strict_phase else 3
+    carb_staple_count = 2 if is_strict_phase else 3
+    fat_staple_count = 1 if is_strict_phase else 2
+    veg_staple_count = 1 if is_strict_phase else 2
+
+    daily_proteins = _select_daily_staples(proteins, protein_staple_count, slot_types_in_plan)
+    daily_carbs = _select_daily_staples(sustained_carbs, carb_staple_count, slot_types_in_plan)
+    daily_peri_carbs = _select_daily_staples(peri_carbs, min(2, len(peri_carbs)), ["any"])
+    daily_fats = _select_daily_staples(fats, fat_staple_count, slot_types_in_plan)
+    daily_vegs = _select_daily_staples(vegetables, veg_staple_count, ["lunch_dinner"])
+    daily_peri_proteins = _select_daily_staples(peri_proteins, min(2, len(peri_proteins)), ["any"])
+
     # Distribute macros across meals
     #
     # Coach principle: peri-workout window (pre + post) receives the LARGEST
@@ -298,11 +365,13 @@ def generate_meal_plan(
     per_other_carbs = other_carb_total / max(1, non_peri_count) if non_peri_count > 0 else 0
     per_meal_fat = fat_g / max(1, non_peri_count)
 
-    # Track used foods for variety
-    used_proteins: set[str] = set()
-    used_carbs: set[str] = set()
-    used_fats: set[str] = set()
-    used_vegs: set[str] = set()
+    # Round-robin indices for staple rotation (reuse within the small pool)
+    _prot_idx = 0
+    _carb_idx = 0
+    _fat_idx = 0
+    _veg_idx = 0
+    _peri_prot_idx = 0
+    _peri_carb_idx = 0
 
     meals: list[Meal] = []
 
@@ -317,45 +386,64 @@ def generate_meal_plan(
         m_carbs = per_peri_carbs if is_peri else per_other_carbs
         m_fat = 0.0 if is_peri else per_meal_fat
 
-        # ── 1. Protein source (slot-type aware) ──
-        pool = peri_proteins if is_peri else proteins
-        picks = _pick_unique(pool, used_proteins, slot_type=slot_type)
-        if picks:
-            protein_food = picks[0]
-            used_proteins.add(protein_food.name)
+        # ── 1. Protein source (round-robin from daily staples) ──
+        if is_peri and daily_peri_proteins:
+            protein_food = daily_peri_proteins[_peri_prot_idx % len(daily_peri_proteins)]
+            _peri_prot_idx += 1
+        elif daily_proteins:
+            # Pick affinity-matching staple when possible
+            affinity_match = [f for f in daily_proteins
+                             if slot_type in f.meal_affinity or "any" in f.meal_affinity]
+            if affinity_match:
+                protein_food = affinity_match[_prot_idx % len(affinity_match)]
+            else:
+                protein_food = daily_proteins[_prot_idx % len(daily_proteins)]
+            _prot_idx += 1
+        else:
+            protein_food = None
+
+        if protein_food:
             item = _scale_food_to_protein(protein_food, m_protein)
             meal.ingredients.append(item)
-            remaining_protein = max(0, m_protein - item.protein_g)
-        else:
-            remaining_protein = m_protein
+            # Subtract incidental carbs/fat from remaining macro budget
+            m_carbs = max(0, m_carbs - item.carbs_g)
+            m_fat = max(0, m_fat - item.fat_g)
 
-        # ── 2. Carb source (slot-type aware) ──
+        # ── 2. Carb source (round-robin from daily staples) ──
         if m_carbs > 5:
-            pool = peri_carbs if is_peri else sustained_carbs
-            picks = _pick_unique(pool, used_carbs, slot_type=slot_type)
-            if picks:
-                carb_food = picks[0]
-                used_carbs.add(carb_food.name)
+            if is_peri and daily_peri_carbs:
+                carb_food = daily_peri_carbs[_peri_carb_idx % len(daily_peri_carbs)]
+                _peri_carb_idx += 1
+            elif daily_carbs:
+                affinity_match = [f for f in daily_carbs
+                                 if slot_type in f.meal_affinity or "any" in f.meal_affinity]
+                if affinity_match:
+                    carb_food = affinity_match[_carb_idx % len(affinity_match)]
+                else:
+                    carb_food = daily_carbs[_carb_idx % len(daily_carbs)]
+                _carb_idx += 1
+            else:
+                carb_food = None
+
+            if carb_food:
                 item = _scale_food_to_carbs(carb_food, m_carbs)
                 meal.ingredients.append(item)
+                # Subtract incidental fat from remaining budget
+                m_fat = max(0, m_fat - item.fat_g)
 
-        # ── 3. Fat source (not peri-workout) ──
-        if not is_peri and m_fat > 3:
-            picks = _pick_unique(fats, used_fats, slot_type=slot_type)
-            if picks:
-                fat_food = picks[0]
-                used_fats.add(fat_food.name)
-                item = _scale_food_to_fat(fat_food, m_fat)
-                meal.ingredients.append(item)
+        # ── 3. Fat source (not peri-workout, round-robin) ──
+        if not is_peri and m_fat > 3 and daily_fats:
+            fat_food = daily_fats[_fat_idx % len(daily_fats)]
+            _fat_idx += 1
+            item = _scale_food_to_fat(fat_food, m_fat)
+            meal.ingredients.append(item)
 
         # ── 4. Vegetable (non-peri, non-refeed, lunch/dinner only) ──
-        if not is_peri and not is_refeed and vegetables and slot_type != "breakfast":
-            picks = _pick_unique(vegetables, used_vegs, slot_type=slot_type)
-            if picks:
-                veg_food = picks[0]
-                used_vegs.add(veg_food.name)
-                item = _scale_food(veg_food, veg_food.typical_serving_g)
-                meal.ingredients.append(item)
+        if not is_peri and not is_refeed and daily_vegs and slot_type != "breakfast":
+            veg_food = daily_vegs[_veg_idx % len(daily_vegs)]
+            _veg_idx += 1
+            item = _scale_food(veg_food, veg_food.typical_serving_g)
+            meal.ingredients.append(item)
 
         meals.append(meal)
 

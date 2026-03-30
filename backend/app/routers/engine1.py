@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.services.diagnostic import run_full_diagnostic, get_pds_history, get_lcsa_history
@@ -284,8 +288,8 @@ async def get_latest_diagnostic(
             try:
                 bf_pct = navy_body_fat(tape.waist, tape.neck, profile.height_cm, sex, tape.hips)
                 bf_source = "navy_circumference"
-            except Exception:
-                pass
+            except (ValueError, ZeroDivisionError) as e:
+                logger.warning("Navy body fat calculation failed: %s", e)
 
     if bf_pct is not None:
         lm = lean_mass_kg(bw.weight_kg, bf_pct) if bw else None
@@ -417,8 +421,8 @@ async def get_aesthetic_vector(
         if bf_pct is None and tape.waist and tape.neck and profile.height_cm:
             try:
                 bf_pct = navy_body_fat(tape.waist, tape.neck, profile.height_cm, profile.sex, tape.hips)
-            except Exception:
-                pass
+            except (ValueError, ZeroDivisionError) as e:
+                logger.warning("Navy body fat fallback failed: %s", e)
     lean_averaged = _lean_adjust_measurements(averaged, bf_pct or 15.0)
 
     actual = compute_proportion_vector(lean_averaged, profile.height_cm)
