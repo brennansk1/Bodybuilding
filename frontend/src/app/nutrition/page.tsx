@@ -67,6 +67,55 @@ interface DailyTotals {
   total_fat_g: number;
 }
 
+// ─── Macro Pie Chart (SVG) ───────────────────────────────────────────────────
+
+function MacroPieChart({ pPct, cPct, fPct }: { pPct: number; cPct: number; fPct: number }) {
+  const r = 40;
+  const cx = 50;
+  const cy = 50;
+  const circumference = 2 * Math.PI * r;
+
+  const pLen = (pPct / 100) * circumference;
+  const cLen = (cPct / 100) * circumference;
+  const fLen = (fPct / 100) * circumference;
+
+  const pOff = 0;
+  const cOff = pLen;
+  const fOff = pLen + cLen;
+
+  return (
+    <svg viewBox="0 0 100 100" className="w-24 h-24">
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1a3328" strokeWidth="14" />
+      {/* Protein (blue) */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#60a5fa" strokeWidth="14"
+        strokeDasharray={`${pLen} ${circumference - pLen}`}
+        strokeDashoffset={-pOff}
+        transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
+      {/* Carbs (amber) */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#fbbf24" strokeWidth="14"
+        strokeDasharray={`${cLen} ${circumference - cLen}`}
+        strokeDashoffset={-cOff}
+        transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
+      {/* Fat (red) */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f87171" strokeWidth="14"
+        strokeDasharray={`${fLen} ${circumference - fLen}`}
+        strokeDashoffset={-fOff}
+        transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
+    </svg>
+  );
+}
+
+// ─── Phase Macro Explanations ────────────────────────────────────────────────
+
+const PHASE_MACRO_EXPLANATIONS: Record<string, string> = {
+  cut: "High protein preserves muscle during the deficit. Moderate carbs fuel training intensity. Fat at the minimum floor to protect hormones.",
+  peak: "Maximum protein for muscle preservation. Carbs are strategically loaded for glycogen supercompensation. Fat at absolute floor — 7 days only.",
+  bulk: "Moderate protein (growth stimulus is covered). High carbs drive training performance and insulin-mediated anabolism. Healthy fats support testosterone.",
+  lean_bulk: "Slightly elevated protein to maximize lean tissue gain. Controlled carbs to limit fat spillover. Adequate fat for hormonal health.",
+  maintain: "Balanced split to hold current physique. Protein supports ongoing recovery without surplus-driven growth.",
+  restoration: "Gradual calorie increase via carbs. Protein tapers as anabolic environment improves. Fat elevated to rebuild hormonal function post-show.",
+};
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 const today = new Date().toISOString().slice(0, 10);
@@ -82,7 +131,15 @@ export default function NutritionPage() {
   const [mealPlanLoading, setMealPlanLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [dayTab, setDayTab] = useState<"training" | "rest">("training");
-  const [eatenMeals, setEatenMeals] = useState<Set<number>>(new Set());
+
+  // Meal adherence: 0 = not logged, 1-10 = how much was eaten
+  const [mealAdherence, setMealAdherence] = useState<Record<number, number>>({});
+
+  // Cheat meal
+  const [showCheatForm, setShowCheatForm] = useState(false);
+  const [cheatDesc, setCheatDesc] = useState("");
+  const [cheatCals, setCheatCals] = useState("");
+  const [cheatLogged, setCheatLogged] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) { router.push("/auth/login"); return; }
@@ -116,12 +173,8 @@ export default function NutritionPage() {
     setRegenerating(false);
   };
 
-  const toggleEaten = (n: number) => {
-    setEatenMeals(prev => {
-      const next = new Set(prev);
-      next.has(n) ? next.delete(n) : next.add(n);
-      return next;
-    });
+  const setAdherence = (mealNum: number, value: number) => {
+    setMealAdherence(prev => ({ ...prev, [mealNum]: value }));
   };
 
   if (loading || !user || fetching) return null;
@@ -134,11 +187,17 @@ export default function NutritionPage() {
   })();
 
   const meals = mealPlan ? (dayTab === "training" ? mealPlan.training_day : mealPlan.rest_day) : [];
-  const eatenCount = eatenMeals.size;
+  const loggedCount = Object.values(mealAdherence).filter(v => v > 0).length;
 
   const pPct = activeMacros ? Math.round((activeMacros.protein_g * 4 / activeMacros.calories) * 100) : 0;
   const cPct = activeMacros ? Math.round((activeMacros.carbs_g * 4 / activeMacros.calories) * 100) : 0;
   const fPct = activeMacros ? 100 - pPct - cPct : 0;
+
+  // Compute average adherence for the day
+  const adherenceValues = Object.values(mealAdherence).filter(v => v > 0);
+  const avgAdherence = adherenceValues.length > 0
+    ? Math.round((adherenceValues.reduce((a, b) => a + b, 0) / adherenceValues.length) * 10)
+    : null;
 
   return (
     <div className="min-h-screen">
@@ -152,17 +211,17 @@ export default function NutritionPage() {
           </div>
         ) : (
           <>
-            {/* ── Macro Prescription ── */}
+            {/* ── Macro Prescription + Pie Chart ── */}
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Daily Macros</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-jungle-accent/20 text-jungle-accent font-medium capitalize">{rx.phase}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-lg bg-jungle-accent/20 text-jungle-accent font-medium capitalize">{rx.phase}</span>
               </div>
 
-              <div className="flex gap-1 bg-jungle-deeper rounded-lg p-0.5">
+              <div className="flex gap-1 bg-jungle-deeper rounded-xl p-0.5">
                 {(["training", "rest"] as const).map(tab => (
                   <button key={tab} onClick={() => setDayTab(tab)}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${dayTab === tab ? "bg-jungle-accent text-jungle-dark" : "text-jungle-muted hover:text-jungle-text"}`}>
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${dayTab === tab ? "bg-jungle-accent text-jungle-dark" : "text-jungle-muted hover:text-jungle-text"}`}>
                     {tab === "training" ? "Training Day" : "Rest Day"}
                   </button>
                 ))}
@@ -174,18 +233,36 @@ export default function NutritionPage() {
                     <p className="text-3xl font-bold text-jungle-text">{Math.round(activeMacros.calories)}</p>
                     <p className="text-[10px] text-jungle-dim">kcal target</p>
                   </div>
+
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="text-center bg-jungle-deeper rounded-lg py-2">
+                    <div className="text-center bg-jungle-deeper rounded-xl py-2">
                       <p className="text-lg font-bold text-blue-400">{Math.round(activeMacros.protein_g)}g</p>
                       <p className="text-[9px] text-jungle-dim">Protein ({pPct}%)</p>
                     </div>
-                    <div className="text-center bg-jungle-deeper rounded-lg py-2">
+                    <div className="text-center bg-jungle-deeper rounded-xl py-2">
                       <p className="text-lg font-bold text-amber-400">{Math.round(activeMacros.carbs_g)}g</p>
                       <p className="text-[9px] text-jungle-dim">Carbs ({cPct}%)</p>
                     </div>
-                    <div className="text-center bg-jungle-deeper rounded-lg py-2">
+                    <div className="text-center bg-jungle-deeper rounded-xl py-2">
                       <p className="text-lg font-bold text-red-400">{Math.round(activeMacros.fat_g)}g</p>
                       <p className="text-[9px] text-jungle-dim">Fat ({fPct}%)</p>
+                    </div>
+                  </div>
+
+                  {/* Pie Chart + Macro Explanation */}
+                  <div className="flex items-center gap-4 pt-2 border-t border-jungle-border/40">
+                    <MacroPieChart pPct={pPct} cPct={cPct} fPct={fPct} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className="flex gap-1.5">
+                          <span className="flex items-center gap-1 text-[9px]"><span className="w-2 h-2 rounded-full bg-blue-400" />P</span>
+                          <span className="flex items-center gap-1 text-[9px]"><span className="w-2 h-2 rounded-full bg-amber-400" />C</span>
+                          <span className="flex items-center gap-1 text-[9px]"><span className="w-2 h-2 rounded-full bg-red-400" />F</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-jungle-muted leading-relaxed">
+                        {PHASE_MACRO_EXPLANATIONS[rx.phase] || PHASE_MACRO_EXPLANATIONS.maintain}
+                      </p>
                     </div>
                   </div>
                 </>
@@ -195,7 +272,18 @@ export default function NutritionPage() {
             {/* ── Today's Intake vs Target ── */}
             {dailyTotals && activeMacros && (
               <div className="card space-y-3">
-                <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Today&apos;s Progress</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Today&apos;s Progress</h2>
+                  {avgAdherence !== null && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-lg font-medium ${
+                      avgAdherence >= 90 ? "bg-green-500/15 text-green-400" :
+                      avgAdherence >= 70 ? "bg-jungle-accent/15 text-jungle-accent" :
+                      "bg-red-500/15 text-red-400"
+                    }`}>
+                      {avgAdherence}% adherence
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-2">
                   {[
                     { label: "Calories", actual: dailyTotals.total_calories, target: activeMacros.calories, unit: "kcal", color: "bg-jungle-accent" },
@@ -243,17 +331,18 @@ export default function NutritionPage() {
                 <p className="text-jungle-dim text-xs text-center py-4">No meal plan generated yet.</p>
               ) : (
                 <>
-                  <p className="text-[10px] text-jungle-dim">{eatenCount} of {meals.length} meals completed</p>
+                  <p className="text-[10px] text-jungle-dim">{loggedCount} of {meals.length} meals logged</p>
                   <div className="space-y-2">
                     {meals.map(meal => {
-                      const eaten = eatenMeals.has(meal.meal_number);
+                      const adh = mealAdherence[meal.meal_number] || 0;
+                      const isLogged = adh > 0;
                       return (
                         <div key={meal.meal_number}
-                          className={`rounded-xl border transition-colors ${eaten ? "border-green-500/30 bg-green-500/5" : meal.is_peri ? "border-jungle-accent/30 bg-jungle-accent/5" : "border-jungle-border bg-jungle-deeper"}`}>
+                          className={`rounded-2xl border transition-colors ${isLogged ? "border-green-500/30 bg-green-500/5" : meal.is_peri ? "border-jungle-accent/30 bg-jungle-accent/5" : "border-jungle-border/50 bg-jungle-deeper/50"}`}>
                           <div className="flex items-center justify-between px-3 py-2">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-semibold text-jungle-text">{meal.label}</span>
-                              {meal.is_peri && <span className="text-[9px] px-1.5 py-0.5 rounded bg-jungle-accent/20 text-jungle-accent">Peri-WO</span>}
+                              {meal.is_peri && <span className="text-[9px] px-1.5 py-0.5 rounded-lg bg-jungle-accent/20 text-jungle-accent">Peri-WO</span>}
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] text-jungle-dim">{meal.time}</span>
@@ -267,8 +356,8 @@ export default function NutritionPage() {
                           </div>
                           <div className="px-3 pb-2 space-y-0.5">
                             {meal.ingredients.map((ing, i) => (
-                              <div key={i} className={`flex items-center justify-between text-[11px] py-0.5 ${i > 0 ? "border-t border-jungle-border/30" : ""}`}>
-                                <span className={`flex-1 ${eaten ? "text-jungle-dim line-through" : "text-jungle-muted"}`}>{ing.name}</span>
+                              <div key={i} className={`flex items-center justify-between text-[11px] py-0.5 ${i > 0 ? "border-t border-jungle-border/20" : ""}`}>
+                                <span className={`flex-1 ${isLogged && adh >= 8 ? "text-jungle-dim line-through" : "text-jungle-muted"}`}>{ing.name}</span>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="text-jungle-dim font-mono w-10 text-right">{ing.quantity_g}g</span>
                                   <span className="text-[9px] text-blue-400/70 w-6 text-right">{Math.round(ing.protein_g)}p</span>
@@ -279,17 +368,74 @@ export default function NutritionPage() {
                               </div>
                             ))}
                           </div>
-                          <div className="px-3 pb-2">
-                            <button onClick={() => toggleEaten(meal.meal_number)}
-                              className={`w-full py-1.5 rounded-lg text-[10px] font-medium transition-colors ${eaten ? "bg-green-500/20 text-green-400" : "bg-jungle-card border border-jungle-border text-jungle-muted hover:border-jungle-accent hover:text-jungle-accent"}`}>
-                              {eaten ? "Completed" : "Mark as Eaten"}
-                            </button>
+
+                          {/* ── Adherence Slider (1-10) ── */}
+                          <div className="px-3 pb-3 pt-1 border-t border-jungle-border/20">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] text-jungle-dim w-16 shrink-0">
+                                {adh === 0 ? "Not eaten" : adh <= 3 ? "Barely ate" : adh <= 6 ? "Partial" : adh <= 8 ? "Most of it" : "All of it"}
+                              </span>
+                              <input
+                                type="range"
+                                min="0"
+                                max="10"
+                                step="1"
+                                value={adh}
+                                onChange={(e) => setAdherence(meal.meal_number, parseInt(e.target.value))}
+                                className="flex-1 accent-jungle-accent h-1.5"
+                              />
+                              <span className={`text-xs font-bold w-8 text-right ${
+                                adh === 0 ? "text-jungle-dim" : adh >= 8 ? "text-green-400" : adh >= 5 ? "text-jungle-accent" : "text-red-400"
+                              }`}>
+                                {adh === 0 ? "—" : `${adh * 10}%`}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 </>
+              )}
+            </div>
+
+            {/* ── Cheat Meal Logger ── */}
+            <div className="card">
+              <button onClick={() => setShowCheatForm(!showCheatForm)}
+                className="w-full flex items-center justify-between text-left">
+                <div>
+                  <h3 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider">Cheat Meal</h3>
+                  <p className="text-[10px] text-jungle-dim mt-0.5">Log off-plan meals for accurate tracking</p>
+                </div>
+                <svg className={`w-4 h-4 text-jungle-dim transition-transform ${showCheatForm ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showCheatForm && !cheatLogged && (
+                <div className="mt-3 pt-3 border-t border-jungle-border/40 space-y-2">
+                  <div>
+                    <label className="text-[9px] text-jungle-dim uppercase">What did you eat?</label>
+                    <input type="text" value={cheatDesc} onChange={e => setCheatDesc(e.target.value)}
+                      className="input-field mt-0.5 text-xs" placeholder="e.g. Pizza, burger and fries, ice cream..." />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-jungle-dim uppercase">Estimated calories</label>
+                    <input type="number" value={cheatCals} onChange={e => setCheatCals(e.target.value)}
+                      className="input-field mt-0.5 text-xs" placeholder="e.g. 1200" />
+                  </div>
+                  <button
+                    onClick={() => { setCheatLogged(true); showToast("Cheat meal logged", "info"); }}
+                    disabled={!cheatDesc}
+                    className="btn-primary w-full text-xs py-2 disabled:opacity-50">
+                    Log Cheat Meal
+                  </button>
+                </div>
+              )}
+              {cheatLogged && (
+                <div className="mt-3 pt-3 border-t border-jungle-border/40 text-center">
+                  <p className="text-xs text-jungle-accent">{cheatDesc} — ~{cheatCals || "?"} kcal logged</p>
+                  <p className="text-[9px] text-jungle-dim mt-1">Factored into today&apos;s adherence calculation</p>
+                </div>
               )}
             </div>
 
@@ -305,18 +451,25 @@ export default function NutritionPage() {
                 <div className="grid grid-cols-2 gap-2 pt-1 text-[9px] text-jungle-dim">
                   <span>Meals/day: {rx.division_nutrition.meal_frequency_target}</span>
                   <span>MPS: {rx.division_nutrition.mps_threshold_g}g/meal</span>
-                  <span>Carb swing: ±{Math.round(rx.division_nutrition.carb_cycling_factor * 100)}%</span>
+                  <span>Carb swing: +/-{Math.round(rx.division_nutrition.carb_cycling_factor * 100)}%</span>
                 </div>
               </div>
             )}
+
             {/* ── Quick Links ── */}
-            <div className="flex gap-3">
-              <a href="/nutrition/peak-week" className="flex-1 btn-secondary text-center text-sm py-2.5">
+            <div className="grid grid-cols-3 gap-2">
+              <a href="/nutrition/peak-week" className="btn-secondary text-center text-xs py-2.5">
                 Peak Week
               </a>
-              <a href="/checkin/review" className="flex-1 btn-secondary text-center text-sm py-2.5">
+              <a href="/checkin/review" className="btn-secondary text-center text-xs py-2.5">
                 Weekly Review
               </a>
+              <button
+                onClick={() => showToast("Shopping list generating...", "info")}
+                className="btn-secondary text-center text-xs py-2.5"
+              >
+                Shopping List
+              </button>
             </div>
           </>
         )}

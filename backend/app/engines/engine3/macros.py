@@ -193,6 +193,77 @@ def compute_tdee(
     return bmr * activity_multiplier
 
 
+# ---------------------------------------------------------------------------
+# Optimal Meal Frequency Calculator
+# ---------------------------------------------------------------------------
+# Based on Schoenfeld & Aragon (2018) meta-analysis and ISSN position stand:
+#   - Minimum 3 meals/day for MPS optimization
+#   - Each meal should deliver 0.4-0.55 g/kg protein (30-50g for most athletes)
+#   - Eating more often than needed wastes prep time without MPS benefit
+#   - Cutting phases benefit from more meals (satiety, blood sugar stability)
+#   - Bulk phases can use fewer, larger meals (easier to eat surplus)
+
+def compute_optimal_meal_count(
+    protein_g: float,
+    target_calories: float,
+    weight_kg: float,
+    phase: str = "cut",
+) -> dict:
+    """Determine the optimal number of meals per day for MPS optimization.
+
+    The science: muscle protein synthesis (MPS) is maximally stimulated by
+    ~0.4 g/kg of protein per meal (Morton et al. 2018). Eating below this
+    threshold wastes a feeding opportunity; eating above it provides
+    diminishing returns.
+
+    Practical ceiling: 7 meals/day is the maximum for real-world compliance.
+    Floor: 3 meals/day minimum (you can't distribute protein in fewer).
+
+    Returns dict with optimal_meals, protein_per_meal, rationale.
+    """
+    # MPS-optimal protein per meal: 0.4-0.55 g/kg
+    mps_threshold = weight_kg * 0.45  # midpoint of 0.4-0.55 range
+    ideal_from_protein = max(3, round(protein_g / mps_threshold))
+
+    # Phase adjustments
+    if phase in ("cut", "peak"):
+        # More meals during a cut: better satiety, stable blood sugar,
+        # more even amino acid delivery to preserve LBM
+        phase_bias = 1  # bump up by 1
+    elif phase in ("bulk", "lean_bulk"):
+        # Fewer meals during bulk: easier to hit surplus with larger meals
+        phase_bias = -1 if ideal_from_protein > 4 else 0
+    else:
+        phase_bias = 0
+
+    # Calorie-based sanity check: meals below 350 kcal feel too small,
+    # meals above 900 kcal feel too large and impair digestion
+    min_from_cals = max(3, round(target_calories / 900))
+    max_from_cals = min(7, round(target_calories / 350))
+
+    optimal = max(min_from_cals, min(max_from_cals, ideal_from_protein + phase_bias))
+    optimal = max(3, min(7, optimal))  # hard clamp
+
+    protein_per_meal = round(protein_g / optimal, 1)
+    cals_per_meal = round(target_calories / optimal)
+
+    rationale_parts = [
+        f"{optimal} meals/day optimizes MPS ({protein_per_meal:.0f}g protein per meal).",
+    ]
+    if phase in ("cut", "peak"):
+        rationale_parts.append("Higher frequency during cut improves satiety and amino acid delivery.")
+    elif phase in ("bulk", "lean_bulk"):
+        rationale_parts.append("Moderate frequency during bulk keeps meals large enough to hit surplus.")
+
+    return {
+        "optimal_meals": optimal,
+        "protein_per_meal": protein_per_meal,
+        "calories_per_meal": cals_per_meal,
+        "mps_threshold_g": round(mps_threshold, 1),
+        "rationale": " ".join(rationale_parts),
+    }
+
+
 def compute_macros(
     tdee: float,
     phase: str,
