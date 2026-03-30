@@ -85,6 +85,30 @@ _MUSCLE_TO_DB: dict[str, str] = {
     "forearms":   "forearms",
 }
 
+# Division-specific exercise BANS — these exercises should NEVER appear in a
+# program for the given division regardless of fallback scoring.
+# This prevents the SFR fallback from selecting back-thickening or
+# trap-building exercises that undermine the division's aesthetic goals.
+_DIVISION_EXERCISE_BANS: dict[str, set[str]] = {
+    "mens_physique": {
+        # Hamstrings: no deadlifts (erector thickening destroys V-taper)
+        "deadlift", "romanian deadlift", "sumo deadlift", "stiff-leg deadlift",
+        "stiff leg deadlift", "good morning",
+        # Back: no barbell rows or T-bar rows (thickness over width)
+        "barbell row", "t-bar row", "t bar row", "reverse barbell row",
+        "plate row", "pull-over", "pullover", "bent-arm barbell pull-over",
+        "barbell pull-over",
+        # Traps: no shrugs (thick traps compress V-taper)
+        "barbell shrug", "dumbbell shrug", "shrug", "farmer",
+        # Shoulders: no standing barbell press (spinal loading + trap activation)
+        "military press", "standing barbell press", "behind-the-head",
+        "overhead barbell press", "behind neck",
+        # Quads: no heavy barbell squats (spinal compression, waist thickening)
+        "barbell back squat", "barbell squat", "barbell full squat",
+        "front squat",
+    },
+}
+
 # Session training order: bigger compound muscles first
 _MUSCLE_ORDER = [
     "chest", "back", "quads", "hamstrings", "glutes",
@@ -595,6 +619,14 @@ async def generate_program_sessions(
                     )
                 )
             ]
+
+    # Apply division-specific exercise bans
+    div_bans = _DIVISION_EXERCISE_BANS.get(user_division, set())
+    if div_bans:
+        all_exercises = [
+            ex for ex in all_exercises
+            if not any(ban in ex.name.lower() for ban in div_bans)
+        ]
 
     by_muscle: dict[str, list] = defaultdict(list)
     for ex in all_exercises:
