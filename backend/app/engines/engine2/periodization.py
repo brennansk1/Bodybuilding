@@ -194,7 +194,7 @@ _BASE_VOLUME_LANDMARKS: dict[str, tuple[int, int, int]] = {
     "biceps":       (6,  16, 22),
     "triceps":      (4,  10, 16),     # indirect from pressing accounted for
     "calves":       (8,  14, 20),
-    "abs":          (0,  12, 20),
+    "abs":          (6,  12, 20),    # always train abs — core stability for compounds
     "traps":        (0,  12, 20),
     "forearms":     (0,   8, 14),
     "front_delt":   (0,   6, 12),     # MEV=0 — pressing covers it
