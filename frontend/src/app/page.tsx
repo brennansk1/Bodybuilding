@@ -19,11 +19,14 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-canopy-gradient">
-      <div className="text-center space-y-8 max-w-lg">
+    <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-canopy-gradient relative overflow-hidden">
+      {/* Subtle radial glow behind logo */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-jungle-accent/5 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="text-center space-y-8 max-w-lg relative z-10 page-enter">
         <Logo size="xl" showTagline />
 
-        <p className="text-jungle-muted text-base sm:text-lg leading-relaxed">
+        <p className="text-jungle-muted text-base sm:text-lg leading-relaxed max-w-md mx-auto">
           Your personal Olympia-level coaching system. Personalized training
           programs, precision nutrition, and physique tracking — all calibrated
           to your division and competition timeline.
@@ -48,10 +51,10 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <a href="/auth/login" className="btn-primary text-center">
+          <a href="/auth/login" className="btn-primary text-center text-base px-8 py-3">
             Log In
           </a>
-          <a href="/auth/register" className="btn-secondary text-center">
+          <a href="/auth/register" className="btn-secondary text-center text-base px-8 py-3">
             Create Account
           </a>
         </div>
@@ -59,17 +62,17 @@ export default function Home() {
         {/* Feature highlights */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-12 text-left">
           <FeatureCard
-            icon="1"
+            num="01"
             title="Physique Analysis"
             desc="Track muscle development against your division's ideal proportions with precision scoring"
           />
           <FeatureCard
-            icon="2"
+            num="02"
             title="Smart Programming"
             desc="Auto-adjusting training volume based on your recovery — deloads when you need them"
           />
           <FeatureCard
-            icon="3"
+            num="03"
             title="Precision Nutrition"
             desc="Phase-aware meal plans with coach-level food selection and peak week protocols"
           />
@@ -80,20 +83,23 @@ export default function Home() {
 }
 
 function FeatureCard({
-  icon,
+  num,
   title,
   desc,
 }: {
-  icon: string;
+  num: string;
   title: string;
   desc: string;
 }) {
   return (
-    <div className="card card-hover">
-      <div className="w-8 h-8 rounded-lg bg-jungle-primary/20 flex items-center justify-center mb-3">
-        <span className="text-jungle-accent font-bold text-sm">{icon}</span>
+    <div className="card card-hover group">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] text-jungle-accent/60 font-mono font-bold tracking-widest">{num}</span>
+        <div className="h-px flex-1 bg-jungle-border/40" />
       </div>
-      <h3 className="text-sm font-semibold text-jungle-text mb-1">{title}</h3>
+      <h3 className="text-sm font-semibold text-jungle-text mb-1.5 group-hover:text-jungle-accent transition-colors">
+        {title}
+      </h3>
       <p className="text-xs text-jungle-muted leading-relaxed">{desc}</p>
     </div>
   );
