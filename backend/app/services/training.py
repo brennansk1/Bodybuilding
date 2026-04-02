@@ -98,8 +98,9 @@ _DIVISION_EXERCISE_BANS: dict[str, set[str]] = {
         "barbell row", "t-bar row", "t bar row", "reverse barbell row",
         "plate row", "pull-over", "pullover", "bent-arm barbell pull-over",
         "barbell pull-over",
-        # Traps: no shrugs (thick traps compress V-taper)
+        # Traps: no shrugs or trap builders (thick traps compress V-taper)
         "barbell shrug", "dumbbell shrug", "shrug", "farmer",
+        "cage press", "rack pull",
         # Shoulders: no barbell pressing (spinal loading + trap activation)
         "military press", "standing barbell press", "behind-the-head",
         "overhead barbell press", "behind neck", "snatch-grip",
