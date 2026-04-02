@@ -14,6 +14,7 @@ interface Profile {
   height_cm: number;
   division: string;
   competition_date: string | null;
+  program_start_date: string | null;
   training_experience_years: number;
   wrist_circumference_cm: number | null;
   ankle_circumference_cm: number | null;
