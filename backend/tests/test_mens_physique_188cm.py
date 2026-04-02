@@ -583,10 +583,11 @@ class TestExercisePriorities:
 
     def test_mp_shoulder_priorities(self):
         from app.constants.exercise_priorities import get_exercise_priorities
-        shoulder_slots = get_exercise_priorities(DIVISION, "shoulders")
-        assert len(shoulder_slots) >= 1
-        # MP shoulders P1 should emphasize lateral raises
-        p1 = shoulder_slots[0]
+        # Shoulders are now split into sub-groups; side_delt is MP's priority
+        side_delt_slots = get_exercise_priorities(DIVISION, "side_delt")
+        assert len(side_delt_slots) >= 1
+        # MP side_delt P1 should emphasize lateral raises
+        p1 = side_delt_slots[0]
         assert any("lateral" in kw.lower() for kw in p1.get("keywords", [])) or "lateral" in p1["name"].lower()
 
     def test_gap_adjusted_cap(self):

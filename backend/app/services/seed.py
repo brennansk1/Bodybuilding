@@ -104,74 +104,30 @@ async def seed_ingredients(db: AsyncSession) -> int:
 # ---------------------------------------------------------------------------
 
 async def seed_exercises(db: AsyncSession) -> int:
-    """Insert exercises from dataset if table is empty."""
+    """Insert exercises from the curated competitive bodybuilding database if table is empty."""
     result = await db.execute(select(func.count()).select_from(Exercise))
     if result.scalar() > 0:
         return 0  # already seeded
 
-    try:
-        from app.constants.exercises_full import EXERCISE_DATABASE
-    except ImportError:
-        # Fall back to the original hand-curated list
-        try:
-            from app.constants.exercises import SEED_EXERCISES
-            inserted = 0
-            for name, primary, secondary, equipment, pattern, efficiency, fatigue in SEED_EXERCISES:
-                ex = Exercise(
-                    name=name,
-                    primary_muscle=primary,
-                    secondary_muscles=json.dumps(secondary) if secondary else None,
-                    movement_pattern=pattern,
-                    equipment=equipment,
-                    biomechanical_efficiency=efficiency,
-                    fatigue_ratio=fatigue,
-                )
-                db.add(ex)
-                inserted += 1
-            await db.flush()
-            logger.info(f"Seeded {inserted} exercises (legacy list)")
-            return inserted
-        except ImportError:
-            logger.warning("No exercise data found — skipping exercise seeding")
-            return 0
-
-    # Cap per muscle group to avoid bloat (keep highest-efficiency first)
-    from collections import defaultdict
-    MAX_PER_MUSCLE = 25
-
-    by_muscle = defaultdict(list)
-    for ex in EXERCISE_DATABASE:
-        by_muscle[ex.primary_muscle].append(ex)
+    from app.constants.exercises_curated import CURATED_EXERCISES
 
     inserted = 0
-    seen_names = set()
-
-    for muscle, exs in by_muscle.items():
-        # Sort: barbell > dumbbell > cable > machine; then by efficiency desc
-        EQUIPMENT_PRIORITY = {"barbell": 0, "dumbbell": 1, "cable": 2,
-                              "e_z_curl_bar": 3, "machine": 4, "body_only": 5,
-                              "kettlebells": 6, "bands": 7, "other": 8}
-        exs_sorted = sorted(exs,
-                            key=lambda e: (EQUIPMENT_PRIORITY.get(e.equipment, 9),
-                                           -e.efficiency))
-        for ex in exs_sorted[:MAX_PER_MUSCLE]:
-            if ex.name.lower() in seen_names:
-                continue
-            seen_names.add(ex.name.lower())
-            record = Exercise(
-                name=ex.name[:100],
-                primary_muscle=ex.primary_muscle,
-                secondary_muscles=json.dumps(ex.secondary_muscles) if ex.secondary_muscles else None,
-                movement_pattern=ex.movement_pattern[:30],
-                equipment=ex.equipment[:30],
-                biomechanical_efficiency=ex.efficiency,
-                fatigue_ratio=ex.fatigue_ratio,
-            )
-            db.add(record)
-            inserted += 1
+    for ex in CURATED_EXERCISES:
+        record = Exercise(
+            name=ex.name[:100],
+            primary_muscle=ex.primary_muscle,
+            secondary_muscles=json.dumps(ex.secondary_muscles) if ex.secondary_muscles else None,
+            movement_pattern=ex.movement_pattern[:30],
+            equipment=ex.equipment[:30],
+            biomechanical_efficiency=ex.efficiency,
+            fatigue_ratio=ex.fatigue_ratio,
+            load_type=ex.load_type[:20] if ex.load_type else None,
+        )
+        db.add(record)
+        inserted += 1
 
     await db.flush()
-    logger.info(f"Seeded {inserted} exercises (from MegaGym dataset)")
+    logger.info(f"Seeded {inserted} exercises (curated competitive bodybuilding DB)")
     return inserted
 
 

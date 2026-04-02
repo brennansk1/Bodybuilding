@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from pydantic import BaseModel, Field, model_validator
 
 def _cm(lo: float, hi: float):
@@ -9,6 +11,7 @@ def _sf():
     return Field(default=None, ge=1.0, le=80.0)
 
 class DailyCheckin(BaseModel):
+    recorded_date: date | None = Field(default=None, description="Date for backfill; defaults to today if omitted")
     body_weight_kg: float | None = Field(default=None, gt=30, lt=250)
     rmssd: float | None = Field(default=None, gt=0)
     resting_hr: float | None = Field(default=None, gt=20, lt=200)

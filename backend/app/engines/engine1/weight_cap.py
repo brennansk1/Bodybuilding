@@ -9,6 +9,50 @@ Estimates maximum competitive stage weight based on structural anchors
 import math
 
 
+def compute_bf_threshold_from_weight_cap(
+    height_cm: float,
+    current_weight_kg: float,
+    wrist_cm: float | None = None,
+    ankle_cm: float | None = None,
+    sex: str = "male",
+    division: str = "mens_open",
+) -> dict:
+    """
+    Compute the body fat percentage threshold at which a mini-cut should trigger.
+
+    Logic: if the athlete's current weight exceeds their offseason weight cap
+    by more than 5%, they're likely accumulating excess fat. The BF% at which
+    this becomes true is the mini-cut trigger threshold.
+
+    Returns: {"threshold_bf_pct": float, "offseason_cap_kg": float, "excess_kg": float}
+    """
+    cap = compute_weight_cap(height_cm, wrist_cm, ankle_cm, body_fat_pct=12.0, sex=sex)
+    offseason_cap = cap["offseason_weight_kg"]
+    excess = max(0.0, current_weight_kg - offseason_cap)
+
+    # Mini-cut triggers when excess exceeds 5% of offseason weight
+    # Back-compute the BF% at which this happens
+    if offseason_cap > 0 and current_weight_kg > 0:
+        lbm = cap["max_lbm_kg"]
+        fat_mass = current_weight_kg - lbm
+        current_bf = (fat_mass / current_weight_kg) * 100
+        # Threshold: 5% over offseason cap
+        threshold_weight = offseason_cap * 1.05
+        threshold_fat_mass = threshold_weight - lbm
+        threshold_bf = (threshold_fat_mass / threshold_weight) * 100 if threshold_weight > 0 else 18.0
+    else:
+        current_bf = 15.0
+        threshold_bf = 18.0
+
+    return {
+        "threshold_bf_pct": round(threshold_bf, 1),
+        "current_estimated_bf_pct": round(current_bf, 1),
+        "offseason_cap_kg": round(offseason_cap, 1),
+        "excess_kg": round(excess, 1),
+        "should_mini_cut": excess > offseason_cap * 0.05,
+    }
+
+
 def compute_weight_cap(
     height_cm: float,
     wrist_cm: float | None = None,

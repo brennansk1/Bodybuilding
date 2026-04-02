@@ -1020,6 +1020,27 @@ async def generate_meal_plan_endpoint(
     }
 
 
+@router.post("/meal-plan/invalidate")
+async def invalidate_meal_plan_cache(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Invalidate cached meal plan templates. Called when nutrition-relevant
+    settings change (meal count, dietary restrictions, food preferences).
+    The next GET /meal-plan/current will regenerate fresh plans.
+    """
+    deleted = await db.execute(
+        select(MealPlanTemplate).where(MealPlanTemplate.user_id == user.id)
+    )
+    templates = deleted.scalars().all()
+    count = len(templates)
+    for tpl in templates:
+        await db.delete(tpl)
+    await db.flush()
+    return {"invalidated": count}
+
+
 # ---------------------------------------------------------------------------
 # Ingredient search
 # ---------------------------------------------------------------------------
@@ -1343,3 +1364,172 @@ async def get_supplement_protocol(
     from app.engines.engine3.supplements import get_supplement_protocol
     protocol = get_supplement_protocol(phase)
     return {"phase": phase, "supplements": protocol, "count": len(protocol)}
+
+
+# ---------------------------------------------------------------------------
+# Block 5 — Mini-Cut Trigger & Phase Transition
+# ---------------------------------------------------------------------------
+
+
+@router.get("/mini-cut/evaluate")
+async def evaluate_mini_cut(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Evaluate whether the user should transition to a mini-cut based on:
+    1. Body fat threshold relative to weight cap
+    2. User-configured cut_threshold_bf_pct
+    3. Current phase (only triggers from offseason/bulk)
+    """
+    profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
+    profile = profile_result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    # Get current weight
+    bw_result = await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+        .order_by(desc(BodyWeightLog.recorded_date)).limit(1)
+    )
+    latest_bw = bw_result.scalar_one_or_none()
+    if not latest_bw:
+        return {"should_mini_cut": False, "reason": "No weight data available"}
+
+    # Get current BF% from profile or latest measurement
+    current_bf = getattr(profile, "manual_body_fat_pct", None)
+
+    # Get current phase
+    rx_result = await db.execute(
+        select(NutritionPrescription)
+        .where(NutritionPrescription.user_id == user.id, NutritionPrescription.is_active == True)
+        .order_by(desc(NutritionPrescription.created_at)).limit(1)
+    )
+    rx = rx_result.scalar_one_or_none()
+    current_phase = rx.phase if rx else "offseason"
+
+    # Only evaluate from offseason/bulk phases
+    if current_phase not in ("offseason", "bulk", "lean_bulk"):
+        return {"should_mini_cut": False, "reason": f"Currently in {current_phase} — mini-cut only triggers from offseason/bulk"}
+
+    # Check user-configured threshold
+    prefs = profile.preferences or {}
+    user_threshold = prefs.get("cut_threshold_bf_pct")
+
+    if user_threshold and current_bf and current_bf >= user_threshold:
+        return {
+            "should_mini_cut": True,
+            "reason": f"Body fat ({current_bf}%) exceeds your threshold ({user_threshold}%)",
+            "current_bf_pct": current_bf,
+            "threshold_bf_pct": user_threshold,
+            "recommended_duration_weeks": 4,
+        }
+
+    # Weight-cap-based evaluation
+    from app.engines.engine1.weight_cap import compute_bf_threshold_from_weight_cap
+    eval_result = compute_bf_threshold_from_weight_cap(
+        height_cm=profile.height_cm,
+        current_weight_kg=latest_bw.weight_kg,
+        wrist_cm=getattr(profile, "wrist_circumference_cm", None),
+        ankle_cm=getattr(profile, "ankle_circumference_cm", None),
+        sex=profile.sex,
+        division=profile.division,
+    )
+
+    return {
+        "should_mini_cut": eval_result["should_mini_cut"],
+        "reason": f"{'Excess weight detected' if eval_result['should_mini_cut'] else 'Within offseason range'}",
+        "current_bf_pct": current_bf,
+        "threshold_bf_pct": eval_result["threshold_bf_pct"],
+        "offseason_cap_kg": eval_result["offseason_cap_kg"],
+        "excess_kg": eval_result["excess_kg"],
+        "recommended_duration_weeks": 4 if eval_result["should_mini_cut"] else 0,
+    }
+
+
+class PhaseTransitionRequest(BaseModel):
+    target_phase: str
+
+
+@router.post("/phase/transition")
+async def transition_phase(
+    data: PhaseTransitionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Transition the user to a new nutrition phase.
+    Creates a new NutritionPrescription with the target phase,
+    invalidates meal plan cache, and returns the new prescription.
+    """
+    valid_phases = {"offseason", "bulk", "lean_bulk", "maintain", "cut", "mini_cut", "peak_week", "contest", "restoration"}
+    if data.target_phase not in valid_phases:
+        raise HTTPException(status_code=400, detail=f"Invalid phase: {data.target_phase}")
+
+    # Deactivate current prescription
+    active_result = await db.execute(
+        select(NutritionPrescription).where(
+            NutritionPrescription.user_id == user.id,
+            NutritionPrescription.is_active == True,
+        )
+    )
+    for old_rx in active_result.scalars().all():
+        old_rx.is_active = False
+
+    # Get current prescription values to base the new one on
+    latest_result = await db.execute(
+        select(NutritionPrescription).where(NutritionPrescription.user_id == user.id)
+        .order_by(desc(NutritionPrescription.created_at)).limit(1)
+    )
+    latest_rx = latest_result.scalar_one_or_none()
+
+    if latest_rx:
+        # Adjust macros for the new phase
+        from app.engines.engine3.macros import adjust_macros_for_phase
+        adjusted = adjust_macros_for_phase(
+            current_calories=latest_rx.target_calories,
+            current_protein_g=latest_rx.protein_g,
+            current_carbs_g=latest_rx.carbs_g,
+            current_fat_g=latest_rx.fat_g,
+            from_phase=latest_rx.phase,
+            to_phase=data.target_phase,
+        )
+        new_rx = NutritionPrescription(
+            user_id=user.id,
+            phase=data.target_phase,
+            target_calories=adjusted["calories"],
+            protein_g=adjusted["protein_g"],
+            carbs_g=adjusted["carbs_g"],
+            fat_g=adjusted["fat_g"],
+            is_active=True,
+        )
+    else:
+        new_rx = NutritionPrescription(
+            user_id=user.id,
+            phase=data.target_phase,
+            target_calories=2500,
+            protein_g=200,
+            carbs_g=250,
+            fat_g=80,
+            is_active=True,
+        )
+
+    db.add(new_rx)
+
+    # Invalidate meal plan cache for old phase
+    tpl_result = await db.execute(
+        select(MealPlanTemplate).where(MealPlanTemplate.user_id == user.id)
+    )
+    for tpl in tpl_result.scalars().all():
+        await db.delete(tpl)
+
+    await db.flush()
+
+    return {
+        "message": f"Transitioned to {data.target_phase}",
+        "phase": data.target_phase,
+        "target_calories": new_rx.target_calories,
+        "protein_g": new_rx.protein_g,
+        "carbs_g": new_rx.carbs_g,
+        "fat_g": new_rx.fat_g,
+    }

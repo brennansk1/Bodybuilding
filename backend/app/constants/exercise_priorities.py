@@ -100,8 +100,8 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Seated Cable Row",              "keywords": ["seated cable row", "cable row"],             "max_sets": 4, "load_type": "cable"},
             {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 4, "load_type": "dumbbells"},
             {"name": "Weighted Pull-Up",              "keywords": ["weighted pull-up", "pull-up", "pullup"],     "max_sets": 3, "load_type": "bodyweight"},
-            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
-            {"name": "Single-Arm Cable Pulldown",     "keywords": ["single-arm cable pulldown", "single arm pulldown"], "max_sets": 3, "load_type": "cable"},
+            {"name": "Straight Arm Pulldown",         "keywords": ["straight-arm cable pulldown", "straight arm pulldown", "straight-arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
+            {"name": "Single-Arm Cable Pulldown",     "keywords": ["single-arm lat pulldown", "single-arm cable pulldown", "single arm pulldown"], "max_sets": 3, "load_type": "cable"},
         ],
         "side_delt": [
             {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 4, "load_type": "dumbbells"},
@@ -148,7 +148,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
         "triceps": [
             {"name": "Close-Grip Bench Press",        "keywords": ["close-grip bench press", "close grip bench"], "max_sets": 4, "load_type": "plates"},
             {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 4, "load_type": "plates"},
-            {"name": "Tricep Pushdown",               "keywords": ["tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
+            {"name": "Tricep Pushdown",               "keywords": ["cable pushdown", "tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
             {"name": "Overhead Tricep Extension",     "keywords": ["overhead tricep extension", "overhead tricep ext"], "max_sets": 3, "load_type": "cable"},
             {"name": "Cable Kickback",                "keywords": ["cable kickback"],                            "max_sets": 3, "load_type": "cable"},
         ],
@@ -193,7 +193,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Lat Pulldown",                  "keywords": ["lat pulldown", "pulldown"],                  "max_sets": 4, "load_type": "cable"},
             {"name": "Weighted Pull-Up",              "keywords": ["weighted pull-up", "pull-up", "pullup"],     "max_sets": 4, "load_type": "bodyweight"},
             {"name": "Seated Cable Row",              "keywords": ["seated cable row", "cable row"],             "max_sets": 4, "load_type": "cable"},
-            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 4, "load_type": "cable"},
+            {"name": "Straight Arm Pulldown",         "keywords": ["straight-arm cable pulldown", "straight arm pulldown", "straight-arm pulldown"],                     "max_sets": 4, "load_type": "cable"},
             # Dumbbell row at low cap — minimal thickness contribution
             {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 2, "load_type": "dumbbells"},
         ],
@@ -239,7 +239,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
         ],
         "triceps": [
             {"name": "Overhead Tricep Extension",     "keywords": ["overhead tricep extension", "overhead tricep ext"], "max_sets": 4, "load_type": "cable"},
-            {"name": "Tricep Pushdown",               "keywords": ["tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
+            {"name": "Tricep Pushdown",               "keywords": ["cable pushdown", "tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
             {"name": "Cable Kickback",                "keywords": ["cable kickback"],                            "max_sets": 3, "load_type": "cable"},
             {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 2, "load_type": "plates"},
         ],
@@ -281,7 +281,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Seated Cable Row",              "keywords": ["seated cable row", "cable row"],             "max_sets": 4, "load_type": "cable"},
             {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 3, "load_type": "dumbbells"},
             {"name": "Weighted Pull-Up",              "keywords": ["weighted pull-up", "pull-up", "pullup"],     "max_sets": 3, "load_type": "bodyweight"},
-            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
+            {"name": "Straight Arm Pulldown",         "keywords": ["straight-arm cable pulldown", "straight arm pulldown", "straight-arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
         ],
         "front_delt": [
             {"name": "Overhead Barbell Press",        "keywords": ["overhead press", "barbell overhead press", "military press"], "max_sets": 4, "load_type": "plates"},
@@ -325,7 +325,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Close-Grip Bench Press",        "keywords": ["close-grip bench press", "close grip bench"], "max_sets": 4, "load_type": "plates"},
             {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 4, "load_type": "plates"},
             {"name": "Overhead Tricep Extension",     "keywords": ["overhead tricep extension", "overhead tricep ext"], "max_sets": 3, "load_type": "cable"},
-            {"name": "Tricep Pushdown",               "keywords": ["tricep pushdown", "pushdown"],               "max_sets": 3, "load_type": "cable"},
+            {"name": "Tricep Pushdown",               "keywords": ["cable pushdown", "tricep pushdown", "pushdown"],               "max_sets": 3, "load_type": "cable"},
         ],
         "calves": [
             {"name": "Standing Calf Raise",           "keywords": ["standing calf raise"],                       "max_sets": 4, "load_type": "machine_plates"},
@@ -381,7 +381,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Seated Cable Row",              "keywords": ["seated cable row", "cable row"],             "max_sets": 4, "load_type": "cable"},
             {"name": "Lat Pulldown",                  "keywords": ["lat pulldown", "pulldown"],                  "max_sets": 4, "load_type": "cable"},
             {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 3, "load_type": "dumbbells"},
-            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
+            {"name": "Straight Arm Pulldown",         "keywords": ["straight-arm cable pulldown", "straight arm pulldown", "straight-arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
         ],
         "side_delt": [
             {"name": "Dumbbell Lateral Raise",        "keywords": ["lateral raise", "dumbbell lateral"],         "max_sets": 4, "load_type": "dumbbells"},
@@ -408,7 +408,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
         ],
         "triceps": [
             {"name": "Overhead Tricep Extension",     "keywords": ["overhead tricep extension", "overhead tricep ext"], "max_sets": 3, "load_type": "cable"},
-            {"name": "Tricep Pushdown",               "keywords": ["tricep pushdown", "pushdown"],               "max_sets": 3, "load_type": "cable"},
+            {"name": "Tricep Pushdown",               "keywords": ["cable pushdown", "tricep pushdown", "pushdown"],               "max_sets": 3, "load_type": "cable"},
             {"name": "Cable Kickback",                "keywords": ["cable kickback"],                            "max_sets": 2, "load_type": "cable"},
             {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 2, "load_type": "plates"},
         ],
@@ -445,7 +445,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Lat Pulldown",                  "keywords": ["lat pulldown", "pulldown"],                  "max_sets": 4, "load_type": "cable"},
             {"name": "Seated Cable Row",              "keywords": ["seated cable row", "cable row"],             "max_sets": 4, "load_type": "cable"},
             {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 4, "load_type": "dumbbells"},
-            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
+            {"name": "Straight Arm Pulldown",         "keywords": ["straight-arm cable pulldown", "straight arm pulldown", "straight-arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
             {"name": "Weighted Pull-Up",              "keywords": ["weighted pull-up", "pull-up", "pullup"],     "max_sets": 3, "load_type": "bodyweight"},
             {"name": "T-Bar Row",                     "keywords": ["t-bar row"],                                 "max_sets": 3, "load_type": "plates"},
         ],
@@ -494,7 +494,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Preacher Curl",                 "keywords": ["preacher curl"],                             "max_sets": 2, "load_type": "plates"},
         ],
         "triceps": [
-            {"name": "Tricep Pushdown",               "keywords": ["tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
+            {"name": "Tricep Pushdown",               "keywords": ["cable pushdown", "tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
             {"name": "Overhead Tricep Extension",     "keywords": ["overhead tricep extension", "overhead tricep ext"], "max_sets": 3, "load_type": "cable"},
             {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 2, "load_type": "plates"},
             {"name": "Cable Kickback",                "keywords": ["cable kickback"],                            "max_sets": 2, "load_type": "cable"},
@@ -539,7 +539,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
             {"name": "Dumbbell Row",                  "keywords": ["dumbbell row"],                              "max_sets": 4, "load_type": "dumbbells"},
             {"name": "Weighted Pull-Up",              "keywords": ["weighted pull-up", "pull-up", "pullup"],     "max_sets": 3, "load_type": "bodyweight"},
             {"name": "Barbell Row",                   "keywords": ["barbell row"],                               "max_sets": 3, "load_type": "plates"},
-            {"name": "Straight Arm Pulldown",         "keywords": ["straight arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
+            {"name": "Straight Arm Pulldown",         "keywords": ["straight-arm cable pulldown", "straight arm pulldown", "straight-arm pulldown"],                     "max_sets": 3, "load_type": "cable"},
         ],
         "front_delt": [
             {"name": "Dumbbell Shoulder Press",       "keywords": ["dumbbell shoulder press", "dumbbell press"], "max_sets": 4, "load_type": "dumbbells"},
@@ -580,7 +580,7 @@ DIVISION_EXERCISE_PRIORITIES: dict[str, dict[str, list[ExercisePrioritySlot]]] =
         ],
         "triceps": [
             {"name": "Overhead Tricep Extension",     "keywords": ["overhead tricep extension", "overhead tricep ext"], "max_sets": 4, "load_type": "cable"},
-            {"name": "Tricep Pushdown",               "keywords": ["tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
+            {"name": "Tricep Pushdown",               "keywords": ["cable pushdown", "tricep pushdown", "pushdown"],               "max_sets": 4, "load_type": "cable"},
             {"name": "Skull Crusher",                 "keywords": ["skull crusher"],                             "max_sets": 3, "load_type": "plates"},
             {"name": "Cable Kickback",                "keywords": ["cable kickback"],                            "max_sets": 3, "load_type": "cable"},
         ],

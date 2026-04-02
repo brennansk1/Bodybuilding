@@ -86,6 +86,17 @@ export default function CheckinPage() {
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [showFeedbackReport, setShowFeedbackReport] = useState(false);
 
+  // Gap detection (Block 4)
+  const [gaps, setGaps] = useState<{
+    missing_daily_checkins: string[];
+    missed_workouts: string[];
+    total_gaps: number;
+  } | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillDate, setBackfillDate] = useState<string | null>(null);
+  const [backfillWeight, setBackfillWeight] = useState("");
+  const [backfillAdherence, setBackfillAdherence] = useState("80");
+
   // Unit preference
   const [useLbs, setUseLbs] = useState(false);
   useEffect(() => {
@@ -164,6 +175,34 @@ export default function CheckinPage() {
   useEffect(() => {
     if (!loading && !user) router.push("/auth/login");
   }, [user, loading, router]);
+
+  // Fetch check-in gaps on load
+  useEffect(() => {
+    if (user) {
+      api.get<typeof gaps>("/checkin/gaps").then(setGaps).catch(() => {});
+    }
+  }, [user]);
+
+  const handleBackfill = async (gapDate: string) => {
+    setBackfilling(true);
+    try {
+      await api.post("/checkin/daily/backfill", {
+        recorded_date: gapDate,
+        body_weight_kg: backfillWeight ? parseFloat(backfillWeight) : null,
+        nutrition_adherence_pct: parseFloat(backfillAdherence) || 80,
+        training_adherence_pct: parseFloat(backfillAdherence) || 80,
+      });
+      // Remove from gaps
+      setGaps(prev => prev ? {
+        ...prev,
+        missing_daily_checkins: prev.missing_daily_checkins.filter(d => d !== gapDate),
+        total_gaps: prev.total_gaps - 1,
+      } : null);
+      setBackfillDate(null);
+      setBackfillWeight("");
+    } catch { /* toast? */ }
+    finally { setBackfilling(false); }
+  };
 
   // Fetch posing recommendation when any check-in mode is selected
   useEffect(() => {
@@ -390,6 +429,61 @@ export default function CheckinPage() {
 
       <main className="container-app py-6">
         <div className="max-w-2xl mx-auto space-y-6">
+
+          {/* Gap resolution banner (Block 4) */}
+          {gaps && gaps.total_gaps > 0 && mode === null && (
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                  <span className="text-yellow-400 text-sm font-bold">{gaps.total_gaps}</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-yellow-400">Missed Check-ins</h3>
+                  <p className="text-xs text-jungle-muted mt-0.5">
+                    {gaps.missing_daily_checkins.length > 0 && `${gaps.missing_daily_checkins.length} daily check-in(s) missed`}
+                    {gaps.missing_daily_checkins.length > 0 && gaps.missed_workouts.length > 0 && " · "}
+                    {gaps.missed_workouts.length > 0 && `${gaps.missed_workouts.length} workout(s) not logged`}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {gaps.missing_daily_checkins.slice(0, 7).map(d => (
+                      <button
+                        key={d}
+                        onClick={() => { setBackfillDate(d); setBackfillWeight(""); }}
+                        className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+                          backfillDate === d
+                            ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-300"
+                            : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-yellow-500/30"
+                        }`}
+                      >
+                        {new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </button>
+                    ))}
+                  </div>
+                  {backfillDate && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <input
+                        type="number"
+                        placeholder={`Weight (${useLbs ? "lbs" : "kg"})`}
+                        value={backfillWeight}
+                        onChange={e => setBackfillWeight(e.target.value)}
+                        className="input-field text-xs w-28"
+                      />
+                      <button
+                        onClick={() => handleBackfill(backfillDate)}
+                        disabled={backfilling}
+                        className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
+                      >
+                        {backfilling ? "..." : "Backfill"}
+                      </button>
+                      <button onClick={() => setBackfillDate(null)} className="text-jungle-dim text-xs hover:text-jungle-muted">
+                        Skip
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Mode selector — shown when mode is null */}
           {mode === null && (
