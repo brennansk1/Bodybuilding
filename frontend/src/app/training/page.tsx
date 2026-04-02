@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
@@ -23,6 +23,10 @@ interface TrainingSet {
   rpe: number | null;
   is_warmup?: boolean;
   equipment?: string;
+  movement_pattern?: string;
+  load_type?: string;
+  is_fst7?: boolean;
+  rest_seconds?: number | null;
   last_actual_reps?: number;
   last_actual_weight_kg?: number;
 }
@@ -36,6 +40,7 @@ interface TrainingSession {
   completed: boolean;
   sets: TrainingSet[];
   stale_baselines?: boolean;
+  dup_profile?: string;
 }
 
 interface Program {
@@ -212,10 +217,14 @@ function PlateCalculator({
 function RestTimer({
   seconds,
   isCompound,
+  isFst7,
+  label,
   onSkip,
 }: {
   seconds: number;
   isCompound: boolean;
+  isFst7?: boolean;
+  label?: string;
   onSkip: () => void;
 }) {
   const mins = Math.floor(seconds / 60);
@@ -223,17 +232,25 @@ function RestTimer({
   const display = `${mins}:${secs.toString().padStart(2, "0")}`;
   const isDone = seconds <= 0;
 
+  const protocolLabel = label || (isFst7
+    ? `FST-7 finisher: ${seconds}s`
+    : isCompound
+    ? `Heavy compound: ${mins}:${secs.toString().padStart(2, "0")}`
+    : `Isolation: ${mins}:${secs.toString().padStart(2, "0")}`);
+
   return (
     <div className="fixed bottom-16 left-0 right-0 z-40 flex justify-center px-3">
-      <div className="w-full max-w-lg mx-auto bg-jungle-card border border-jungle-border rounded-xl px-4 py-2.5 flex items-center justify-between shadow-2xl">
+      <div className={`w-full max-w-lg mx-auto border rounded-xl px-4 py-2.5 flex items-center justify-between shadow-2xl ${
+        isFst7 ? "bg-purple-900/80 border-purple-500/50" : "bg-jungle-card border-jungle-border"
+      }`}>
         <div>
-          <p className="text-[10px] text-jungle-dim uppercase tracking-wider">
-            {isCompound ? "Compound rest" : "Isolation rest"}
+          <p className={`text-[10px] uppercase tracking-wider ${isFst7 ? "text-purple-300" : "text-jungle-dim"}`}>
+            {protocolLabel}
           </p>
           {isDone ? (
             <p className="text-green-400 font-semibold text-sm">Rest complete — go!</p>
           ) : (
-            <p className="text-xl font-bold font-mono text-jungle-accent">{display}</p>
+            <p className={`text-xl font-bold font-mono ${isFst7 ? "text-purple-300" : "text-jungle-accent"}`}>{display}</p>
           )}
         </div>
         <button onClick={onSkip} className="btn-secondary text-sm px-4 py-1.5">
@@ -290,29 +307,15 @@ export default function TrainingPage() {
 
   // ── Set completion (no sequential locking — any set, any order) ──
   // Persisted to localStorage so in-progress workout survives logout/phone-off
-  const [completedSets, setCompletedSets] = useState<Record<string, { reps: string; weight: string; rpe: string }>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("cpos_workout_completed");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          // Only restore if saved today
-          if (parsed._date === new Date().toISOString().split("T")[0]) {
-            const { _date, ...rest } = parsed;
-            return rest;
-          }
-        }
-      } catch { /* ignore parse errors */ }
-    }
-    return {};
-  });
+  // Session restore now happens in the data fetch effect (derives from server + localStorage)
+  const [completedSets, setCompletedSets] = useState<Record<string, { reps: string; weight: string; rpe: string }>>({});
 
   // ── Previous session ghosts ──
   const [previousSets, setPreviousSets] = useState<Record<string, { reps: number; weight: number }>>({});
 
   // ── Rest timer ──
-  const [restTimer, setRestTimer] = useState<{ active: boolean; seconds: number; isCompound: boolean }>({
-    active: false, seconds: 0, isCompound: true,
+  const [restTimer, setRestTimer] = useState<{ active: boolean; seconds: number; isCompound: boolean; isFst7: boolean }>({
+    active: false, seconds: 0, isCompound: true, isFst7: false,
   });
 
   // ── Plate calculator ──
@@ -353,6 +356,7 @@ export default function TrainingPage() {
   // ── Accordion ──
   const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
   const [expandedWarmups, setExpandedWarmups] = useState<Set<string>>(new Set());
+  const [cardioExpanded, setCardioExpanded] = useState(false); // collapsed by default on training days
 
   // ── Now Playing mode ──
   const [nowPlaying, setNowPlaying] = useState(false);
@@ -363,23 +367,61 @@ export default function TrainingPage() {
   const [progressToast, setProgressToast] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState(false);
 
+  // ── Finish Session modal ──
+  const [showFinishModal, setShowFinishModal] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+
+  // ── Auto-save: debounced PATCH for input changes ──
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const patchInFlight = useRef<Set<string>>(new Set());
+
+  const patchSet = useCallback(async (setId: string, data: { reps: string; weight: string; rpe: string }) => {
+    if (!session || patchInFlight.current.has(setId)) return;
+    patchInFlight.current.add(setId);
+    try {
+      const setObj = session.sets.find(s => s.id === setId);
+      const exName = setObj?.exercise_name || "";
+      const isTaken = machineTaken.has(exName);
+      const altName = isTaken ? altLog[exName]?.name : undefined;
+
+      await api.patch(`/engine2/session/${session.id}/set/${setId}`, {
+        actual_reps: data.reps ? parseInt(data.reps) : null,
+        actual_weight_kg: data.weight ? parseFloat(data.weight) / (useLbs ? 2.20462 : 1) : null,
+        rpe: data.rpe ? parseFloat(data.rpe) : null,
+        actual_exercise_name: altName || undefined,
+      });
+    } catch {
+      // Silent fail — data is still in localStorage as fallback
+    } finally {
+      patchInFlight.current.delete(setId);
+    }
+  }, [session, machineTaken, altLog, useLbs]);
+
+  const debouncedPatchSet = useCallback((setId: string, data: { reps: string; weight: string; rpe: string }) => {
+    if (debounceTimers.current[setId]) clearTimeout(debounceTimers.current[setId]);
+    debounceTimers.current[setId] = setTimeout(() => {
+      patchSet(setId, data);
+    }, 1500);
+  }, [patchSet]);
+
   const today = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   })();
 
   // Auto-save workout progress to localStorage (survives logout/phone-off)
+  // BUG-05 fix: include session_id so restore validates against correct session
   useEffect(() => {
-    if (Object.keys(completedSets).length > 0) {
-      localStorage.setItem("cpos_workout_completed", JSON.stringify({ _date: today, ...completedSets }));
+    if (Object.keys(completedSets).length > 0 && session) {
+      localStorage.setItem("cpos_workout_completed", JSON.stringify({ _date: today, _session_id: session.id, ...completedSets }));
     }
-  }, [completedSets, today]);
+  }, [completedSets, today, session]);
 
   useEffect(() => {
-    if (Object.keys(sets).length > 0) {
-      localStorage.setItem("cpos_workout_sets", JSON.stringify({ _date: today, ...sets }));
+    if (Object.keys(sets).length > 0 && session) {
+      localStorage.setItem("cpos_workout_sets", JSON.stringify({ _date: today, _session_id: session.id, ...sets }));
     }
-  }, [sets, today]);
+  }, [sets, today, session]);
 
   // Initialise gym mode and unit from localStorage
   useEffect(() => {
@@ -428,13 +470,18 @@ export default function TrainingPage() {
           setCardioFasted(rx.cardio?.fasted ?? true);
         }
       }).catch(() => {});
+      // BUG-03 fix: check if cardio already logged today (localStorage-based)
+      try {
+        const lastCardio = localStorage.getItem("cpos_cardio_logged_date");
+        if (lastCardio === new Date().toISOString().split("T")[0]) setCardioLogged(true);
+      } catch { /* ignore */ }
       // Reset session state before fetching new date
       setSession(null);
       setSets({});
       setPreviousSets({});
-      setCompletedSets({});
       setExpandedExercise(null);
       setNowPlaying(false);
+      setShowFinishModal(false);
 
       api.get<TrainingSession>(`/engine2/session/${viewDate}`)
         .then((s) => {
@@ -444,6 +491,8 @@ export default function TrainingPage() {
 
           const initial: Record<string, { reps: string; weight: string; rpe: string }> = {};
           const prevData: Record<string, { reps: number; weight: number }> = {};
+          // Fix 1.6: Derive completion state from server actual_* values
+          const serverCompleted: Record<string, { reps: string; weight: string; rpe: string }> = {};
           s.sets.forEach((set) => {
             let weightStr = "";
             if (set.actual_weight_kg) weightStr = (set.actual_weight_kg * m).toFixed(1);
@@ -454,17 +503,22 @@ export default function TrainingPage() {
               weight: weightStr,
               rpe: set.rpe?.toString() || "",
             };
+            // If server has actual values, this set is completed
+            if (set.actual_reps != null && set.actual_weight_kg != null && !set.is_warmup) {
+              serverCompleted[set.id] = initial[set.id];
+            }
             if (set.last_actual_reps != null && set.last_actual_weight_kg != null) {
               prevData[set.id] = { reps: set.last_actual_reps, weight: Number((set.last_actual_weight_kg * m).toFixed(1)) };
             }
           });
           // Merge with any in-progress data saved to localStorage
+          // BUG-05 fix: validate session_id matches before restoring
           try {
             const savedSets = localStorage.getItem("cpos_workout_sets");
             if (savedSets) {
               const parsed = JSON.parse(savedSets);
-              if (parsed._date === viewDate) {
-                const { _date, ...restored } = parsed;
+              if (parsed._date === viewDate && parsed._session_id === s.id) {
+                const { _date, _session_id, ...restored } = parsed;
                 for (const [id, data] of Object.entries(restored)) {
                   if (initial[id]) {
                     initial[id] = data as { reps: string; weight: string; rpe: string };
@@ -474,6 +528,21 @@ export default function TrainingPage() {
             }
           } catch { /* ignore */ }
 
+          // Restore completed sets from localStorage OR derive from server
+          let restoredCompleted: Record<string, { reps: string; weight: string; rpe: string }> = {};
+          try {
+            const savedCompleted = localStorage.getItem("cpos_workout_completed");
+            if (savedCompleted) {
+              const parsed = JSON.parse(savedCompleted);
+              if (parsed._date === viewDate && parsed._session_id === s.id) {
+                const { _date, _session_id, ...rest } = parsed;
+                restoredCompleted = rest;
+              }
+            }
+          } catch { /* ignore */ }
+          // Merge: server-completed sets always take precedence
+          setCompletedSets({ ...restoredCompleted, ...serverCompleted });
+
           setSets(initial);
           setPreviousSets(prevData);
 
@@ -481,8 +550,8 @@ export default function TrainingPage() {
           if (firstEx) setExpandedExercise(firstEx.exercise_name);
         })
         .catch(() => {
-          // 404 = no session this day (rest day) — session stays null
           setSession(null);
+          setCompletedSets({});
         });
     }
   }, [user, loading, router, viewDate, today]);
@@ -494,7 +563,18 @@ export default function TrainingPage() {
       setRestTimer((prev) => {
         if (prev.seconds <= 1) {
           clearInterval(interval);
-          setTimeout(() => setRestTimer({ active: false, seconds: 0, isCompound: true }), 3000);
+          // Rest timer alert: vibrate + audio beep
+          try {
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            osc.type = "sine";
+            osc.frequency.value = 880;
+            osc.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.15);
+          } catch { /* audio not available */ }
+          setTimeout(() => setRestTimer({ active: false, seconds: 0, isCompound: true, isFst7: false }), 3000);
           return { ...prev, seconds: 0 };
         }
         return { ...prev, seconds: prev.seconds - 1 };
@@ -542,13 +622,23 @@ export default function TrainingPage() {
   const m = useLbs ? 2.20462 : 1;
 
   const isCompoundExercise = (exerciseName: string): boolean => {
-    return exerciseGroups.length > 0 && exerciseGroups[0].name === exerciseName;
+    const group = exerciseGroups.find(g => g.name === exerciseName);
+    if (!group) return exerciseGroups.length > 0 && exerciseGroups[0].name === exerciseName;
+    const firstSet = group.workingSets[0] || group.warmupSets[0];
+    if (!firstSet?.movement_pattern) return exerciseGroups[0]?.name === exerciseName;
+    const compoundPatterns = new Set(["push", "pull", "squat", "hinge", "lunge", "carry"]);
+    return compoundPatterns.has(firstSet.movement_pattern.toLowerCase());
   };
 
   // ── Handlers ──
 
   const logSet = (setId: string, field: string, value: string) => {
-    setSets((prev) => ({ ...prev, [setId]: { ...prev[setId], [field]: value } }));
+    setSets((prev) => {
+      const updated = { ...prev, [setId]: { ...prev[setId], [field]: value } };
+      // Fire debounced auto-save PATCH (1.5s idle)
+      if (isToday && session) debouncedPatchSet(setId, updated[setId]);
+      return updated;
+    });
   };
 
   const markSetDone = (set: TrainingSet) => {
@@ -562,13 +652,16 @@ export default function TrainingPage() {
       });
     } else {
       setCompletedSets((prev) => ({ ...prev, [set.id]: data }));
+      // Fire immediate PATCH on set completion
+      if (isToday) patchSet(set.id, data);
       const compound = isCompoundExercise(set.exercise_name);
-      setRestTimer({ active: true, seconds: compound ? 180 : 90, isCompound: compound });
+      const restSec = set.rest_seconds ?? (compound ? 180 : 90);
+      setRestTimer({ active: true, seconds: restSec, isCompound: compound, isFst7: !!set.is_fst7 });
     }
   };
 
   const dismissTimer = () => {
-    setRestTimer({ active: false, seconds: 0, isCompound: true });
+    setRestTimer({ active: false, seconds: 0, isCompound: true, isFst7: false });
     if (pendingAdvance) {
       setPendingAdvance(false);
       // Auto-advance to next incomplete set in Now Playing mode
@@ -595,6 +688,10 @@ export default function TrainingPage() {
     setCurrentSetIndex(findFirstIncomplete());
     setNowPlaying(true);
     setShowHistory(false);
+    // Track session duration — set started_at on backend
+    if (session && isToday) {
+      api.post(`/engine2/session/${session.id}/start`).catch(() => {});
+    }
   };
 
   const markSetDoneNowPlaying = (set: TrainingSet) => {
@@ -610,8 +707,11 @@ export default function TrainingPage() {
       }
     }
     setCompletedSets((p) => ({ ...p, [set.id]: data }));
+    // Fire immediate PATCH on set completion
+    if (isToday) patchSet(set.id, data);
     const compound = isCompoundExercise(set.exercise_name);
-    setRestTimer({ active: true, seconds: compound ? 180 : 90, isCompound: compound });
+    const restSec = set.rest_seconds ?? (compound ? 180 : 90);
+    setRestTimer({ active: true, seconds: restSec, isCompound: compound, isFst7: !!set.is_fst7 });
     setPendingAdvance(true);
   };
 
@@ -675,33 +775,45 @@ export default function TrainingPage() {
     } finally { setGenerating(false); }
   };
 
+  const finishSession = async () => {
+    if (!session) return;
+    setFinishing(true);
+    try {
+      // Flush any pending debounced PATCHes before finishing
+      for (const [setId, timer] of Object.entries(debounceTimers.current)) {
+        clearTimeout(timer);
+        const data = sets[setId];
+        if (data) await patchSet(setId, data);
+      }
+      debounceTimers.current = {};
+
+      const result = await api.post<{ message: string; progressions: Progression[] }>(
+        `/engine2/session/${session.id}/finish`,
+        { notes: sessionNotes || undefined }
+      );
+      setProgressions(result.progressions || []);
+      setSaved(true);
+      setShowFinishModal(false);
+      // Clear localStorage after successful finish — workout is persisted to server
+      localStorage.removeItem("cpos_workout_completed");
+      localStorage.removeItem("cpos_workout_sets");
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      showToast("Failed to finish session", "error");
+    } finally { setFinishing(false); }
+  };
+
+  // Legacy save handler — kept for backwards compat with the "Save Progress" flow
+  // Now just PATCHes all sets in bulk and does NOT mark session complete
   const saveSession = async () => {
     if (!session) return;
     setSaving(true);
     try {
-      const loggedSets = Object.entries(sets).map(([id, data]) => {
-        const setObj = session.sets.find(s => s.id === id);
-        const exName = setObj?.exercise_name || "";
-        const isTaken = machineTaken.has(exName);
-        const altName = isTaken ? altLog[exName]?.name : undefined;
-
-        return {
-          set_id: id,
-          actual_reps: data.reps ? parseInt(data.reps) : null,
-          actual_weight_kg: data.weight ? parseFloat(data.weight) / (useLbs ? 2.20462 : 1) : null,
-          rpe: data.rpe ? parseFloat(data.rpe) : null,
-          actual_exercise_name: altName || exName,
-        };
-      });
-      const result = await api.post<{ message: string; progressions: Progression[] }>(
-        `/engine2/session/${session.id}/log`,
-        { sets: loggedSets, notes: sessionNotes || undefined }
+      const setEntries = Object.entries(sets);
+      await Promise.all(
+        setEntries.map(([id, data]) => patchSet(id, data))
       );
-      setProgressions(result.progressions || []);
       setSaved(true);
-      // Clear localStorage after successful save — workout is persisted to server
-      localStorage.removeItem("cpos_workout_completed");
-      localStorage.removeItem("cpos_workout_sets");
       setTimeout(() => setSaved(false), 3000);
     } catch {
       showToast("Failed to save workout session", "error");
@@ -734,6 +846,7 @@ export default function TrainingPage() {
       }
       await api.post("/engine3/cardio/log", payload);
       setCardioLogged(true);
+      localStorage.setItem("cpos_cardio_logged_date", new Date().toISOString().split("T")[0]);
     } catch {
       showToast("Failed to log cardio", "error");
     } finally {
@@ -824,11 +937,16 @@ export default function TrainingPage() {
             </div>
           </div>
 
-          {/* ── Cardio Prescription + Logger ── */}
+          {/* ── Cardio Prescription + Logger (collapsed by default on training days) ── */}
           {isToday && cardioPrescription && (
-            <div className="card space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Cardio</h2>
+            <div className="card">
+              <button
+                onClick={() => setCardioExpanded(!cardioExpanded)}
+                className="w-full flex items-center justify-between"
+              >
+                <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">
+                  Cardio {cardioLogged && <span className="text-green-400 text-xs ml-1">Done</span>}
+                </h2>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] px-2 py-0.5 rounded bg-jungle-accent/15 text-jungle-accent font-medium">
                     {cardioPrescription.cardio.sessions_per_week}x/week • {cardioPrescription.cardio.duration_min}min
@@ -836,9 +954,13 @@ export default function TrainingPage() {
                   {cardioPrescription.cardio.fasted && (
                     <span className="text-[9px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">Fasted AM</span>
                   )}
+                  <svg className={`w-4 h-4 text-jungle-dim transition-transform ${cardioExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
-              </div>
+              </button>
 
+              {cardioExpanded && (<div className="space-y-3 mt-3">
               {/* Prescription notes */}
               {cardioPrescription.cardio.notes.length > 0 && (
                 <div className="space-y-1">
@@ -957,6 +1079,7 @@ export default function TrainingPage() {
                   </div>
                 </div>
               )}
+              </div>)}
             </div>
           )}
 
@@ -1259,6 +1382,7 @@ export default function TrainingPage() {
                   const totalForEx = workingSets.length;
                   const allDoneForEx = completedForEx === totalForEx && totalForEx > 0;
                   const showWarmups = expandedWarmups.has(name);
+                  const hasFst7 = workingSets.some(s => s.is_fst7);
 
                   return (
                     <div key={name} className={`rounded-xl border transition-colors ${
@@ -1295,6 +1419,11 @@ export default function TrainingPage() {
                           ) : (
                             <p className={`font-semibold text-sm truncate ${allDoneForEx ? "text-jungle-dim" : "text-jungle-text"}`}>
                               {name}
+                              {hasFst7 && (
+                                <span className="ml-2 inline-block text-[9px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded-full uppercase tracking-wider align-middle">
+                                  FST-7
+                                </span>
+                              )}
                             </p>
                           )}
                           <p className="text-[10px] text-jungle-dim uppercase tracking-wide mt-0.5">
@@ -1602,8 +1731,12 @@ export default function TrainingPage() {
                           <span className="text-jungle-dim ml-2">{entry.date}</span>
                         </div>
                         <div className="text-right">
-                          <span className="text-jungle-muted">{entry.weight_kg}kg × {entry.reps}</span>
-                          <span className="text-jungle-accent font-bold ml-2">e1RM: {entry.estimated_1rm}kg</span>
+                          <span className="text-jungle-muted">
+                            {useLbs ? `${(entry.weight_kg * 2.20462).toFixed(0)}lbs` : `${entry.weight_kg}kg`} × {entry.reps}
+                          </span>
+                          <span className="text-jungle-accent font-bold ml-2">
+                            e1RM: {useLbs ? `${(entry.estimated_1rm * 2.20462).toFixed(0)}lbs` : `${entry.estimated_1rm}kg`}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -1650,18 +1783,57 @@ export default function TrainingPage() {
                 {completedCount}/{totalCount} sets {allWorkingSetsComplete && "— all done"}
               </p>
             </div>
-            {/* Save button — bigger tap target */}
+            {/* Finish Session button */}
             <button
-              onClick={saveSession}
-              disabled={saving || !isToday}
+              onClick={() => allWorkingSetsComplete ? setShowFinishModal(true) : saveSession()}
+              disabled={saving || finishing || !isToday}
               className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 ${
                 allWorkingSetsComplete
                   ? "bg-jungle-accent text-jungle-dark shadow-lg shadow-jungle-accent/20"
                   : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:border-jungle-accent"
               }`}
             >
-              {saved ? "Saved ✓" : saving ? "Saving..." : allWorkingSetsComplete ? "Log Session" : "Save Progress"}
+              {saved ? "Saved ✓" : finishing ? "Finishing..." : saving ? "Saving..." : allWorkingSetsComplete ? "Finish Session" : "Save Progress"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Finish Session Confirmation Modal */}
+      {showFinishModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-jungle-card border border-jungle-border rounded-2xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-bold text-jungle-text mb-2">Finish Session?</h3>
+            <p className="text-sm text-jungle-muted mb-1">
+              {completedCount}/{totalCount} sets completed.
+            </p>
+            <p className="text-xs text-jungle-dim mb-4">
+              This will mark the session as done and check for progressive overload opportunities.
+            </p>
+            {sessionNotes ? null : (
+              <textarea
+                placeholder="Session notes (optional)..."
+                value={sessionNotes}
+                onChange={(e) => setSessionNotes(e.target.value)}
+                className="input-field w-full text-sm mb-4 resize-none"
+                rows={2}
+              />
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowFinishModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-jungle-deeper border border-jungle-border text-jungle-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={finishSession}
+                disabled={finishing}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-jungle-accent text-jungle-dark active:scale-95 disabled:opacity-50"
+              >
+                {finishing ? "Finishing..." : "Finish"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1671,6 +1843,7 @@ export default function TrainingPage() {
         <RestTimer
           seconds={restTimer.seconds}
           isCompound={restTimer.isCompound}
+          isFst7={restTimer.isFst7}
           onSkip={dismissTimer}
         />
       )}

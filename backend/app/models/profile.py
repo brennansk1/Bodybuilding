@@ -32,6 +32,7 @@ class UserProfile(Base):
     training_start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)  # "HH:MM" format
     training_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)  # session length in minutes
     days_per_week: Mapped[int | None] = mapped_column(Integer, nullable=True, default=5)
+    program_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     cycle_tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

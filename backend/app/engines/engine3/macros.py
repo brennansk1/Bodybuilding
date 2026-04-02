@@ -880,3 +880,60 @@ def compute_chrono_meal_plan(
             all_meals.append(m)
 
     return all_meals
+
+
+# ---------------------------------------------------------------------------
+# Phase transition macro adjustment (Block 5)
+# ---------------------------------------------------------------------------
+
+_PHASE_CALORIE_MODIFIERS: dict[str, float] = {
+    "offseason": 1.10,     # +10% surplus
+    "bulk": 1.15,          # +15% surplus
+    "lean_bulk": 1.05,     # +5% surplus
+    "maintain": 1.00,
+    "cut": 0.80,           # -20% deficit
+    "mini_cut": 0.78,      # -22% deficit (aggressive 4-week)
+    "peak_week": 0.70,     # -30% contest prep
+    "contest": 0.90,       # carb-up
+    "restoration": 1.05,   # reverse diet +5%
+}
+
+
+def adjust_macros_for_phase(
+    current_calories: float,
+    current_protein_g: float,
+    current_carbs_g: float,
+    current_fat_g: float,
+    from_phase: str,
+    to_phase: str,
+) -> dict:
+    """
+    Adjust macros when transitioning between nutrition phases.
+    Protein stays high; carbs/fat adjust proportionally to new calorie target.
+    """
+    from_mod = _PHASE_CALORIE_MODIFIERS.get(from_phase, 1.0)
+    to_mod = _PHASE_CALORIE_MODIFIERS.get(to_phase, 1.0)
+
+    # Estimate TDEE from current calories and phase modifier
+    estimated_tdee = current_calories / from_mod if from_mod else current_calories
+    new_calories = round(estimated_tdee * to_mod)
+
+    # Protein stays the same or increases during cuts
+    new_protein = current_protein_g
+    if to_phase in ("cut", "mini_cut", "peak_week"):
+        new_protein = round(max(current_protein_g, current_protein_g * 1.1), 1)  # +10% protein in deficit
+
+    protein_cals = new_protein * 4
+    remaining_cals = max(0, new_calories - protein_cals)
+
+    # Fat: minimum 0.8g/kg estimate (~64g for 80kg), rest goes to carbs
+    new_fat = round(max(current_fat_g * 0.8, remaining_cals * 0.25 / 9), 1)
+    fat_cals = new_fat * 9
+    new_carbs = round(max(0, (remaining_cals - fat_cals) / 4), 1)
+
+    return {
+        "calories": new_calories,
+        "protein_g": new_protein,
+        "carbs_g": new_carbs,
+        "fat_g": new_fat,
+    }

@@ -243,7 +243,7 @@ async def update_profile(
         "age", "sex", "height_cm", "division", "competition_date",
         "training_experience_years", "wrist_circumference_cm", "ankle_circumference_cm",
         "manual_body_fat_pct", "training_start_time", "training_duration_min",
-        "cycle_tracking_enabled", "cycle_start_date",
+        "cycle_tracking_enabled", "cycle_start_date", "program_start_date",
     }
     list_fields = {"available_equipment", "disliked_exercises", "injury_history"}
     for field, value in data.items():
@@ -255,6 +255,12 @@ async def update_profile(
                 except ValueError:
                     continue
             if field == "cycle_start_date" and isinstance(value, str):
+                from datetime import date as _d
+                try:
+                    value = _d.fromisoformat(value)
+                except ValueError:
+                    continue
+            if field == "program_start_date" and isinstance(value, str):
                 from datetime import date as _d
                 try:
                     value = _d.fromisoformat(value)

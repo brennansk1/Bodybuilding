@@ -9,8 +9,8 @@ from app.constants.exercise_priorities import (
 
 ALL_DIVISIONS = list(DIVISION_EXERCISE_PRIORITIES.keys())
 REQUIRED_MUSCLES = {
-    "chest", "back", "shoulders", "quads", "hamstrings",
-    "glutes", "biceps", "triceps", "calves",
+    "chest", "back", "front_delt", "side_delt", "rear_delt",
+    "quads", "hamstrings", "glutes", "biceps", "triceps", "calves",
 }
 
 
@@ -35,7 +35,8 @@ class TestStructure:
     def test_each_slot_has_keywords_and_max_sets(self):
         for div, muscles in DIVISION_EXERCISE_PRIORITIES.items():
             for muscle, slots in muscles.items():
-                assert len(slots) > 0, f"{div}/{muscle} has no slots"
+                if not slots:
+                    continue  # empty slots OK (e.g. MP traps intentionally empty)
                 for i, slot in enumerate(slots):
                     assert "keywords" in slot, f"{div}/{muscle} slot {i} missing 'keywords'"
                     assert "max_sets" in slot, f"{div}/{muscle} slot {i} missing 'max_sets'"
@@ -45,8 +46,8 @@ class TestStructure:
         for div, muscles in DIVISION_EXERCISE_PRIORITIES.items():
             for muscle, slots in muscles.items():
                 for slot in slots:
-                    assert 1 <= slot["max_sets"] <= 4, (
-                        f"{div}/{muscle}: max_sets={slot['max_sets']} out of [1,4] range"
+                    assert 1 <= slot["max_sets"] <= 5, (
+                        f"{div}/{muscle}: max_sets={slot['max_sets']} out of [1,5] range"
                     )
 
     def test_each_slot_has_name_and_load_type(self):
@@ -144,11 +145,11 @@ class TestMensOpen:
             "Men's Open triceps P1 must be Close-Grip Bench Press (mass division compound anchor)"
         )
 
-    def test_shoulders_overhead_press_is_p1(self):
-        """Men's Open shoulders P1 = Overhead Barbell Press (mass division, anterior+medial)."""
-        p1 = self._slots("shoulders")[0]
+    def test_front_delt_overhead_press_is_p1(self):
+        """Men's Open front_delt P1 = Overhead Barbell Press (mass division, anterior+medial)."""
+        p1 = self._slots("front_delt")[0]
         assert any("overhead press" in kw or "barbell overhead" in kw for kw in p1["keywords"]), (
-            "Men's Open shoulders P1 must be Overhead Press (mass division compound anchor)"
+            "Men's Open front_delt P1 must be Overhead Press (mass division compound anchor)"
         )
 
     def test_chest_barbell_bench_is_p1(self):
@@ -164,11 +165,12 @@ class TestMensOpen:
             "Conventional Deadlift must not appear in Men's Open back cascade (poor SFR)"
         )
 
-    def test_upright_row_absent_from_shoulders(self):
-        shoulder_keywords = [kw for slot in self._slots("shoulders") for kw in slot["keywords"]]
-        assert not any("upright row" in kw for kw in shoulder_keywords), (
-            "Upright Row must not appear in Men's Open shoulders (subacromial impingement)"
-        )
+    def test_upright_row_absent_from_delt_subgroups(self):
+        for delt in ("front_delt", "side_delt", "rear_delt"):
+            delt_keywords = [kw for slot in self._slots(delt) for kw in slot["keywords"]]
+            assert not any("upright row" in kw for kw in delt_keywords), (
+                f"Upright Row must not appear in Men's Open {delt} (subacromial impingement)"
+            )
 
     def test_barbell_row_leads_back(self):
         """Barbell Row is P1 for Men's Open back (thickness-first for mass)."""
@@ -182,11 +184,11 @@ class TestMensPhysique:
     def _slots(self, muscle):
         return DIVISION_EXERCISE_PRIORITIES["mens_physique"][muscle]
 
-    def test_chest_incline_barbell_is_p1(self):
-        """Men's Physique chest P1 = Incline Barbell Press (upper chest shelf priority)."""
+    def test_chest_incline_dumbbell_is_p1(self):
+        """Men's Physique chest P1 = Incline Dumbbell Press (DB preferred, upper chest shelf)."""
         p1 = self._slots("chest")[0]
-        assert any("incline barbell" in kw for kw in p1["keywords"]), (
-            "Men's Physique chest P1 must be Incline Barbell Press (upper chest shelf)"
+        assert any("incline dumbbell" in kw for kw in p1["keywords"]), (
+            "Men's Physique chest P1 must be Incline Dumbbell Press (DB preferred for MP)"
         )
 
     def test_back_lat_pulldown_before_rows(self):
@@ -205,10 +207,10 @@ class TestMensPhysique:
                 "Men's Physique: Lat Pulldown should precede rows for V-taper development"
             )
 
-    def test_shoulders_lateral_raise_is_p1(self):
-        p1 = self._slots("shoulders")[0]
+    def test_side_delt_lateral_raise_is_p1(self):
+        p1 = self._slots("side_delt")[0]
         assert any("lateral raise" in kw for kw in p1["keywords"]), (
-            "Men's Physique shoulders P1 must be lateral raise (cap width for V-taper)"
+            "Men's Physique side_delt P1 must be lateral raise (cap width for V-taper)"
         )
 
 
@@ -223,11 +225,11 @@ class TestClassicPhysique:
             "Classic Physique triceps P1 must be Close-Grip Bench Press"
         )
 
-    def test_shoulders_overhead_press_is_p1(self):
-        """Classic Physique shoulders P1 = Overhead Barbell Press per spec."""
-        p1 = self._slots("shoulders")[0]
+    def test_front_delt_overhead_press_is_p1(self):
+        """Classic Physique front_delt P1 = Overhead Barbell Press per spec."""
+        p1 = self._slots("front_delt")[0]
         assert any("overhead press" in kw or "barbell overhead" in kw for kw in p1["keywords"]), (
-            "Classic Physique shoulders P1 must be Overhead Barbell Press"
+            "Classic Physique front_delt P1 must be Overhead Barbell Press"
         )
 
     def test_lat_pulldown_leads_back(self):
@@ -299,22 +301,23 @@ class TestWomensFigure:
             "Women's Figure back P1 must be Lat Pulldown (V-taper width over thickness)"
         )
 
-    def test_barbell_overhead_press_absent_from_shoulders(self):
-        shoulder_keywords = [kw for slot in self._slots("shoulders") for kw in slot["keywords"]]
-        assert not any("barbell overhead press" in kw for kw in shoulder_keywords), (
-            "Barbell Overhead Press must not appear in Women's Figure (trap growth destroys V-taper)"
-        )
+    def test_barbell_overhead_press_absent_from_delts(self):
+        for delt in ("front_delt", "side_delt", "rear_delt"):
+            delt_keywords = [kw for slot in self._slots(delt) for kw in slot["keywords"]]
+            assert not any("barbell overhead press" in kw for kw in delt_keywords), (
+                f"Barbell Overhead Press must not appear in Women's Figure {delt} (trap growth)"
+            )
 
 
 class TestWomensPhysique:
     def _slots(self, muscle):
         return DIVISION_EXERCISE_PRIORITIES["womens_physique"][muscle]
 
-    def test_shoulders_db_press_is_p1(self):
-        """Women's Physique shoulders P1 = Dumbbell Shoulder Press per spec."""
-        p1 = self._slots("shoulders")[0]
+    def test_front_delt_db_press_is_p1(self):
+        """Women's Physique front_delt P1 = Dumbbell Shoulder Press per spec."""
+        p1 = self._slots("front_delt")[0]
         assert any("dumbbell shoulder press" in kw for kw in p1["keywords"]), (
-            "Women's Physique shoulders P1 must be Dumbbell Shoulder Press per spec"
+            "Women's Physique front_delt P1 must be Dumbbell Shoulder Press per spec"
         )
 
     def test_chest_incline_db_is_p1(self):

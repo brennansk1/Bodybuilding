@@ -26,6 +26,7 @@ _TARGET_RATE_RANGES = {
 
 # Adjustment step size (kcal) — now body-weight scaled via get_adjustment_step()
 _ADJUSTMENT_BASE = 100.0   # base for a ~70 kg athlete
+_ADJUSTMENT_MIN = 100.0    # minimum adjustment step
 _ADJUSTMENT_MAX = 250.0    # absolute ceiling
 
 

@@ -265,6 +265,7 @@ def _allocate_sets(
     division: str = "mens_open",
     muscle: str = "",
     hqi: float = 70.0,
+    dup_rep_range: tuple[int, int] | None = None,
 ) -> list[tuple]:
     """
     Sequential Exercise Overflow Matrix — cascade total_sets through a
@@ -347,7 +348,12 @@ def _allocate_sets(
 
         pos = len(result)
         slot_load_type = slot.get("load_type", "")
-        rep_min, rep_max = _rep_range(pos, matched_ex.equipment, slot_load_type, matched_ex.name)
+        if slot_load_type:
+            rep_min, rep_max = _rep_range(pos, matched_ex.equipment, slot_load_type, matched_ex.name)
+        elif dup_rep_range:
+            rep_min, rep_max = dup_rep_range
+        else:
+            rep_min, rep_max = _rep_range(pos, matched_ex.equipment)
         result.append((matched_ex, n_sets, rep_min, rep_max))
         remaining -= n_sets
         used_ex_ids.add(matched_ex.id)
@@ -395,39 +401,21 @@ def _allocate_sets(
                 break
             n_sets = min(remaining, 4)
             pos = len(result) + fb_pos
-            rep_min, rep_max = _rep_range(pos, ex.equipment)
+            fb_load_type = getattr(ex, "load_type", "") or ""
+            if fb_load_type:
+                rep_min, rep_max = _rep_range(pos, ex.equipment, fb_load_type, ex.name)
+            elif dup_rep_range:
+                rep_min, rep_max = dup_rep_range
+            else:
+                rep_min, rep_max = _rep_range(pos, ex.equipment)
             result.append((ex, n_sets, rep_min, rep_max))
             remaining -= n_sets
             used_ex_ids.add(ex.id)
 
-    # ----- Sort compounds before isolations within this muscle group ----------
-    result.sort(key=lambda entry: _compound_sort_key({
-        "movement_pattern": getattr(entry[0], "movement_pattern", "isolation") or "isolation",
-    }))
-
-    # ----- FST-7 Finisher Override --------------------------------------------
-    # Hany Rambod's FST-7 Protocol: The final exercise for the target muscle
-    # is executed for 7 sets to maximize fascial stretching and hyperemia.
-    # We apply this to muscles receiving adequate total volume (to avoid
-    # overtraining minor accessories accidentally).
-    _ELIGIBLE_FST7 = {"chest", "back", "quads", "hamstrings", "glutes", "shoulders", "biceps", "triceps", "calves"}
-    if result and muscle in _ELIGIBLE_FST7 and total_sets >= 6:
-        # Traverse backwards to find the best isolation finisher (exclude heavy barbell axials)
-        for idx in range(len(result) - 1, -1, -1):
-            ex_obj, ex_sets, r_min, r_max = result[idx]
-            eq = (getattr(ex_obj, "equipment", "") or "").lower()
-            name_l = ex_obj.name.lower()
-            # Must be a highly stable implement and EXCLUDE axial barbell compounds
-            if eq in ("machine", "cable", "dumbbell") and "squat" not in name_l and "deadlift" not in name_l:
-                fst_rmin, fst_rmax = (12, 15) if muscle == "calves" else (8, 12)
-                result[idx] = (ex_obj, 7, fst_rmin, fst_rmax)
-                break
-
-    # ----- Sub-Region Guarantee -----------------------------------------------
-    # For composite muscles (shoulders, chest, back), ensure all required
-    # anatomical sub-regions are covered. If a sub-region is missing,
-    # swap the lowest-priority duplicate-region exercise for the best
-    # candidate from the missing sub-region.
+    # ----- Sub-Region Guarantee (BEFORE compound sort) --------------------------
+    # Fix GEN-06: Must run before compound-before-isolation sort so that
+    # sub-region swaps don't break compound ordering or overwrite the FST-7
+    # exercise placed at the end of the list.
     required_regions = REQUIRED_SUB_REGIONS.get(muscle, [])
     if required_regions and len(result) >= 2:
         # Classify current selections
@@ -480,6 +468,15 @@ def _allocate_sets(
                     if len(dup_idxs) <= 1:
                         duplicates.pop(0)
 
+    # ----- Sort compounds before isolations within this muscle group ----------
+    result.sort(key=lambda entry: _compound_sort_key({
+        "movement_pattern": getattr(entry[0], "movement_pattern", "isolation") or "isolation",
+    }))
+
+    # FST-7 is now applied at session-level by _apply_session_fst7() after
+    # all muscle groups have their exercises allocated. Removed from here to
+    # prevent per-muscle FST-7 from interfering with session-level selection.
+
     return result
 
 
@@ -497,6 +494,193 @@ def _check_bilateral_asymmetry(tape: TapeMeasurement | None, db_muscle: str) -> 
     avg = (left_val + right_val) / 2.0
     deviation = abs(left_val - right_val) / avg
     return deviation > 0.05  # >5% asymmetry
+
+
+# ---------------------------------------------------------------------------
+# FST-7 Protocol — Session-Level Application
+# ---------------------------------------------------------------------------
+
+# Division-specific muscles that qualify for FST-7 finishers.
+# Ordered by priority — the engine picks the first match that also has
+# the lowest HQI (most lagging) among muscles trained in this session.
+_FST7_TARGETS: dict[str, list[str]] = {
+    "mens_open":       ["chest", "back", "side_delt", "biceps", "calves", "hamstrings", "quads"],
+    "mens_physique":   ["side_delt", "rear_delt", "back", "biceps", "triceps", "chest"],
+    "classic_physique":["side_delt", "rear_delt", "biceps", "calves", "chest", "back", "quads"],
+    "womens_bikini":   ["glutes", "hamstrings", "side_delt", "rear_delt"],
+    "womens_figure":   ["side_delt", "rear_delt", "back", "glutes"],
+    "womens_physique": ["side_delt", "back", "biceps", "hamstrings", "chest"],
+    "wellness":        ["glutes", "hamstrings", "quads", "side_delt"],
+}
+
+# Preferred FST-7 finisher exercise per body part (from Hany Rambod's protocols).
+# These are machine/cable isolations — the best implements for short-rest pump work.
+_FST7_FINISHER_PREFERENCES: dict[str, list[str]] = {
+    "chest":      ["pec deck", "cable fly", "machine fly"],
+    "back":       ["straight-arm", "pulldown", "machine pullover"],
+    "side_delt":  ["machine lateral raise", "cable lateral raise"],
+    "rear_delt":  ["reverse pec deck", "cable face pull", "machine reverse fly"],
+    "front_delt": ["machine shoulder press"],
+    "quads":      ["leg extension", "leg press"],
+    "hamstrings": ["seated leg curl", "lying leg curl"],
+    "glutes":     ["hip abduction", "cable kickback", "machine kickback"],
+    "biceps":     ["cable curl", "spider curl", "machine curl"],
+    "triceps":    ["cable pushdown", "rope pushdown", "overhead cable"],
+    "calves":     ["standing calf raise", "seated calf raise", "leg press calf"],
+}
+
+# FST-7 intensity by mode (from mesocycle week data)
+_FST7_INTENSITY: dict[str, dict] = {
+    "moderate":  {"rest_seconds": 45, "rir": 2, "reps": (10, 12)},  # Weeks 1-2
+    "aggressive":{"rest_seconds": 35, "rir": 1, "reps": (8, 12)},   # Weeks 3-4
+    "extreme":   {"rest_seconds": 30, "rir": 0, "reps": (8, 12)},   # Week 5
+    "none":      {},  # Deload — no FST-7
+}
+
+
+def _compute_rest_seconds(
+    movement_pattern: str,
+    load_type: str,
+    dup_profile: str = "moderate",
+    is_warmup: bool = False,
+) -> int:
+    """
+    Rest-time lookup: movement_pattern × load_type × DUP intensity.
+
+    Heavy compound:   180–300s
+    Moderate compound: 120–180s
+    Heavy isolation:   90–120s
+    Moderate isolation: 60–90s
+    Warmup:           60s
+    """
+    if is_warmup:
+        return 60
+
+    pattern = (movement_pattern or "isolation").lower()
+    is_compound = pattern in ("push", "pull", "squat", "hinge", "lunge", "carry")
+
+    if is_compound:
+        if dup_profile == "heavy":
+            return 240  # 4 min — heavy compounds need full ATP recovery
+        if dup_profile == "light":
+            return 120  # 2 min — lighter loads recover faster
+        return 180  # 3 min — moderate default
+    else:
+        # Isolation
+        if dup_profile == "heavy":
+            return 105  # ~1:45
+        if dup_profile == "light":
+            return 60   # 1 min
+        return 90  # 1:30 — moderate default
+
+
+def _apply_session_fst7(
+    db_session,  # AsyncSession
+    session,     # TrainingSession
+    session_sets: list,  # list of (TrainingSet, exercise_name, muscle, equipment)
+    fst7_mode: str,
+    division: str,
+    hqi_scores: dict[str, float],
+) -> None:
+    """
+    Apply FST-7 protocol at the session level.
+
+    Picks ONE exercise from the session to become the FST-7 finisher:
+    1. Filter to division-priority muscles present in this session
+    2. Rank by HQI (lowest = most lagging = highest priority)
+    3. Find the best machine/cable isolation for that muscle
+    4. Convert it to 7 FST-7 sets with mode-appropriate rest_seconds
+    5. Mark all those sets with is_fst7=True
+
+    Skips entirely if fst7_mode is "none" (deload weeks).
+    """
+    if fst7_mode == "none" or not session_sets:
+        return
+
+    intensity = _FST7_INTENSITY.get(fst7_mode, _FST7_INTENSITY["moderate"])
+    if not intensity:
+        return
+
+    rest_sec = intensity["rest_seconds"]
+    fst7_reps = intensity["reps"]
+
+    # 1. Get division's FST-7 target muscles
+    targets = _FST7_TARGETS.get(division, _FST7_TARGETS.get("mens_open", []))
+
+    # 2. Find which target muscles are actually in this session
+    session_muscles = set()
+    for ts, ex_name, muscle, eq in session_sets:
+        if not ts.is_warmup:
+            session_muscles.add(muscle)
+
+    eligible_muscles = [m for m in targets if m in session_muscles]
+    if not eligible_muscles:
+        return
+
+    # 3. Rank by HQI — lowest score = most lagging = best FST-7 target
+    eligible_muscles.sort(key=lambda m: hqi_scores.get(m, 70.0))
+    chosen_muscle = eligible_muscles[0]
+
+    # 4. Find the best machine/cable isolation exercise for that muscle
+    finisher_prefs = _FST7_FINISHER_PREFERENCES.get(chosen_muscle, [])
+    chosen_set = None
+    chosen_ex_name = None
+
+    # First pass: match against finisher preferences
+    for ts, ex_name, muscle, eq in reversed(session_sets):
+        if muscle != chosen_muscle or ts.is_warmup:
+            continue
+        eq_lower = (eq or "").lower()
+        name_lower = ex_name.lower()
+        if eq_lower not in ("machine", "cable", "dumbbell"):
+            continue
+        if any(pref in name_lower for pref in finisher_prefs):
+            chosen_set = ts
+            chosen_ex_name = ex_name
+            break
+
+    # Second pass: any machine/cable exercise for that muscle
+    if not chosen_set:
+        for ts, ex_name, muscle, eq in reversed(session_sets):
+            if muscle != chosen_muscle or ts.is_warmup:
+                continue
+            eq_lower = (eq or "").lower()
+            name_lower = ex_name.lower()
+            if eq_lower in ("machine", "cable", "dumbbell") and "squat" not in name_lower and "deadlift" not in name_lower:
+                chosen_set = ts
+                chosen_ex_name = ex_name
+                break
+
+    if not chosen_set:
+        return
+
+    # 5. Convert all sets for this exercise to FST-7 protocol
+    fst7_rep_target = (fst7_reps[0] + fst7_reps[1]) // 2
+    fst7_sets_applied = 0
+    for ts, ex_name, muscle, eq in session_sets:
+        if ts.exercise_id == chosen_set.exercise_id and not ts.is_warmup:
+            ts.is_fst7 = True
+            ts.rest_seconds = rest_sec
+            ts.prescribed_reps = fst7_rep_target
+            fst7_sets_applied += 1
+
+    # If the exercise has fewer than 7 sets, add more to reach 7
+    sets_to_add = 7 - fst7_sets_applied
+    if sets_to_add > 0:
+        # Find the highest set_number in the session
+        max_set_num = max(ts.set_number for ts, _, _, _ in session_sets)
+        for i in range(sets_to_add):
+            new_set = TrainingSet(
+                session_id=session.id,
+                exercise_id=chosen_set.exercise_id,
+                set_number=max_set_num + 1 + i,
+                prescribed_reps=fst7_rep_target,
+                prescribed_weight_kg=chosen_set.prescribed_weight_kg,
+                is_warmup=False,
+                rest_seconds=rest_sec,
+                is_fst7=True,
+            )
+            db_session.add(new_set)
 
 
 # ---------------------------------------------------------------------------
@@ -583,12 +767,26 @@ async def generate_program_sessions(
     ex_result = await db.execute(select(Exercise))
     all_exercises = ex_result.scalars().all()
 
+    # Equipment normalization map — handles legacy names and user input variants
+    _EQUIP_NORMALIZE: dict[str, str] = {
+        "body_only": "bodyweight", "bodyweight": "bodyweight",
+        "e_z_curl_bar": "ez_bar", "ez_bar": "ez_bar", "ez bar": "ez_bar",
+        "kettlebells": "dumbbell", "kettlebell": "dumbbell",
+        "bands": "bodyweight", "resistance band": "bodyweight",
+        "none": "bodyweight",
+        "barbell": "barbell", "dumbbell": "dumbbell", "cable": "cable",
+        "machine": "machine", "smith_machine": "smith_machine",
+        "smith machine": "smith_machine",
+    }
+
     # Filter exercises by available equipment
     if available_equipment:
-        equip_set = set(e.lower() for e in available_equipment)
+        equip_set = set(_EQUIP_NORMALIZE.get(e.lower(), e.lower()) for e in available_equipment)
+        # Always allow bodyweight exercises
+        equip_set.add("bodyweight")
         all_exercises = [
             ex for ex in all_exercises
-            if ex.equipment.lower() in equip_set or ex.equipment.lower() == "bodyweight"
+            if _EQUIP_NORMALIZE.get(ex.equipment.lower(), ex.equipment.lower()) in equip_set
         ]
 
     # Filter out disliked exercises
@@ -831,6 +1029,7 @@ async def generate_program_sessions(
                 completed=False,
                 split_type=selected_split,
                 stale_baselines=stale_baselines,
+                dup_profile=day.get("dup_profile"),
             )
             db.add(session)
             await db.flush()
@@ -894,8 +1093,21 @@ async def generate_program_sessions(
                     global_spillover[db_muscle] = global_spillover.get(db_muscle, 0) + excess
                     total_sets = 12
 
-                # Shoulder delt sub-role filtering (legacy — now exercises are tagged directly)
+                # --- Fix GEN-02: Delt sub-group lookup with fallback ----------
+                # When db_muscle is a delt sub-group, pass the sub-role for
+                # filtering AND fall back to generic "shoulders" pool if the
+                # sub-group pool is empty.
                 delt_role = None
+                _DELT_SUB_GROUPS = {"front_delt", "side_delt", "rear_delt"}
+                if db_muscle in _DELT_SUB_GROUPS:
+                    delt_role = db_muscle
+                    if not candidates:
+                        candidates = by_muscle.get("shoulders", [])
+
+                # --- Fix GEN-03: Read DUP profile from mesocycle output -------
+                day_dup_profile = day.get("dup_profile", "moderate")
+                day_intensity_range = day.get("intensity_range", (0.65, 0.75))
+                day_rep_range = day.get("rep_range", (8, 12))
 
                 # Priority (0-10) from HQI — default 5.0 (neutral)
                 priority = muscle_priority.get(db_muscle, 5.0)
@@ -913,6 +1125,7 @@ async def generate_program_sessions(
                     division=user_division,
                     muscle=db_muscle,
                     hqi=_MUSCLE_HQI_MAP.get(db_muscle, 70.0),
+                    dup_rep_range=day_rep_range,
                 )
                 if assignments:
                     last_trained_date[db_muscle] = session_date
@@ -957,7 +1170,7 @@ async def generate_program_sessions(
                         prescribed_weight = round(
                             compute_weight_from_1rm(baselines[ex.name.lower()], rep_target), 1
                         )
-                    
+
                     # Seed weight fallback: if no 1RM baseline, estimate from body weight
                     if prescribed_weight is None and user_body_weight_kg > 0:
                         prescribed_weight = estimate_seed_weight(
@@ -966,6 +1179,20 @@ async def generate_program_sessions(
                             db_muscle,
                             rep_target,
                         )
+
+                    # --- Fix GEN-04: Scale weight by DUP intensity range ----------
+                    # Heavy days use the top of the intensity range (heavier weight,
+                    # lower reps), light days use the bottom (lighter weight, higher reps).
+                    if prescribed_weight and day_intensity_range:
+                        intensity_mid = (day_intensity_range[0] + day_intensity_range[1]) / 2
+                        # Default moderate intensity is ~0.70. Scale weight relative to that.
+                        intensity_scale = intensity_mid / 0.70
+                        prescribed_weight = round(prescribed_weight * intensity_scale, 1)
+
+                    # Compute rest_seconds from movement_pattern × DUP profile
+                    ex_pattern = getattr(ex, "movement_pattern", "isolation") or "isolation"
+                    ex_load_type = getattr(ex, "load_type", "") or ""
+                    working_rest = _compute_rest_seconds(ex_pattern, ex_load_type, day_dup_profile)
 
                     # Warm-up sets for the first exercise per muscle group
                     if need_warmup and prescribed_weight:
@@ -977,6 +1204,7 @@ async def generate_program_sessions(
                                 prescribed_reps=wu["reps"],
                                 prescribed_weight_kg=wu["weight_kg"],
                                 is_warmup=True,
+                                rest_seconds=60,
                             )
                             db.add(ts_wu)
                             set_number += 1
@@ -991,6 +1219,7 @@ async def generate_program_sessions(
                             prescribed_reps=rep_target,
                             prescribed_weight_kg=prescribed_weight,
                             is_warmup=False,
+                            rest_seconds=working_rest,
                         )
                         db.add(ts)
                         set_number += 1
@@ -1017,6 +1246,38 @@ async def generate_program_sessions(
                 fatigue_check = check_daily_fatigue_budget(session_exercise_dicts)
                 if not fatigue_check["within_budget"] and fatigue_check.get("warnings"):
                     session.notes = "CNS: " + "; ".join(fatigue_check["warnings"])
+
+            # -------------------------------------------------------------------
+            # FST-7 Session-Level Application
+            # -------------------------------------------------------------------
+            week_fst7_mode = week.get("fst7_mode", "moderate")
+            if week_fst7_mode != "none":
+                await db.flush()  # ensure all sets have IDs
+                # Load all sets for this session to pass to FST-7
+                fst7_sets_result = await db.execute(
+                    select(TrainingSet, Exercise.name, Exercise.primary_muscle, Exercise.equipment)
+                    .join(Exercise, TrainingSet.exercise_id == Exercise.id)
+                    .where(TrainingSet.session_id == session.id)
+                    .order_by(TrainingSet.set_number)
+                )
+                session_set_rows = fst7_sets_result.all()
+                _apply_session_fst7(
+                    db, session, session_set_rows,
+                    fst7_mode=week_fst7_mode,
+                    division=user_division,
+                    hqi_scores=_MUSCLE_HQI_MAP,
+                )
+                await db.flush()
+
+                # Renumber sets: non-FST-7 first, then FST-7 (finisher is last)
+                renumber_result = await db.execute(
+                    select(TrainingSet)
+                    .where(TrainingSet.session_id == session.id)
+                    .order_by(TrainingSet.is_fst7, TrainingSet.set_number)
+                )
+                all_session_sets = renumber_result.scalars().all()
+                for new_num, ts_obj in enumerate(all_session_sets, start=1):
+                    ts_obj.set_number = new_num
 
             # If there's spillover pending, ensure the NEXT day forces inclusion.
             # We do this by adding the keys to the next Day's `day["muscles"]` dynamically

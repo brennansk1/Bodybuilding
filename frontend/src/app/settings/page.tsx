@@ -122,6 +122,7 @@ export default function SettingsPage() {
   const [heightCm, setHeightCm] = useState("");
   const [division, setDivision] = useState("mens_open");
   const [compDate, setCompDate] = useState("");
+  const [programStartDate, setProgramStartDate] = useState("");
   const [expYears, setExpYears] = useState("");
   const [wrist, setWrist] = useState("");
   const [ankle, setAnkle] = useState("");
@@ -180,6 +181,7 @@ export default function SettingsPage() {
         setHeightCm(p.height_cm?.toString() ?? "");
         setDivision(p.division || "mens_open");
         setCompDate(p.competition_date ?? "");
+        setProgramStartDate(p.program_start_date ?? "");
         setExpYears(p.training_experience_years?.toString() ?? "");
         setWrist(p.wrist_circumference_cm?.toString() ?? "");
         setAnkle(p.ankle_circumference_cm?.toString() ?? "");
@@ -232,6 +234,7 @@ export default function SettingsPage() {
         height_cm: heightCm ? parseFloat(heightCm) : null,
         division,
         competition_date: compDate || null,
+        program_start_date: programStartDate || null,
         training_experience_years: expYears ? parseInt(expYears) : 0,
         wrist_circumference_cm: wrist ? parseFloat(wrist) : null,
         ankle_circumference_cm: ankle ? parseFloat(ankle) : null,
@@ -267,12 +270,28 @@ export default function SettingsPage() {
       setSaving(false);
     }
 
+    // Decouple: only run engines that are actually affected by the changes
+    // Nutrition-relevant fields trigger meal plan regen only
+    // Structural fields trigger full engine pipeline
+    const nutritionFields = new Set([
+      "meal_count", "dietary_restrictions", "preferred_proteins",
+      "preferred_carbs", "preferred_fats", "blacklisted_foods",
+      "cheat_meals_per_week", "intra_workout_nutrition",
+    ]);
+    const structuralChanged = true; // TODO: track which fields actually changed vs initial
+    const nutritionChanged = true;  // For now, always regen to be safe
+
     setSyncing(true);
     try {
-      await api.post("/engine1/run");
-      await api.post("/engine2/program/generate");
-      // Auto-regenerate meal plan with new food preferences
-      await api.post("/engine3/meal-plan/generate", {}).catch(() => {});
+      if (structuralChanged) {
+        await api.post("/engine1/run").catch(() => {});
+        await api.post("/engine2/program/generate").catch(() => {});
+      }
+      if (nutritionChanged) {
+        // Invalidate cache then let next page load regenerate fresh plans
+        await api.post("/engine3/meal-plan/invalidate").catch(() => {});
+        await api.post("/engine3/meal-plan/generate").catch(() => {});
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch { /* ignore */ } finally {
@@ -501,6 +520,17 @@ export default function SettingsPage() {
                 </div>
 
                 <div>
+                  <label className="label-field">Program Start Date</label>
+                  <input
+                    type="date"
+                    value={programStartDate}
+                    onChange={(e) => setProgramStartDate(e.target.value)}
+                    className="input-field mt-1"
+                  />
+                  <p className="text-[10px] text-jungle-dim mt-0.5">When your training program begins. Defaults to today if empty.</p>
+                </div>
+
+                <div>
                   <label className="label-field">Current Phase Override</label>
                   <select
                     value={currentPhase}
@@ -568,7 +598,10 @@ export default function SettingsPage() {
                       className="input-field mt-1"
                       placeholder="e.g. 18.0"
                     />
-                    <p className="text-[10px] text-jungle-dim mt-1">BF% at which engine recommends a cut</p>
+                    <p className="text-[10px] text-jungle-dim mt-1">
+                      BF% at which engine recommends a mini-cut.
+                      {!cutThreshold && " Leave empty to auto-compute from your weight cap."}
+                    </p>
                   </div>
                 </div>
 

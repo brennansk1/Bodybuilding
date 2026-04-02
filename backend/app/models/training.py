@@ -25,6 +25,7 @@ class Exercise(Base):
     movement_pattern_detail: Mapped[str | None] = mapped_column(String(50), nullable=True)
     contraindications: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     is_custom: Mapped[bool] = mapped_column(default=False)
+    load_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # plates/dumbbells/cable/machine_plates/plate_loaded/bodyweight
 
 
 class StrengthBaseline(Base):
@@ -143,6 +144,9 @@ class TrainingSession(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     split_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     stale_baselines: Mapped[bool] = mapped_column(default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dup_profile: Mapped[str | None] = mapped_column(String(10), nullable=True)  # heavy/moderate/light
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     program: Mapped["TrainingProgram"] = relationship(back_populates="sessions")
@@ -164,6 +168,8 @@ class TrainingSet(Base):
     actual_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_warmup: Mapped[bool] = mapped_column(default=False)
+    rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_fst7: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["TrainingSession"] = relationship(back_populates="sets")

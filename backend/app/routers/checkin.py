@@ -1017,3 +1017,180 @@ async def get_weekly_review(
         "photos": photos_section,
         "pds": pds_section,
     }
+
+
+# ---------------------------------------------------------------------------
+# Block 4 — Missed Check-In Handling
+# ---------------------------------------------------------------------------
+
+
+@router.get("/gaps")
+async def get_checkin_gaps(
+    since: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns dates with missing daily check-ins and missed workout sessions
+    since the given date (default: 14 days ago).
+    """
+    from app.models.training import TrainingSession
+    from sqlalchemy import and_
+
+    cutoff = date.fromisoformat(since) if since else date.today() - timedelta(days=14)
+    today_date = date.today()
+
+    # Find all dates that SHOULD have check-ins (every day since cutoff)
+    all_dates = []
+    d = cutoff
+    while d <= today_date:
+        all_dates.append(d)
+        d += timedelta(days=1)
+
+    # Dates with daily check-ins (HRV log entries)
+    hrv_result = await db.execute(
+        select(HRVLog.recorded_date).where(
+            and_(HRVLog.user_id == user.id, HRVLog.recorded_date >= cutoff)
+        )
+    )
+    checkin_dates = {row[0] for row in hrv_result.all()}
+
+    # Dates with body weight entries
+    bw_result = await db.execute(
+        select(BodyWeightLog.recorded_date).where(
+            and_(BodyWeightLog.user_id == user.id, BodyWeightLog.recorded_date >= cutoff)
+        )
+    )
+    weight_dates = {row[0] for row in bw_result.all()}
+
+    # Workout sessions that should have been completed
+    session_result = await db.execute(
+        select(TrainingSession.session_date, TrainingSession.completed).where(
+            and_(
+                TrainingSession.user_id == user.id,
+                TrainingSession.session_date >= cutoff,
+                TrainingSession.session_date <= today_date,
+            )
+        )
+    )
+    missed_workouts = []
+    for sess_date, completed in session_result.all():
+        if not completed and sess_date < today_date:
+            missed_workouts.append(str(sess_date))
+
+    missing_daily = [str(d) for d in all_dates if d not in checkin_dates and d < today_date]
+    missing_weight = [str(d) for d in all_dates if d not in weight_dates and d < today_date]
+
+    return {
+        "missing_daily_checkins": missing_daily,
+        "missing_weight_entries": missing_weight,
+        "missed_workouts": missed_workouts,
+        "since": str(cutoff),
+        "total_gaps": len(missing_daily) + len(missed_workouts),
+    }
+
+
+class DailyBackfillRequest(BaseModel):
+    recorded_date: str
+    body_weight_kg: float | None = None
+    sleep_quality: float | None = None
+    soreness_score: float | None = None
+    nutrition_adherence_pct: float | None = None
+    training_adherence_pct: float | None = None
+    notes: str | None = None
+
+
+@router.post("/daily/backfill")
+async def backfill_daily(
+    data: DailyBackfillRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Backfill a missed daily check-in for a past date.
+    Creates HRV log (with defaults for missing fields), body weight, and adherence entries.
+    """
+    rec_date = date.fromisoformat(data.recorded_date)
+    if rec_date >= date.today():
+        raise HTTPException(status_code=400, detail="Can only backfill past dates")
+
+    # Body weight
+    if data.body_weight_kg:
+        existing = await db.execute(
+            select(BodyWeightLog).where(
+                BodyWeightLog.user_id == user.id, BodyWeightLog.recorded_date == rec_date
+            )
+        )
+        if old := existing.scalar_one_or_none():
+            await db.delete(old)
+        db.add(BodyWeightLog(user_id=user.id, weight_kg=data.body_weight_kg, recorded_date=rec_date))
+
+    # HRV log with sensible defaults
+    existing_hrv = await db.execute(
+        select(HRVLog).where(HRVLog.user_id == user.id, HRVLog.recorded_date == rec_date)
+    )
+    if old := existing_hrv.scalar_one_or_none():
+        await db.delete(old)
+    db.add(HRVLog(
+        user_id=user.id,
+        rmssd=50.0,  # default
+        sleep_quality=data.sleep_quality or 7.0,
+        soreness_score=data.soreness_score or 5.0,
+        recorded_date=rec_date,
+        notes=data.notes or "Backfilled",
+    ))
+
+    # Adherence log — BUG-02 fix: delete duplicates before inserting
+    existing_adh = await db.execute(
+        select(AdherenceLog).where(
+            AdherenceLog.user_id == user.id, AdherenceLog.recorded_date == rec_date
+        )
+    )
+    for dup in existing_adh.scalars().all():
+        await db.delete(dup)
+
+    nut_pct = data.nutrition_adherence_pct or 80.0
+    trn_pct = data.training_adherence_pct or 80.0
+    db.add(AdherenceLog(
+        user_id=user.id,
+        recorded_date=rec_date,
+        nutrition_adherence_pct=nut_pct,
+        training_adherence_pct=trn_pct,
+        overall_adherence_pct=(nut_pct + trn_pct) / 2,
+    ))
+
+    await db.flush()
+    return {"message": f"Backfilled check-in for {data.recorded_date}", "date": data.recorded_date}
+
+
+@router.post("/adherence/dedupe")
+async def dedupe_adherence(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """BUG-02 fix: Detect and delete duplicate AdherenceLog entries per date."""
+    from sqlalchemy import and_
+
+    result = await db.execute(
+        select(AdherenceLog.recorded_date, func.count(AdherenceLog.id).label("cnt"))
+        .where(AdherenceLog.user_id == user.id)
+        .group_by(AdherenceLog.recorded_date)
+        .having(func.count(AdherenceLog.id) > 1)
+    )
+    dup_dates = [row[0] for row in result.all()]
+    deleted = 0
+
+    for dup_date in dup_dates:
+        entries = await db.execute(
+            select(AdherenceLog).where(
+                and_(AdherenceLog.user_id == user.id, AdherenceLog.recorded_date == dup_date)
+            ).order_by(desc(AdherenceLog.created_at))
+        )
+        all_entries = entries.scalars().all()
+        # Keep the most recent, delete the rest
+        for old in all_entries[1:]:
+            await db.delete(old)
+            deleted += 1
+
+    await db.flush()
+    return {"duplicates_removed": deleted, "dates_affected": len(dup_dates)}

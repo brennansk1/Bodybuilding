@@ -391,12 +391,19 @@ async def generate_program(
     db.add(program)
     await db.flush()
 
+    # Use program_start_date from profile if set, otherwise default to today
+    prof_result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    _prof = prof_result.scalar_one_or_none()
+    program_start = getattr(_prof, "program_start_date", None) or date.today()
+
     sessions_created = await generate_program_sessions(
         db=db,
         user_id=user.id,
         program=program,
         volume_allocation=volume_allocation,
-        start_date=date.today(),
+        start_date=program_start,
     )
 
     # Check stale baselines on first session
@@ -468,7 +475,8 @@ async def get_session(
         raise HTTPException(status_code=404, detail="No session for this date")
 
     sets_result = await db.execute(
-        select(TrainingSet, Exercise.name, Exercise.primary_muscle, Exercise.equipment)
+        select(TrainingSet, Exercise.name, Exercise.primary_muscle, Exercise.equipment,
+               Exercise.movement_pattern, Exercise.load_type)
         .join(Exercise, TrainingSet.exercise_id == Exercise.id)
         .where(TrainingSet.session_id == session.id)
         .order_by(TrainingSet.set_number)
@@ -505,7 +513,7 @@ async def get_session(
             }
 
     sets = []
-    for ts, name, muscle, equipment in sets_rows:
+    for ts, name, muscle, equipment, movement_pattern, load_type in sets_rows:
         key = f"{name}_{ts.set_number}"
         ghost = prev_actuals.get(key, {})
         sets.append({
@@ -513,6 +521,8 @@ async def get_session(
             "exercise_name": name,
             "muscle_group": muscle,
             "equipment": equipment or "bodyweight",
+            "movement_pattern": movement_pattern or "isolation",
+            "load_type": load_type or "",
             "set_number": ts.set_number,
             "prescribed_reps": ts.prescribed_reps,
             "prescribed_weight_kg": ts.prescribed_weight_kg,
@@ -520,6 +530,8 @@ async def get_session(
             "actual_weight_kg": ts.actual_weight_kg,
             "rpe": ts.rpe,
             "is_warmup": ts.is_warmup,
+            "is_fst7": ts.is_fst7,
+            "rest_seconds": ts.rest_seconds,
             "last_actual_reps": ghost.get("last_actual_reps"),
             "last_actual_weight_kg": ghost.get("last_actual_weight_kg"),
         })
@@ -533,6 +545,7 @@ async def get_session(
         "completed": session.completed,
         "stale_baselines": session.stale_baselines,
         "split_type": session.split_type,
+        "dup_profile": session.dup_profile,
         "sets": sets,
     }
 
@@ -589,20 +602,25 @@ async def log_session(
         is_substitute = bool(set_log.actual_exercise_name and set_log.actual_exercise_name.strip().lower() != ex_name.strip().lower())
 
         if is_substitute and set_log.actual_reps and set_log.actual_weight_kg:
-            from app.models.training import StrengthLog
             from app.engines.engine2.resistance import estimate_1rm
-            from datetime import date
             e1rm = estimate_1rm(set_log.actual_weight_kg, set_log.actual_reps)
+            # BUG-01 fix: look up exercise_id by name for substitute exercise
+            sub_ex_result = await db.execute(
+                select(Exercise).where(
+                    func.lower(Exercise.name) == set_log.actual_exercise_name.strip().lower()
+                )
+            )
+            sub_ex = sub_ex_result.scalar_one_or_none()
+            sub_exercise_id = sub_ex.id if sub_ex else training_set.exercise_id
             db.add(StrengthLog(
                 user_id=user.id,
                 recorded_date=date.today(),
-                exercise_name=set_log.actual_exercise_name,
+                exercise_id=sub_exercise_id,
                 weight_kg=set_log.actual_weight_kg,
                 reps=set_log.actual_reps,
                 rpe=set_log.rpe,
                 estimated_1rm=e1rm,
             ))
-            # Skip double progression for the original exercise because this was an ad-hoc substitution
             continue
 
         # Double progression check with equipment-specific increments
@@ -637,6 +655,244 @@ async def log_session(
 
     return {
         "message": "Session logged successfully",
+        "progressions": progressions,
+    }
+
+
+@router.post("/session/{session_id}/start")
+async def start_session(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark session as started (sets started_at timestamp)."""
+    from datetime import datetime, timezone
+    result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.id == uuid.UUID(session_id),
+            TrainingSession.user_id == user.id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not session.started_at:
+        session.started_at = datetime.now(timezone.utc)
+        await db.flush()
+    return {"started_at": str(session.started_at)}
+
+
+# ---------------------------------------------------------------------------
+# Per-set auto-save (Block 1 — Workout Auto-Save)
+# ---------------------------------------------------------------------------
+
+
+class SetPatchRequest(BaseModel):
+    actual_reps: int | None = None
+    actual_weight_kg: float | None = None
+    rpe: float | None = None
+    actual_exercise_name: str | None = None
+
+
+@router.patch("/session/{session_id}/set/{set_id}")
+async def patch_set(
+    session_id: str,
+    set_id: str,
+    data: SetPatchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Per-set persistence endpoint for auto-save.
+
+    Fires on every set completion and on debounced input changes.
+    Only updates the fields that are provided (non-None).
+    Returns the updated set data plus a progression hint if applicable.
+    """
+    # Validate session ownership
+    sess_result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.id == uuid.UUID(session_id),
+            TrainingSession.user_id == user.id,
+        )
+    )
+    session = sess_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Load the set + exercise name
+    set_result = await db.execute(
+        select(TrainingSet, Exercise.name, Exercise)
+        .join(Exercise, TrainingSet.exercise_id == Exercise.id)
+        .where(
+            TrainingSet.id == uuid.UUID(set_id),
+            TrainingSet.session_id == session.id,
+        )
+    )
+    row = set_result.one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Set not found in this session")
+    training_set, ex_name, exercise = row
+
+    # Apply partial updates
+    if data.actual_reps is not None:
+        training_set.actual_reps = data.actual_reps
+    if data.actual_weight_kg is not None:
+        training_set.actual_weight_kg = data.actual_weight_kg
+    if data.rpe is not None:
+        training_set.rpe = data.rpe
+
+    # Handle substitute exercise logging
+    is_substitute = bool(
+        data.actual_exercise_name
+        and data.actual_exercise_name.strip().lower() != ex_name.strip().lower()
+    )
+    if is_substitute and data.actual_reps and data.actual_weight_kg:
+        from app.engines.engine2.resistance import estimate_1rm
+        e1rm = estimate_1rm(data.actual_weight_kg, data.actual_reps)
+        # Look up exercise_id for the substitute by name; fall back to original
+        sub_ex_result = await db.execute(
+            select(Exercise).where(
+                func.lower(Exercise.name) == data.actual_exercise_name.strip().lower()
+            )
+        )
+        sub_ex = sub_ex_result.scalar_one_or_none()
+        sub_exercise_id = sub_ex.id if sub_ex else exercise.id
+        db.add(StrengthLog(
+            user_id=user.id,
+            recorded_date=date.today(),
+            exercise_id=sub_exercise_id,
+            weight_kg=data.actual_weight_kg,
+            reps=data.actual_reps,
+            rpe=data.rpe,
+            estimated_1rm=e1rm,
+        ))
+
+    # Progression hint — only when all 3 values present and not a substitute
+    progression = None
+    if (
+        not is_substitute
+        and training_set.actual_reps is not None
+        and training_set.actual_weight_kg is not None
+        and training_set.rpe is not None
+    ):
+        from app.engines.engine2.resistance import compute_progression
+        rep_ceiling = training_set.prescribed_reps + 2
+        prog = compute_progression(
+            current_weight=training_set.actual_weight_kg,
+            current_reps=training_set.actual_reps,
+            target_reps=rep_ceiling,
+            rpe=training_set.rpe,
+            rep_floor=training_set.prescribed_reps,
+            load_type=getattr(exercise, "load_type", "") or "",
+            exercise_name=exercise.name,
+        )
+        if prog["action"] == "increase_weight":
+            progression = {
+                "exercise": ex_name,
+                "action": "increase_weight",
+                "next_weight_kg": prog["next_weight"],
+                "next_reps": prog["next_reps"],
+                "estimated_1rm": prog["estimated_1rm"],
+            }
+
+    await db.flush()
+
+    return {
+        "set_id": str(training_set.id),
+        "actual_reps": training_set.actual_reps,
+        "actual_weight_kg": training_set.actual_weight_kg,
+        "rpe": training_set.rpe,
+        "progression": progression,
+    }
+
+
+class FinishSessionRequest(BaseModel):
+    notes: str | None = None
+
+
+@router.post("/session/{session_id}/finish")
+async def finish_session(
+    session_id: str,
+    data: FinishSessionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Mark session as completed + run final progression checks.
+
+    Called when user clicks "Finish Session". All set data should already
+    be persisted via PATCH calls. This endpoint:
+    1. Marks session.completed = True
+    2. Sets completed_at timestamp
+    3. Runs double-progression check on all completed sets
+    4. Returns aggregated progressions
+    """
+    from datetime import datetime, timezone
+
+    result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.id == uuid.UUID(session_id),
+            TrainingSession.user_id == user.id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session.completed = True
+    session.completed_at = datetime.now(timezone.utc)
+    if data.notes is not None:
+        session.notes = data.notes
+
+    # Run progression checks on all completed (non-warmup) sets
+    sets_result = await db.execute(
+        select(TrainingSet, Exercise)
+        .join(Exercise, TrainingSet.exercise_id == Exercise.id)
+        .where(
+            TrainingSet.session_id == session.id,
+            TrainingSet.is_warmup == False,
+        )
+        .order_by(TrainingSet.set_number)
+    )
+
+    progressions = []
+    seen_exercises: set[str] = set()
+    from app.engines.engine2.resistance import compute_progression
+
+    for training_set, exercise in sets_result.all():
+        if (
+            training_set.actual_reps is None
+            or training_set.actual_weight_kg is None
+            or training_set.rpe is None
+        ):
+            continue
+        # One progression per exercise (use last completed set)
+        ex_key = exercise.name.lower()
+        rep_ceiling = training_set.prescribed_reps + 2
+        prog = compute_progression(
+            current_weight=training_set.actual_weight_kg,
+            current_reps=training_set.actual_reps,
+            target_reps=rep_ceiling,
+            rpe=training_set.rpe,
+            rep_floor=training_set.prescribed_reps,
+            load_type=getattr(exercise, "load_type", "") or "",
+            exercise_name=exercise.name,
+        )
+        if prog["action"] == "increase_weight" and ex_key not in seen_exercises:
+            progressions.append({
+                "exercise": exercise.name,
+                "action": "increase_weight",
+                "next_weight_kg": prog["next_weight"],
+                "next_reps": prog["next_reps"],
+                "estimated_1rm": prog["estimated_1rm"],
+            })
+            seen_exercises.add(ex_key)
+
+    await db.flush()
+
+    return {
+        "message": "Session completed",
         "progressions": progressions,
     }
 
