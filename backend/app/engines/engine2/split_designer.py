@@ -38,12 +38,14 @@ from typing import Any
 
 _DIVISION_IMPORTANCE: dict[str, dict[str, float]] = {
     "mens_physique": {
-        # MP lives and dies by WIDTH. Side delts are THE differentiator.
-        # Brandon Hendrickson, Jeremy Buendia — capped delts define the division.
-        "chest": 1.0, "back": 1.1,
+        # MP lives and dies by WIDTH. Side delts + back width = V-taper.
+        # Brandon Hendrickson, Jeremy Buendia — capped delts + wide lats define the division.
+        # Chest overdevelopment creates a blocky look that DESTROYS the V-taper aesthetic.
+        "chest": 0.6, "back": 1.3,
         "front_delt": 1.0, "side_delt": 1.4, "rear_delt": 0.9,
-        "biceps": 1.0, "triceps": 0.9, "forearms": 0.6,
-        "traps": 0.5, "abs": 0.7,
+        "biceps": 0.85, "triceps": 0.9, "forearms": 0.6,
+        # Traps at 0.3 → hard-capped at MEV. Big traps DESTROY V-taper.
+        "traps": 0.3, "abs": 0.7,
         # Legs hidden by board shorts but still trained for base / proportionality.
         # Maintenance volume prevents atrophy without stealing recovery from upper body.
         "quads": 0.3, "hamstrings": 0.3, "glutes": 0.2, "calves": 0.15,
@@ -65,33 +67,39 @@ _DIVISION_IMPORTANCE: dict[str, dict[str, float]] = {
         "quads": 1.0, "hamstrings": 1.0, "glutes": 1.0, "calves": 1.0,
     },
     "womens_bikini": {
-        "chest": 0.3, "back": 0.6,
-        "front_delt": 0.8, "side_delt": 1.0, "rear_delt": 0.5,
-        "biceps": 0.3, "triceps": 0.3, "forearms": 0.1,
-        "traps": 0.2, "abs": 0.8,
-        "quads": 0.6, "hamstrings": 1.2, "glutes": 1.5, "calves": 0.2,
+        # Bikini: glutes + hamstrings define the division. Upper body should be
+        # SHAPED but not large — judges deduct for excessive shoulder/back mass.
+        "chest": 0.2, "back": 0.4,
+        "front_delt": 0.5, "side_delt": 0.7, "rear_delt": 0.4,
+        "biceps": 0.2, "triceps": 0.2, "forearms": 0.1,
+        "traps": 0.15, "abs": 0.8,
+        "quads": 0.6, "hamstrings": 1.2, "glutes": 1.5, "calves": 0.15,
     },
     "womens_figure": {
-        "chest": 0.5, "back": 0.9,
-        "front_delt": 1.0, "side_delt": 1.2, "rear_delt": 0.8,
-        "biceps": 0.5, "triceps": 0.5, "forearms": 0.3,
-        "traps": 0.5, "abs": 0.7,
-        "quads": 0.8, "hamstrings": 0.8, "glutes": 1.0, "calves": 0.5,
+        # Figure: balanced X-frame with modest upper body + strong glutes/hams.
+        # Chest and arms should be toned, not bulky.
+        "chest": 0.35, "back": 0.8,
+        "front_delt": 0.8, "side_delt": 1.0, "rear_delt": 0.7,
+        "biceps": 0.35, "triceps": 0.4, "forearms": 0.2,
+        "traps": 0.3, "abs": 0.7,
+        "quads": 0.8, "hamstrings": 0.8, "glutes": 1.0, "calves": 0.4,
     },
     "womens_physique": {
-        "chest": 0.8, "back": 1.0,
-        "front_delt": 1.0, "side_delt": 1.0, "rear_delt": 0.9,
-        "biceps": 0.8, "triceps": 0.8, "forearms": 0.5,
-        "traps": 0.7, "abs": 0.8,
-        "quads": 0.9, "hamstrings": 0.9, "glutes": 0.9, "calves": 0.7,
+        # Women's physique: most muscle of all women's divisions, balanced.
+        "chest": 0.7, "back": 1.0,
+        "front_delt": 0.9, "side_delt": 1.0, "rear_delt": 0.8,
+        "biceps": 0.7, "triceps": 0.7, "forearms": 0.4,
+        "traps": 0.6, "abs": 0.8,
+        "quads": 0.9, "hamstrings": 0.9, "glutes": 0.9, "calves": 0.6,
     },
     "wellness": {
-        # Wellness: glutes and thighs are THE priority, upper body secondary
-        "chest": 0.4, "back": 0.7,
-        "front_delt": 0.7, "side_delt": 1.0, "rear_delt": 0.6,
-        "biceps": 0.4, "triceps": 0.4, "forearms": 0.2,
-        "traps": 0.3, "abs": 0.6,
-        "quads": 1.0, "hamstrings": 1.2, "glutes": 1.5, "calves": 0.3,
+        # Wellness: glutes and thighs are THE priority. Upper body is minimal —
+        # judges want a dramatic lower/upper contrast (hourglass).
+        "chest": 0.25, "back": 0.5,
+        "front_delt": 0.5, "side_delt": 0.7, "rear_delt": 0.4,
+        "biceps": 0.25, "triceps": 0.25, "forearms": 0.1,
+        "traps": 0.15, "abs": 0.6,
+        "quads": 1.0, "hamstrings": 1.2, "glutes": 1.5, "calves": 0.2,
     },
 }
 
@@ -154,21 +162,23 @@ _HQI_TO_MUSCLES: dict[str, list[str]] = {
 }
 
 # Volume landmarks (MEV, MAV, MRV)
+# Volume landmarks (MEV, MAV, MRV) — RP-aligned research values.
+# Keep in sync with periodization.py _BASE_VOLUME_LANDMARKS.
 _VOLUME_LANDMARKS: dict[str, tuple[int, int, int]] = {
-    "chest":      (6, 12, 22),
-    "back":       (8, 16, 25),
-    "quads":      (6, 12, 20),
-    "hamstrings": (4, 10, 16),
-    "glutes":     (4, 10, 18),
-    "front_delt": (4, 10, 18),
-    "side_delt":  (4, 12, 20),
-    "rear_delt":  (4, 12, 20),
-    "biceps":     (4, 14, 20),
-    "triceps":    (4, 14, 20),
-    "calves":     (6, 16, 22),
-    "abs":        (6, 12, 20),    # abs should always be trained — core stability for compounds
-    "traps":      (0, 8, 16),
-    "forearms":   (0, 8, 16),
+    "chest":      (6, 14, 22),
+    "back":       (10, 18, 25),
+    "quads":      (8, 14, 20),
+    "hamstrings": (6, 12, 16),
+    "glutes":     (4, 8, 16),
+    "front_delt": (3, 8, 14),
+    "side_delt":  (8, 18, 24),
+    "rear_delt":  (6, 14, 22),
+    "biceps":     (6, 16, 22),
+    "triceps":    (4, 10, 16),
+    "calves":     (8, 14, 20),
+    "abs":        (6, 12, 20),
+    "traps":      (0, 12, 20),
+    "forearms":   (0, 8, 14),
 }
 
 # Unmeasured muscle default gaps (cm)
@@ -320,17 +330,28 @@ def compute_volume_budget(
         imp = importance.get(muscle, 0.5)
         t = min(1.0, max(0.0, need / 10.0))
 
-        # For low-importance muscles, cap at MAV instead of MRV
-        # Gradual: imp=0 → cap at MEV, imp=0.3 → cap at MAV, imp=1.0 → cap at MRV
-        if imp < 0.3:
-            ceiling = mev + round((mav - mev) * (imp / 0.3))
+        # Importance-based ceiling: low-to-moderate importance muscles get maintenance
+        # volume only (MEV). This prevents women's divisions from overdeveloping
+        # upper body (bikini chest at 0.2, wellness biceps at 0.25) while still
+        # allowing growth for primary muscles (glutes at 1.5, shoulders at 1.4).
+        if imp <= 0.5:
+            ceiling = mev  # hard cap at MEV for low-to-moderate priority muscles
         elif imp < 0.8:
             ceiling = mav + round((mrv - mav) * ((imp - 0.3) / 0.5))
         else:
             ceiling = mrv
 
         raw = round(mev + t * (ceiling - mev))
-        volume[muscle] = max(mev, min(raw, ceiling))
+        vol = max(mev, min(raw, ceiling))
+
+        # For primary division muscles (imp >= 1.2), never drop below MAV.
+        # These muscles DEFINE the division — even when close to ideal, the
+        # athlete must maintain high volume to preserve the development.
+        # Example: bikini glutes, wellness hamstrings/glutes.
+        if imp >= 1.2:
+            vol = max(mav, vol)
+
+        volume[muscle] = vol
     return volume
 
 
@@ -513,17 +534,29 @@ def design_split(
                 day["total_sets"] += vol_per
                 placements += 1
 
-    # Division-specific filtering: remove or reduce hidden muscles
-    # For Men's Physique: keep legs in the split but mark as maintenance
-    # (volume budget already handles this via low need scores)
-    # Only fully remove a muscle if its need score is 0 AND it would free
-    # meaningful volume for visible muscles
+    # Division-specific filtering: remove hidden muscles from training days.
+    #
+    # Coach principle: in Men's Physique, legs and calves are hidden by board
+    # shorts. A real MP prep coach trains these muscles ONCE per week for
+    # maintenance — not 3x.  Muscles with importance ≤0.25 appear at most
+    # 1 day per week; muscles with importance ≤0.1 are removed entirely.
+    #
+    # First pass: count how many days each low-importance muscle appears
+    low_imp_muscles = {m for m in ALL_MUSCLES if importance.get(m, 0.5) <= 0.25}
+    low_imp_seen: dict[str, int] = {m: 0 for m in low_imp_muscles}
+
     for day in days:
         filtered = []
         for m in day["muscles"]:
-            # Only remove if importance is truly zero AND there's no gap
-            if importance.get(m, 0.5) <= 0.0 and need_scores.get(m, 0) <= 0.5:
+            imp = importance.get(m, 0.5)
+            if imp <= 0.1:
+                # Truly invisible muscles: remove entirely (e.g. glutes in MP)
                 continue
+            if m in low_imp_muscles:
+                if low_imp_seen[m] >= 1:
+                    # Already trained once this week — skip additional days
+                    continue
+                low_imp_seen[m] += 1
             filtered.append(m)
         day["muscles"] = filtered
 

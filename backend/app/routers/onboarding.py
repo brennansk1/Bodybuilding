@@ -1,7 +1,14 @@
 import logging
+import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
+
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _is_hhmm(v: str) -> bool:
+    return bool(_HHMM_RE.match(v))
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -216,7 +223,10 @@ async def get_profile(
         "ankle_circumference_cm": profile.ankle_circumference_cm,
         "manual_body_fat_pct": profile.manual_body_fat_pct,
         "training_start_time": profile.training_start_time,
+        "training_end_time": profile.training_end_time,
+        "training_time_anchor": profile.training_time_anchor or "start",
         "training_duration_min": profile.training_duration_min,
+        "program_start_date": str(profile.program_start_date) if profile.program_start_date else None,
         "cycle_tracking_enabled": profile.cycle_tracking_enabled,
         "cycle_start_date": str(profile.cycle_start_date) if profile.cycle_start_date else None,
         "available_equipment": profile.available_equipment or [],
@@ -239,37 +249,93 @@ async def update_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    allowed_fields = {
-        "age", "sex", "height_cm", "division", "competition_date",
-        "training_experience_years", "wrist_circumference_cm", "ankle_circumference_cm",
-        "manual_body_fat_pct", "training_start_time", "training_duration_min",
-        "cycle_tracking_enabled", "cycle_start_date", "program_start_date",
+    # Per-field type + range checks. We stay on a plain dict payload for
+    # backwards-compat with existing callers but gate each assignment.
+    numeric_int_fields = {
+        "age": (14, 100),
+        "training_experience_years": (0, 70),
+        "training_duration_min": (20, 240),
     }
+    numeric_float_fields = {
+        "height_cm": (120.0, 230.0),
+        "wrist_circumference_cm": (10.0, 30.0),
+        "ankle_circumference_cm": (15.0, 35.0),
+        "manual_body_fat_pct": (3.0, 60.0),
+    }
+    string_fields = {
+        "sex": {"male", "female"},
+        "division": {
+            "mens_open", "classic_physique", "mens_physique",
+            "womens_bikini", "womens_figure", "womens_physique", "wellness",
+        },
+        "training_time_anchor": {"start", "end"},
+    }
+    hhmm_fields = {"training_start_time", "training_end_time"}
+    bool_fields = {"cycle_tracking_enabled"}
+    date_fields = {"competition_date", "cycle_start_date", "program_start_date"}
     list_fields = {"available_equipment", "disliked_exercises", "injury_history"}
+    all_allowed = (
+        set(numeric_int_fields) | set(numeric_float_fields) | set(string_fields)
+        | hhmm_fields | bool_fields | date_fields
+    )
+
     for field, value in data.items():
-        if field in allowed_fields and value is not None:
-            if field == "competition_date" and isinstance(value, str):
-                from datetime import date as _d
-                try:
-                    value = _d.fromisoformat(value)
-                except ValueError:
-                    continue
-            if field == "cycle_start_date" and isinstance(value, str):
-                from datetime import date as _d
-                try:
-                    value = _d.fromisoformat(value)
-                except ValueError:
-                    continue
-            if field == "program_start_date" and isinstance(value, str):
-                from datetime import date as _d
-                try:
-                    value = _d.fromisoformat(value)
-                except ValueError:
-                    continue
-            setattr(profile, field, value)
-        elif field in list_fields:
-            if isinstance(value, list):
+        if field in list_fields:
+            if isinstance(value, list) and all(isinstance(x, str) for x in value):
                 setattr(profile, field, value)
+            continue
+
+        if field not in all_allowed or value is None:
+            continue
+
+        if field in numeric_int_fields:
+            try:
+                v = int(value)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail=f"{field} must be an integer")
+            lo, hi = numeric_int_fields[field]
+            if not (lo <= v <= hi):
+                raise HTTPException(status_code=422, detail=f"{field} must be between {lo} and {hi}")
+            setattr(profile, field, v)
+            continue
+
+        if field in numeric_float_fields:
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail=f"{field} must be a number")
+            lo, hi = numeric_float_fields[field]
+            if not (lo <= v <= hi):
+                raise HTTPException(status_code=422, detail=f"{field} must be between {lo} and {hi}")
+            setattr(profile, field, v)
+            continue
+
+        if field in string_fields:
+            if not isinstance(value, str) or value not in string_fields[field]:
+                raise HTTPException(status_code=422, detail=f"{field} must be one of {sorted(string_fields[field])}")
+            setattr(profile, field, value)
+            continue
+
+        if field in hhmm_fields:
+            if not isinstance(value, str) or not _is_hhmm(value):
+                raise HTTPException(status_code=422, detail=f"{field} must be HH:MM")
+            setattr(profile, field, value)
+            continue
+
+        if field in bool_fields:
+            if not isinstance(value, bool):
+                raise HTTPException(status_code=422, detail=f"{field} must be a boolean")
+            setattr(profile, field, value)
+            continue
+
+        if field in date_fields:
+            if isinstance(value, str):
+                from datetime import date as _d
+                try:
+                    setattr(profile, field, _d.fromisoformat(value))
+                except ValueError:
+                    raise HTTPException(status_code=422, detail=f"{field} must be YYYY-MM-DD")
+            continue
 
     if "preferences" in data and isinstance(data["preferences"], dict):
         # Force a copy so SQLAlchemy detects change in JSONB column

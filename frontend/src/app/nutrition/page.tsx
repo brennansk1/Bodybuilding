@@ -34,6 +34,7 @@ interface Prescription {
   training_day_macros?: DayMacros;
   rest_day_macros?: DayMacros;
   division_nutrition?: DivisionNutrition;
+  coach_warnings?: string[];
 }
 
 interface MealIngredient {
@@ -54,10 +55,44 @@ interface MealData {
   totals: { calories: number; protein_g: number; carbs_g: number; fat_g: number };
 }
 
+interface ProteinDistributionSummary {
+  all_meals_pass: boolean;
+  target_per_meal_g: number;
+  total_protein_g: number;
+  mps_dose_count: number;
+  recommended_meal_count: number;
+  violations: { label: string; protein_g: number }[];
+  explanation: string;
+}
+
+interface MicroCoverage {
+  coverage: Record<string, { intake: number; target: number; coverage_pct: number; deficient: boolean }>;
+  deficiencies: string[];
+  rdi_notes: string[];
+}
+
+interface HydrationPrescription {
+  baseline_ml: number;
+  training_add_ml: number;
+  total_ml: number;
+  total_oz: number;
+  per_hour_awake_ml: number;
+  coaching_note: string;
+}
+
 interface MealPlan {
   phase: string;
   training_day: MealData[];
   rest_day: MealData[];
+  protein_distribution?: {
+    training: ProteinDistributionSummary | null;
+    rest: ProteinDistributionSummary | null;
+  } | null;
+  hydration?: HydrationPrescription | null;
+  micronutrients?: {
+    training: MicroCoverage | null;
+    rest: MicroCoverage | null;
+  } | null;
 }
 
 interface DailyTotals {
@@ -140,6 +175,9 @@ export default function NutritionPage() {
   const [cheatDesc, setCheatDesc] = useState("");
   const [cheatCals, setCheatCals] = useState("");
   const [cheatLogged, setCheatLogged] = useState(false);
+  const [shoppingOpen, setShoppingOpen] = useState(false);
+  const [shoppingLoading, setShoppingLoading] = useState(false);
+  const [shoppingList, setShoppingList] = useState<Record<string, unknown[]> | null>(null);
 
   useEffect(() => {
     if (!loading && !user) { router.push("/auth/login"); return; }
@@ -163,14 +201,31 @@ export default function NutritionPage() {
   }, [user, loading, router]);
 
   const regenerateMealPlan = async () => {
+    if (!window.confirm("Regenerate meal plan? Your current plan will be replaced.")) return;
     setRegenerating(true);
     try {
       const res = await api.post<MealPlan>("/engine3/meal-plan/generate", {});
       setMealPlan(res);
-    } catch {
-      showToast("Failed to regenerate meal plan", "error");
+      showToast("Meal plan regenerated", "success");
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      showToast(detail || "Failed to regenerate meal plan", "error");
     }
     setRegenerating(false);
+  };
+
+  const loadShoppingList = async () => {
+    setShoppingLoading(true);
+    try {
+      const res = await api.get<Record<string, unknown[]>>("/engine3/shopping-list/weekly");
+      setShoppingList(res);
+      setShoppingOpen(true);
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      showToast(detail || "Failed to load shopping list", "error");
+    } finally {
+      setShoppingLoading(false);
+    }
   };
 
   const setAdherence = (mealNum: number, value: number) => {
@@ -186,7 +241,10 @@ export default function NutritionPage() {
     return { calories: rx.target_calories, protein_g: rx.protein_g, carbs_g: rx.carbs_g, fat_g: rx.fat_g };
   })();
 
-  const meals = mealPlan ? (dayTab === "training" ? mealPlan.training_day : mealPlan.rest_day) : [];
+  const rawMeals = mealPlan ? (dayTab === "training" ? mealPlan.training_day : mealPlan.rest_day) : [];
+  // Hide blank meals (e.g., fasted pre-workout for early-morning lifters).
+  const meals = rawMeals.filter(m => m.ingredients && m.ingredients.length > 0);
+  const gramsToOz = (g: number) => (g / 28.3495).toFixed(1);
   const loggedCount = Object.values(mealAdherence).filter(v => v > 0).length;
 
   const pPct = activeMacros ? Math.round((activeMacros.protein_g * 4 / activeMacros.calories) * 100) : 0;
@@ -205,9 +263,18 @@ export default function NutritionPage() {
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
         {!rx ? (
-          <div className="card text-center py-8">
+          <div className="card text-center py-8 space-y-3">
             <p className="text-jungle-muted text-sm">No nutrition prescription yet.</p>
-            <p className="text-jungle-dim text-xs mt-1">Complete a check-in to generate your macros.</p>
+            <p className="text-jungle-dim text-xs">
+              Log a body weight and run your first check-in to generate personalized macros.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push("/checkin")}
+              className="btn-primary w-full"
+            >
+              Go to Check-in
+            </button>
           </div>
         ) : (
           <>
@@ -360,6 +427,7 @@ export default function NutritionPage() {
                                 <span className={`flex-1 ${isLogged && adh >= 8 ? "text-jungle-dim line-through" : "text-jungle-muted"}`}>{ing.name}</span>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="text-jungle-dim font-mono w-10 text-right">{ing.quantity_g}g</span>
+                                  <span className="text-[9px] text-jungle-dim/70 font-mono w-10 text-right">{gramsToOz(ing.quantity_g)}oz</span>
                                   <span className="text-[9px] text-blue-400/70 w-6 text-right">{Math.round(ing.protein_g)}p</span>
                                   <span className="text-[9px] text-amber-400/70 w-6 text-right">{Math.round(ing.carbs_g)}c</span>
                                   <span className="text-[9px] text-red-400/70 w-6 text-right">{Math.round(ing.fat_g)}f</span>
@@ -398,6 +466,78 @@ export default function NutritionPage() {
                 </>
               )}
             </div>
+
+            {/* ── Coach Warnings ── */}
+            {rx.coach_warnings && rx.coach_warnings.length > 0 && (
+              <div className="card border-l-4 border-amber-500/70 space-y-1.5">
+                <h3 className="text-[10px] text-amber-400 uppercase tracking-wider font-bold">
+                  Coach Notes
+                </h3>
+                {rx.coach_warnings.map((note, i) => (
+                  <p key={i} className="text-[11px] text-jungle-muted leading-snug">
+                    {note}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* ── Protein Distribution + Hydration ── */}
+            {mealPlan && (mealPlan.protein_distribution || mealPlan.hydration) && (
+              <div className="card space-y-3">
+                <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">
+                  Coach Checks
+                </h2>
+                {mealPlan.protein_distribution && mealPlan.protein_distribution[dayTab] && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-jungle-dim uppercase tracking-wider">Protein Distribution</span>
+                      <span className={`text-[10px] font-bold ${mealPlan.protein_distribution[dayTab]!.all_meals_pass ? "text-green-400" : "text-amber-400"}`}>
+                        {mealPlan.protein_distribution[dayTab]!.mps_dose_count}/{mealPlan.protein_distribution[dayTab]!.recommended_meal_count} MPS doses
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-jungle-muted leading-tight">
+                      {mealPlan.protein_distribution[dayTab]!.explanation}
+                    </p>
+                    {mealPlan.protein_distribution[dayTab]!.violations.length > 0 && (
+                      <div className="text-[10px] text-amber-400">
+                        Low-protein meals: {mealPlan.protein_distribution[dayTab]!.violations.map(v => v.label).join(", ")}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {mealPlan.hydration && (
+                  <div className="border-t border-jungle-border/30 pt-2.5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-jungle-dim uppercase tracking-wider">Hydration</span>
+                      <span className="text-sm font-bold text-blue-400">{(mealPlan.hydration.total_ml / 1000).toFixed(1)} L · {mealPlan.hydration.total_oz} oz</span>
+                    </div>
+                    <p className="text-[10px] text-jungle-muted leading-tight">
+                      ~{mealPlan.hydration.per_hour_awake_ml} ml/hour awake. {mealPlan.hydration.coaching_note}
+                    </p>
+                  </div>
+                )}
+                {mealPlan.micronutrients && mealPlan.micronutrients[dayTab] && mealPlan.micronutrients[dayTab]!.deficiencies.length > 0 && (
+                  <div className="border-t border-jungle-border/30 pt-2.5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-jungle-dim uppercase tracking-wider">Micronutrient Gaps</span>
+                      <span className="text-[10px] text-amber-400 font-semibold">
+                        {mealPlan.micronutrients[dayTab]!.deficiencies.length} flagged
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {mealPlan.micronutrients[dayTab]!.deficiencies.map((k) => {
+                        const data = mealPlan.micronutrients![dayTab]!.coverage[k];
+                        return (
+                          <span key={k} className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400">
+                            {k.replace(/_/g, " ")} {data.coverage_pct.toFixed(0)}%
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Cheat Meal Logger ── */}
             <div className="card">
@@ -465,15 +605,62 @@ export default function NutritionPage() {
                 Weekly Review
               </a>
               <button
-                onClick={() => showToast("Shopping list generating...", "info")}
-                className="btn-secondary text-center text-xs py-2.5"
+                onClick={loadShoppingList}
+                disabled={shoppingLoading}
+                className="btn-secondary text-center text-xs py-2.5 disabled:opacity-50"
               >
-                Shopping List
+                {shoppingLoading ? "Loading..." : "Shopping List"}
               </button>
             </div>
           </>
         )}
       </main>
+
+      {shoppingOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
+          onClick={() => setShoppingOpen(false)}
+        >
+          <div
+            className="bg-jungle-card border border-jungle-border rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-jungle-card/95 backdrop-blur-md border-b border-jungle-border px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Weekly Shopping List</h3>
+              <button
+                onClick={() => setShoppingOpen(false)}
+                className="text-jungle-dim hover:text-jungle-accent text-xl leading-none px-2"
+                aria-label="Close shopping list"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {shoppingList && Object.keys(shoppingList).length > 0 ? (
+                Object.entries(shoppingList).map(([section, items]) => (
+                  <div key={section}>
+                    <p className="text-[10px] text-jungle-dim uppercase tracking-wider mb-1.5">
+                      {section.replace(/_/g, " ")}
+                    </p>
+                    <ul className="space-y-1">
+                      {(items as Array<{ name: string; quantity_g: number; quantity_display?: string }>).map((item, i) => (
+                        <li key={i} className="flex items-center justify-between text-sm border-b border-jungle-border/30 py-1.5">
+                          <span className="text-jungle-text">{item.name}</span>
+                          <span className="text-jungle-dim font-mono text-xs">
+                            {item.quantity_display || `${Math.round(item.quantity_g)}g`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              ) : (
+                <p className="text-jungle-dim text-xs text-center py-8">No shopping list generated yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -120,6 +120,124 @@ _MUSCLE_ORDER = [
     "shoulders", "biceps", "triceps", "forearms", "calves", "abs", "traps",
 ]
 
+# Every workout should hit at least this many distinct exercises. A real
+# bodybuilder session is ~2 compounds + 2-3 isolations + an FST-7 finisher;
+# falling below this usually means a budget-driven skeleton day that we fill
+# out with accessories from the day's remaining candidate pool.
+MIN_EXERCISES_PER_SESSION = 5
+
+# ---------------------------------------------------------------------------
+# RIR ↔ RPE conversion
+# ---------------------------------------------------------------------------
+# Industry-standard mapping (Zourdos 2016). RIR 0 = failure = RPE 10,
+# RIR 1 = one-rep-left = RPE 9, ... RIR 4+ = RPE 6 (very light).
+# Athletes speak in RIR during the set ("I had two in the tank"), so we
+# prescribe RIR on the set, but expose both via prescribed_rpe.
+_RIR_TO_RPE = {0: 10.0, 1: 9.0, 2: 8.0, 3: 7.0, 4: 6.0, 5: 5.0}
+
+
+def rir_to_rpe(rir: int | None) -> float | None:
+    if rir is None:
+        return None
+    if rir < 0:
+        return 10.0
+    if rir >= 5:
+        return 5.0
+    return _RIR_TO_RPE.get(rir, 8.0)
+
+
+_COMPOUND_PATTERNS_SET = frozenset({"push", "pull", "squat", "hinge", "lunge", "carry"})
+
+
+def _is_compound(movement_pattern: str | None) -> bool:
+    return (movement_pattern or "").lower() in _COMPOUND_PATTERNS_SET
+
+
+# ---------------------------------------------------------------------------
+# Tempo prescription
+# ---------------------------------------------------------------------------
+#
+# Tempo notation: "E-P1-C-P2" (seconds eccentric - pause at stretch -
+# concentric - pause at contraction). Taken from Poliquin / NSCA
+# conventions; a 3-1-1-0 tempo means 3 s lowering, 1 s hold at stretch,
+# 1 s lift, 0 s hold at top.
+#
+# Compounds get controlled eccentrics for tendon health and stimulus.
+# Isolations get a stretch pause to emphasise lengthened-position tension
+# (Schoenfeld 2020: lengthened-position training grows muscle ~1.5× faster).
+
+_TEMPO_BY_DUP: dict[str, dict[str, str]] = {
+    "heavy":    {"compound": "3-0-1-0", "isolation": "2-0-1-0"},
+    "moderate": {"compound": "3-1-1-0", "isolation": "3-1-1-1"},
+    "light":    {"compound": "2-0-2-0", "isolation": "3-2-1-1"},
+}
+
+
+def resolve_tempo(movement_pattern: str | None, dup_profile: str) -> str:
+    is_comp = _is_compound(movement_pattern)
+    bucket = _TEMPO_BY_DUP.get((dup_profile or "moderate").lower(), _TEMPO_BY_DUP["moderate"])
+    return bucket["compound" if is_comp else "isolation"]
+
+
+# ---------------------------------------------------------------------------
+# Intensification technique selector
+# ---------------------------------------------------------------------------
+#
+# Only the MRV (peak overload) week and extreme FST-7 mode get intensification
+# layered onto prescribed straight sets. We pick ONE technique per muscle per
+# session and tag only the LAST working set of an isolation exercise so the
+# athlete knows to push past failure on that set specifically.
+#
+# Techniques:
+#   drop_set       — reduce weight ~25%, continue to failure, up to 2 drops.
+#                    Best on pressdowns, lateral raises, curls, leg ext.
+#   rest_pause     — failure, 15 s rest, 3–5 more reps, 15 s rest, 3–5 more.
+#                    Best on compound machines (hack squat, chest press).
+#   myo_reps       — activation set to failure, then mini-sets of 3–5 reps
+#                    with 10–15 s rest until 25–30 total reps.
+#                    Best on cable isolation finishers.
+#   lengthened_partial — after concentric failure, continue ~5 quarter-reps
+#                    in the stretched portion of the ROM.
+
+_TECHNIQUE_BY_EQUIPMENT: dict[str, str] = {
+    "cable":   "myo_reps",
+    "machine": "rest_pause",
+    "dumbbell": "drop_set",
+}
+
+_TECHNIQUE_COACHING: dict[str, str] = {
+    "drop_set": "After the last rep, drop weight ~25% and grind to failure. Repeat once if possible.",
+    "rest_pause": "Take the set to failure, rest 15 s, pump 3–5 more reps, rest 15 s, pump 3–5 more.",
+    "myo_reps": "Activation set to failure, then 4–5 mini-sets of 3–5 reps with 10 s rest. Stop at 25 total reps.",
+    "lengthened_partial": "At concentric failure, keep pumping quarter-reps in the stretched half of the ROM for 5 more.",
+    "fst7": "7 sets of 8–12 with 30–45 s rest. On the last 2 reps, hold the stretched position 1–2 s for fascial expansion.",
+}
+
+
+def resolve_intensification(
+    equipment: str | None,
+    movement_pattern: str | None,
+    week_num: int,
+    *,
+    muscle: str,
+    already_applied: set,
+) -> str | None:
+    """
+    Decide whether to tag a set with an intensification technique. Returns
+    the technique name (one of the keys in ``_TECHNIQUE_COACHING``) or None.
+
+    Only triggers on MRV week (5), only on isolation exercises, and only
+    one tag per muscle per session.
+    """
+    if week_num != 5 or muscle in already_applied:
+        return None
+    if _is_compound(movement_pattern):
+        return None
+    eq = (equipment or "").lower()
+    if eq not in ("cable", "machine", "dumbbell"):
+        return None
+    return _TECHNIQUE_BY_EQUIPMENT.get(eq)
+
 # Name keywords for shoulder sub-role filtering
 _REAR_DELT_KEYWORDS = {"rear", "face", "reverse", "bent", "fly", "flye", "pull apart"}
 _SIDE_DELT_KEYWORDS = {"lateral", "side raise", "upright"}
@@ -170,15 +288,19 @@ _BILATERAL_PAIRS: dict[str, tuple[str, str]] = {
 _UNILATERAL_KEYWORDS = {"dumbbell", "single", "unilateral", "one-arm", "one arm", "cable"}
 
 # Phase-aware volume modifiers (cross-engine: E3 → E2)
-# During caloric deficit, recovery is impaired — reduce training volume
+# During caloric deficit, recovery is impaired — reduce training volume.
+# Peak week is the standard bodybuilding taper: halve volume, hold intensity.
+# The protocol comes from Helms / Norton contest-prep literature: athletes
+# drop to ~50% working sets so systemic fatigue dissipates, but keep the
+# prescribed loads so the nervous system stays primed for stage posing.
 _PHASE_VOLUME_MODIFIER: dict[str, float] = {
     "bulk": 1.0,
     "lean_bulk": 1.0,
     "offseason": 1.0,
     "maintain": 1.0,
     "cut": 0.85,        # -15% volume during cut
-    "peak_week": 0.70,  # -30% volume during peak
-    "contest": 0.50,    # minimal volume
+    "peak_week": 0.50,  # -50% volume during peak week taper
+    "contest": 0.40,    # minimal volume on show day
     "restoration": 0.75,  # gradual ramp-back post-show
 }
 
@@ -377,14 +499,12 @@ def _allocate_sets(
     if remaining > 0:
         def _sort_key(e):
             eff = e.biomechanical_efficiency
-            # Open Division SFR Bias Fix: Massive athletes require inherently more 
+            # Open Division SFR Bias Fix: Massive athletes require inherently more
             # stabilization energy, drastically buffing the SFR of supported plates over barbells
             if division == "mens_open" and getattr(e, "equipment", "").lower() in ("machine", "cable", "plate_loaded"):
                 eff = min(1.0, eff * 1.25)
-                
+
             sfr = (eff / max(e.fatigue_ratio, 0.1)) * priority
-            if e.id in prev_ids:
-                sfr *= 0.70
             tier = _equipment_tier(e.equipment)
             if prefer_unilateral and _is_unilateral(e):
                 tier = max(0, tier - 1)
@@ -393,10 +513,14 @@ def _allocate_sets(
                 tier += 3
             return (tier, -sfr)
 
-        fallback = sorted(
-            [e for e in candidates if e.id not in used_ex_ids],
-            key=_sort_key,
-        )
+        # Split into fresh vs prev-mesocycle pools, sort each independently,
+        # and prefer fresh exercises until exhausted. This enforces variety
+        # rotation between mesocycles instead of a soft SFR penalty that
+        # still let the same top picks repeat every block.
+        available = [e for e in candidates if e.id not in used_ex_ids]
+        fresh_pool = sorted([e for e in available if e.id not in prev_ids], key=_sort_key)
+        stale_pool = sorted([e for e in available if e.id in prev_ids], key=_sort_key)
+        fallback = fresh_pool + stale_pool
         for fb_pos, ex in enumerate(fallback):
             if remaining <= 0:
                 break
@@ -517,18 +641,30 @@ _FST7_TARGETS: dict[str, list[str]] = {
 # Preferred FST-7 finisher exercise per body part (from Hany Rambod's protocols).
 # These are machine/cable isolations — the best implements for short-rest pump work.
 _FST7_FINISHER_PREFERENCES: dict[str, list[str]] = {
-    "chest":      ["pec deck", "cable fly", "machine fly"],
-    "back":       ["straight-arm", "pulldown", "machine pullover"],
-    "side_delt":  ["machine lateral raise", "cable lateral raise"],
-    "rear_delt":  ["reverse pec deck", "cable face pull", "machine reverse fly"],
-    "front_delt": ["machine shoulder press"],
-    "quads":      ["leg extension", "leg press"],
+    "chest":      ["pec deck", "cable fly", "cable crossover", "incline dumbbell fly", "machine fly"],
+    "back":       ["straight-arm pulldown", "rope straight-arm", "machine pullover", "dumbbell pullover"],
+    "lats":       ["straight-arm pulldown", "rope straight-arm", "machine pullover", "dumbbell pullover"],
+    "side_delt":  ["machine lateral raise", "cable lateral raise", "seated dumbbell lateral", "leaning cable lateral"],
+    "rear_delt":  ["reverse pec deck", "cable face pull", "cable reverse fly", "machine reverse fly"],
+    "front_delt": ["machine shoulder press", "cable front raise"],
+    "quads":      ["leg extension", "sissy squat", "hack squat machine"],
     "hamstrings": ["seated leg curl", "lying leg curl"],
-    "glutes":     ["hip abduction", "cable kickback", "machine kickback"],
-    "biceps":     ["cable curl", "spider curl", "machine curl"],
-    "triceps":    ["cable pushdown", "rope pushdown", "overhead cable"],
-    "calves":     ["standing calf raise", "seated calf raise", "leg press calf"],
+    "glutes":     ["hip abduction", "cable kickback", "machine kickback", "hip thrust machine"],
+    "biceps":     ["preacher curl", "spider curl", "cable curl", "machine curl"],
+    "triceps":    ["rope pressdown", "cable pushdown", "overhead cable extension", "cable kickback"],
+    "calves":     ["seated calf raise", "standing calf raise", "leg press calf"],
 }
+
+# Movement patterns that are considered compounds — NEVER convert these to FST-7.
+_COMPOUND_PATTERNS: frozenset[str] = frozenset({"push", "pull", "squat", "hinge", "lunge", "carry"})
+
+# Name tokens that indicate a compound movement regardless of equipment labelling.
+# A bodybuilder would never turn a barbell press or a deadlift into a 7-set pump finisher.
+_COMPOUND_NAME_TOKENS: tuple[str, ...] = (
+    "squat", "deadlift", "bench press", "barbell press", "overhead press",
+    "military press", "row", "clean", "snatch", "pull-up", "pullup",
+    "chin-up", "chinup", "dip", "push press",
+)
 
 # FST-7 intensity by mode (from mesocycle week data)
 _FST7_INTENSITY: dict[str, dict] = {
@@ -537,6 +673,76 @@ _FST7_INTENSITY: dict[str, dict] = {
     "extreme":   {"rest_seconds": 30, "rir": 0, "reps": (8, 12)},   # Week 5
     "none":      {},  # Deload — no FST-7
 }
+
+
+def estimate_session_duration_minutes(session_sets: list) -> int:
+    """
+    Estimate how long a session will take given a list of TrainingSet rows.
+
+    Model:
+      - Each working set: ~45 s under tension + rest_seconds between sets.
+      - Each warm-up set: ~25 s work + 60 s rest.
+      - Per distinct exercise: + 90 s for setup/transition (load plates, find bench).
+      - Fixed 8 min general warm-up at the start.
+
+    Returns a whole number of minutes. Returns 0 when session has no sets.
+    """
+    if not session_sets:
+        return 0
+
+    total_seconds = 8 * 60  # general warm-up
+    distinct_exercises: set = set()
+    for ts in session_sets:
+        ex_id = getattr(ts, "exercise_id", None)
+        if ex_id is not None:
+            distinct_exercises.add(ex_id)
+        rest = getattr(ts, "rest_seconds", None) or 90
+        if getattr(ts, "is_warmup", False):
+            total_seconds += 25 + min(rest, 60)
+        else:
+            total_seconds += 45 + rest
+
+    # Subtract the last set's rest — you don't rest after the last set.
+    # Use average rest as a rough correction.
+    total_seconds -= 90
+
+    total_seconds += 90 * len(distinct_exercises)
+
+    return max(0, round(total_seconds / 60))
+
+
+def compute_workout_window(
+    anchor_time_hhmm: str | None,
+    anchor_mode: str | None,
+    duration_min: int,
+) -> dict[str, str | None]:
+    """
+    Given an HH:MM anchor (the time the user pins), the anchor mode
+    ("start" | "end"), and the estimated duration in minutes, return both
+    the start and end of the workout window as HH:MM strings.
+
+    If the anchor is missing or malformed, returns {"start": None, "end": None}.
+    """
+    if not anchor_time_hhmm or ":" not in anchor_time_hhmm:
+        return {"start": None, "end": None}
+    try:
+        hh, mm = anchor_time_hhmm.split(":")
+        anchor_total = int(hh) * 60 + int(mm)
+    except (ValueError, TypeError):
+        return {"start": None, "end": None}
+
+    if (anchor_mode or "start").lower() == "end":
+        start_total = anchor_total - duration_min
+        end_total = anchor_total
+    else:
+        start_total = anchor_total
+        end_total = anchor_total + duration_min
+
+    def _fmt(total: int) -> str:
+        total = total % (24 * 60)
+        return f"{total // 60:02d}:{total % 60:02d}"
+
+    return {"start": _fmt(start_total), "end": _fmt(end_total)}
 
 
 def _compute_rest_seconds(
@@ -575,10 +781,28 @@ def _compute_rest_seconds(
         return 90  # 1:30 — moderate default
 
 
+def _is_isolation_candidate(ex_name: str, equipment: str | None, movement_pattern: str | None) -> bool:
+    """
+    True only if this exercise is a bodybuilder-grade FST-7 finisher.
+    Rejects anything that's a compound movement, a barbell press/squat/row,
+    or bodyweight work. Requires cable/machine/dumbbell implement.
+    """
+    eq_lower = (equipment or "").lower()
+    if eq_lower not in ("machine", "cable", "dumbbell"):
+        return False
+    pattern = (movement_pattern or "").lower()
+    if pattern in _COMPOUND_PATTERNS:
+        return False
+    name_lower = ex_name.lower()
+    if any(tok in name_lower for tok in _COMPOUND_NAME_TOKENS):
+        return False
+    return True
+
+
 def _apply_session_fst7(
     db_session,  # AsyncSession
     session,     # TrainingSession
-    session_sets: list,  # list of (TrainingSet, exercise_name, muscle, equipment)
+    session_sets: list,  # list of (TrainingSet, exercise_name, muscle, equipment, movement_pattern)
     fst7_mode: str,
     division: str,
     hqi_scores: dict[str, float],
@@ -586,14 +810,17 @@ def _apply_session_fst7(
     """
     Apply FST-7 protocol at the session level.
 
-    Picks ONE exercise from the session to become the FST-7 finisher:
+    Picks ONE isolation exercise from the session to become the FST-7 finisher:
     1. Filter to division-priority muscles present in this session
     2. Rank by HQI (lowest = most lagging = highest priority)
-    3. Find the best machine/cable isolation for that muscle
+    3. Find the best machine/cable isolation for that muscle, preferring the
+       Hany Rambod finisher list; compounds are rejected outright.
     4. Convert it to 7 FST-7 sets with mode-appropriate rest_seconds
     5. Mark all those sets with is_fst7=True
 
-    Skips entirely if fst7_mode is "none" (deload weeks).
+    Skips entirely if fst7_mode is "none" (deload weeks). If no bodybuilder-grade
+    isolation exists in the session for any priority muscle, the function simply
+    skips rather than converting a compound.
     """
     if fst7_mode == "none" or not session_sets:
         return
@@ -610,7 +837,9 @@ def _apply_session_fst7(
 
     # 2. Find which target muscles are actually in this session
     session_muscles = set()
-    for ts, ex_name, muscle, eq in session_sets:
+    for row in session_sets:
+        ts = row[0]
+        muscle = row[2]
         if not ts.is_warmup:
             session_muscles.add(muscle)
 
@@ -620,56 +849,77 @@ def _apply_session_fst7(
 
     # 3. Rank by HQI — lowest score = most lagging = best FST-7 target
     eligible_muscles.sort(key=lambda m: hqi_scores.get(m, 70.0))
-    chosen_muscle = eligible_muscles[0]
 
-    # 4. Find the best machine/cable isolation exercise for that muscle
-    finisher_prefs = _FST7_FINISHER_PREFERENCES.get(chosen_muscle, [])
     chosen_set = None
     chosen_ex_name = None
+    chosen_muscle = None
 
-    # First pass: match against finisher preferences
-    for ts, ex_name, muscle, eq in reversed(session_sets):
-        if muscle != chosen_muscle or ts.is_warmup:
-            continue
-        eq_lower = (eq or "").lower()
-        name_lower = ex_name.lower()
-        if eq_lower not in ("machine", "cable", "dumbbell"):
-            continue
-        if any(pref in name_lower for pref in finisher_prefs):
-            chosen_set = ts
-            chosen_ex_name = ex_name
-            break
+    # Walk muscles in HQI order; for each, try to find a valid isolation.
+    for candidate_muscle in eligible_muscles:
+        finisher_prefs = _FST7_FINISHER_PREFERENCES.get(candidate_muscle, [])
 
-    # Second pass: any machine/cable exercise for that muscle
-    if not chosen_set:
-        for ts, ex_name, muscle, eq in reversed(session_sets):
-            if muscle != chosen_muscle or ts.is_warmup:
+        # First pass: match preference list AND pass isolation gate.
+        for row in reversed(session_sets):
+            ts, ex_name, muscle, eq = row[0], row[1], row[2], row[3]
+            mp = row[4] if len(row) > 4 else None
+            if muscle != candidate_muscle or ts.is_warmup:
                 continue
-            eq_lower = (eq or "").lower()
+            if not _is_isolation_candidate(ex_name, eq, mp):
+                continue
             name_lower = ex_name.lower()
-            if eq_lower in ("machine", "cable", "dumbbell") and "squat" not in name_lower and "deadlift" not in name_lower:
+            if any(pref in name_lower for pref in finisher_prefs):
                 chosen_set = ts
                 chosen_ex_name = ex_name
+                chosen_muscle = candidate_muscle
                 break
 
+        if chosen_set:
+            break
+
+        # Second pass: any valid isolation for this muscle.
+        for row in reversed(session_sets):
+            ts, ex_name, muscle, eq = row[0], row[1], row[2], row[3]
+            mp = row[4] if len(row) > 4 else None
+            if muscle != candidate_muscle or ts.is_warmup:
+                continue
+            if not _is_isolation_candidate(ex_name, eq, mp):
+                continue
+            chosen_set = ts
+            chosen_ex_name = ex_name
+            chosen_muscle = candidate_muscle
+            break
+
+        if chosen_set:
+            break
+
     if not chosen_set:
+        # No bodybuilder-grade isolation exists in this session — skip rather
+        # than butchering a compound into 7 short-rest sets.
         return
 
-    # 5. Convert all sets for this exercise to FST-7 protocol
+    # 5. Convert all sets for this exercise to FST-7 protocol.
+    # FST-7 finishers are taken to RIR 0 (failure) per Hany Rambod's protocol —
+    # the short 30-45s rest enforces this anyway.
     fst7_rep_target = (fst7_reps[0] + fst7_reps[1]) // 2
     fst7_sets_applied = 0
-    for ts, ex_name, muscle, eq in session_sets:
+    for row in session_sets:
+        ts = row[0]
         if ts.exercise_id == chosen_set.exercise_id and not ts.is_warmup:
             ts.is_fst7 = True
             ts.rest_seconds = rest_sec
             ts.prescribed_reps = fst7_rep_target
+            ts.prescribed_rir = 0
+            ts.prescribed_rpe = 10.0
+            # Flag technique so the frontend can show a lengthened-partials cue
+            # on the final 2-3 reps (stretch-focused fascial work).
+            ts.set_technique = "fst7"
             fst7_sets_applied += 1
 
     # If the exercise has fewer than 7 sets, add more to reach 7
     sets_to_add = 7 - fst7_sets_applied
     if sets_to_add > 0:
         # Find the highest set_number in the session
-        max_set_num = max(ts.set_number for ts, _, _, _ in session_sets)
+        max_set_num = max(row[0].set_number for row in session_sets)
         for i in range(sets_to_add):
             new_set = TrainingSet(
                 session_id=session.id,
@@ -677,9 +927,12 @@ def _apply_session_fst7(
                 set_number=max_set_num + 1 + i,
                 prescribed_reps=fst7_rep_target,
                 prescribed_weight_kg=chosen_set.prescribed_weight_kg,
+                prescribed_rir=0,
+                prescribed_rpe=10.0,
                 is_warmup=False,
                 rest_seconds=rest_sec,
                 is_fst7=True,
+                set_technique="fst7",
             )
             db_session.add(new_set)
 
@@ -1058,6 +1311,15 @@ async def generate_program_sessions(
             first_exercise_done: set[str] = set()
             # Track exercises for CNS fatigue budget validation
             session_exercise_dicts: list[dict] = []
+            # Track distinct exercise IDs added so we can enforce MIN_EXERCISES_PER_SESSION.
+            session_exercise_ids: set = set()
+            # Keep per-muscle candidate pools so the top-up pass can reach for them.
+            session_candidates_by_muscle: dict[str, list] = {}
+            # Remember the DUP profile for the top-up pass (muscles share day DUP).
+            session_dup_profile = "moderate"
+            session_rep_range = (8, 12)
+            # One intensification technique per muscle per session (MRV week only).
+            intensified_muscles: set = set()
 
             set_number = 1
             for db_muscle in ordered:
@@ -1109,6 +1371,9 @@ async def generate_program_sessions(
                 day_dup_profile = day.get("dup_profile", "moderate")
                 day_intensity_range = day.get("intensity_range", (0.65, 0.75))
                 day_rep_range = day.get("rep_range", (8, 12))
+                session_dup_profile = day_dup_profile
+                session_rep_range = day_rep_range
+                session_candidates_by_muscle[db_muscle] = list(candidates)
 
                 # Priority (0-10) from HQI — default 5.0 (neutral)
                 priority = muscle_priority.get(db_muscle, 5.0)
@@ -1212,19 +1477,49 @@ async def generate_program_sessions(
                         need_warmup = False
                         first_exercise_done.add(db_muscle)
 
-                    for _ in range(n_sets):
+                    # Resolve target RIR for this exercise from the week phase.
+                    # Compounds use `rir`, isolations use `rir_isolation` (may
+                    # differ in MRV week: compound RIR 1, isolation RIR 0).
+                    if _is_compound(ex.movement_pattern):
+                        set_rir = week.get("rir", 2)
+                    else:
+                        set_rir = week.get("rir_isolation", week.get("rir", 2))
+                    set_rpe = rir_to_rpe(set_rir)
+                    set_tempo = resolve_tempo(ex.movement_pattern, day_dup_profile)
+
+                    # Intensification (MRV week only): tag the LAST working
+                    # set of one isolation exercise per muscle.
+                    intensification = resolve_intensification(
+                        getattr(ex, "equipment", None),
+                        ex.movement_pattern,
+                        week_num,
+                        muscle=db_muscle,
+                        already_applied=intensified_muscles,
+                    )
+                    intensified_set_index = n_sets - 1 if intensification else -1
+
+                    for i in range(n_sets):
+                        technique = intensification if i == intensified_set_index else None
                         ts = TrainingSet(
                             session_id=session.id,
                             exercise_id=ex.id,
                             set_number=set_number,
                             prescribed_reps=rep_target,
                             prescribed_weight_kg=prescribed_weight,
+                            prescribed_rir=set_rir,
+                            prescribed_rpe=set_rpe,
                             is_warmup=False,
                             rest_seconds=working_rest,
+                            tempo=set_tempo,
+                            set_technique=technique,
                         )
                         db.add(ts)
                         set_number += 1
 
+                    if intensification:
+                        intensified_muscles.add(db_muscle)
+
+                    session_exercise_ids.add(ex.id)
                     this_mesocycle_exercise_ids.append(str(ex.id))
 
                     # Accumulate overflow from this exercise's movement pattern
@@ -1242,6 +1537,85 @@ async def generate_program_sessions(
                         "rpe": 7.5,  # Default RPE estimate for prescribed sessions
                     })
 
+            # -------------------------------------------------------------------
+            # Minimum Exercise Guard
+            # -------------------------------------------------------------------
+            # If the set-budget logic produced a skeletal day (e.g., chest day
+            # with only 3 exercises), pad it out with accessories from the day's
+            # remaining candidate pool until we hit MIN_EXERCISES_PER_SESSION.
+            # Accessories are 3 sets each at day's rep range + standard rest.
+            if len(session_exercise_ids) < MIN_EXERCISES_PER_SESSION and session_candidates_by_muscle:
+                # Walk muscles in training order so compounds-first priority is
+                # preserved: we pad biggest muscles first.
+                padded_muscles = sorted(
+                    session_candidates_by_muscle.keys(),
+                    key=lambda m: _MUSCLE_ORDER.index(m) if m in _MUSCLE_ORDER else 99,
+                )
+                accessory_rep_min, accessory_rep_max = session_rep_range
+                accessory_rep_target = (accessory_rep_min + accessory_rep_max) // 2
+                accessory_sets_each = 3
+
+                while len(session_exercise_ids) < MIN_EXERCISES_PER_SESSION:
+                    added_one = False
+                    for pad_muscle in padded_muscles:
+                        if len(session_exercise_ids) >= MIN_EXERCISES_PER_SESSION:
+                            break
+                        pool = session_candidates_by_muscle.get(pad_muscle, [])
+                        for cand in pool:
+                            if cand.id in session_exercise_ids:
+                                continue
+                            # Prefer isolations for the top-up — the compounds
+                            # are already in; we're filling variety, not hammer sets.
+                            cand_pattern = (getattr(cand, "movement_pattern", "") or "").lower()
+                            cand_load = getattr(cand, "load_type", "") or ""
+                            cand_rest = _compute_rest_seconds(cand_pattern, cand_load, session_dup_profile)
+
+                            cand_weight = None
+                            if cand.name.lower() in baselines:
+                                cand_weight = round(
+                                    compute_weight_from_1rm(baselines[cand.name.lower()], accessory_rep_target), 1
+                                )
+                            if cand_weight is None and user_body_weight_kg > 0:
+                                cand_weight = estimate_seed_weight(
+                                    user_body_weight_kg,
+                                    getattr(cand, "equipment", "barbell"),
+                                    pad_muscle,
+                                    accessory_rep_target,
+                                )
+
+                            acc_rir = week.get("rir_isolation", week.get("rir", 2)) if not _is_compound(cand_pattern) else week.get("rir", 2)
+                            acc_rpe = rir_to_rpe(acc_rir)
+                            acc_tempo = resolve_tempo(cand_pattern, session_dup_profile)
+                            for _ in range(accessory_sets_each):
+                                ts = TrainingSet(
+                                    session_id=session.id,
+                                    exercise_id=cand.id,
+                                    set_number=set_number,
+                                    prescribed_reps=accessory_rep_target,
+                                    prescribed_weight_kg=cand_weight,
+                                    prescribed_rir=acc_rir,
+                                    prescribed_rpe=acc_rpe,
+                                    is_warmup=False,
+                                    rest_seconds=cand_rest,
+                                    tempo=acc_tempo,
+                                )
+                                db.add(ts)
+                                set_number += 1
+
+                            session_exercise_ids.add(cand.id)
+                            this_mesocycle_exercise_ids.append(str(cand.id))
+                            session_exercise_dicts.append({
+                                "movement_pattern": cand_pattern or "isolation",
+                                "sets": accessory_sets_each,
+                                "rpe": 7.0,
+                            })
+                            added_one = True
+                            break
+                    if not added_one:
+                        # Exhausted all candidates across all muscles — cannot
+                        # reach the minimum without duplicating. Stop.
+                        break
+
             # CNS fatigue budget validation — annotate high-load sessions
             if session_exercise_dicts:
                 fatigue_check = check_daily_fatigue_budget(session_exercise_dicts)
@@ -1256,7 +1630,13 @@ async def generate_program_sessions(
                 await db.flush()  # ensure all sets have IDs
                 # Load all sets for this session to pass to FST-7
                 fst7_sets_result = await db.execute(
-                    select(TrainingSet, Exercise.name, Exercise.primary_muscle, Exercise.equipment)
+                    select(
+                        TrainingSet,
+                        Exercise.name,
+                        Exercise.primary_muscle,
+                        Exercise.equipment,
+                        Exercise.movement_pattern,
+                    )
                     .join(Exercise, TrainingSet.exercise_id == Exercise.id)
                     .where(TrainingSet.session_id == session.id)
                     .order_by(TrainingSet.set_number)

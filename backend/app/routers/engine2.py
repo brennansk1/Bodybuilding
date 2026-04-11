@@ -16,6 +16,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.profile import UserProfile
+from app.models.measurement import BodyWeightLog
 from app.models.training import (
     TrainingProgram, TrainingSession, TrainingSet,
     HRVLog, ARILog, Exercise, StrengthLog,
@@ -37,13 +38,14 @@ async def get_ari(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.engines.engine2.ari import get_ari_zone, get_zone_recommendation
+
     result = await db.execute(
         select(ARILog).where(ARILog.user_id == user.id)
         .order_by(desc(ARILog.recorded_date), desc(ARILog.created_at)).limit(1)
     )
     ari = result.scalar_one_or_none()
     if ari:
-        from app.engines.engine2.ari import get_ari_zone
         return {
             "ari_score": ari.ari_score,
             "zone": get_ari_zone(ari.ari_score),
@@ -51,10 +53,13 @@ async def get_ari(
                 "hrv": ari.hrv_component,
                 "sleep": ari.sleep_component,
                 "soreness": ari.soreness_component,
+                "hr": getattr(ari, "hr_component", None),
+                "wellness": getattr(ari, "stress_component", None),
             },
+            "recommendation": get_zone_recommendation(ari.ari_score),
         }
 
-    # Fall back to computing from latest HRV
+    # Fall back to computing from latest HRV (no persisted ARILog yet).
     hrv_result = await db.execute(
         select(HRVLog).where(HRVLog.user_id == user.id)
         .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at)).limit(1)
@@ -63,23 +68,41 @@ async def get_ari(
     if not hrv:
         raise HTTPException(status_code=404, detail="No HRV data available")
 
+    # 7-day rolling baseline (HRV research standard)
     baseline_result = await db.execute(
         select(HRVLog).where(HRVLog.user_id == user.id)
-        .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at)).limit(14)
+        .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at)).limit(7)
     )
     hrv_history = baseline_result.scalars().all()
     baseline_rmssd = sum(h.rmssd for h in hrv_history) / len(hrv_history)
+    hr_history = [h.resting_hr for h in hrv_history if h.resting_hr is not None]
+    baseline_hr = sum(hr_history) / len(hr_history) if hr_history else None
 
-    from app.engines.engine2.ari import compute_ari, get_ari_zone
-    soreness = getattr(hrv, "soreness_score", None) or 5.0
-    ari_score = compute_ari(
+    from app.engines.engine2.ari import compute_ari_breakdown
+    breakdown = compute_ari_breakdown(
         rmssd=hrv.rmssd,
-        resting_hr=hrv.resting_hr or 60,
-        sleep_quality_1_10=hrv.sleep_quality or 7,
-        soreness_1_10=soreness,
+        resting_hr=hrv.resting_hr,
+        sleep_quality_1_10=hrv.sleep_quality,
+        soreness_1_10=getattr(hrv, "soreness_score", None) or 5.0,
         baseline_rmssd=baseline_rmssd,
+        baseline_hr=baseline_hr,
+        sleep_hours=getattr(hrv, "sleep_hours", None),
+        stress_1_10=getattr(hrv, "stress_score", None),
+        mood_1_10=getattr(hrv, "mood_score", None),
+        energy_1_10=getattr(hrv, "energy_score", None),
     )
-    return {"ari_score": ari_score, "zone": get_ari_zone(ari_score)}
+    return {
+        "ari_score": breakdown["score"],
+        "zone": breakdown["zone"],
+        "components": {
+            "hrv": breakdown["hrv"],
+            "sleep": breakdown["sleep"],
+            "soreness": breakdown["soreness"],
+            "hr": breakdown["hr"],
+            "wellness": breakdown["wellness"],
+        },
+        "recommendation": get_zone_recommendation(breakdown["score"]),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -141,14 +164,46 @@ async def get_volume_allocation(
         if muscle not in muscle_gaps:
             muscle_gaps[muscle] = default_gap
 
-    # Gap-driven volume: bigger gap → closer to MRV
-    from app.engines.engine2.periodization import VOLUME_LANDMARKS
+    # Division-aware volume: use the split designer's need-score + importance
+    # weighting so hidden muscles (e.g. calves/quads in MP) get maintenance
+    # volume while priority muscles (shoulders, back) get pushed toward MRV.
+    from app.engines.engine2.split_designer import (
+        compute_need_scores,
+        compute_volume_budget,
+    )
+    division = getattr(profile, "division", "classic_physique") or "classic_physique"
+    need_scores = compute_need_scores(muscle_gaps, division)
+    split_volume = compute_volume_budget(muscle_gaps, need_scores, division)
+
+    # Apply the split designer's aggregation safety clamp (Rule 1C).
+    # Division-aware: men's divisions get higher shoulder caps (24 sets)
+    # because delts are a primary judging criterion. Women's divisions get
+    # lower caps (16 sets) because excessive shoulder mass is penalized.
+    _DELT_CAP_BY_DIVISION = {
+        "mens_physique": 24, "classic_physique": 24, "mens_open": 24,
+        "womens_bikini": 14, "womens_figure": 18, "womens_physique": 22, "wellness": 14,
+    }
+    _MAX_COMBINED_DELT_VOL = _DELT_CAP_BY_DIVISION.get(division, 20)
+    raw_delt_vol = sum(split_volume.get(h, 0) for h in ("front_delt", "side_delt", "rear_delt"))
+    if raw_delt_vol > _MAX_COMBINED_DELT_VOL:
+        scale = _MAX_COMBINED_DELT_VOL / raw_delt_vol
+        for h in ("front_delt", "side_delt", "rear_delt"):
+            if h in split_volume:
+                split_volume[h] = round(split_volume[h] * scale)
+
+    # Map split_designer muscle names back to the router's aggregated format
     volume_allocation: dict[str, int] = {}
     for muscle in DEFAULT_VOLUME:
-        gap = muscle_gaps.get(muscle, 3.0)
-        mev, _mav, mrv = VOLUME_LANDMARKS.get(muscle, (6, 12, 20))
-        gap_norm = min(1.0, max(0.0, gap / 10.0))
-        volume_allocation[muscle] = round(mev + gap_norm * (mrv - mev))
+        if muscle == "shoulders":
+            volume_allocation[muscle] = (
+                split_volume.get("front_delt", 0)
+                + split_volume.get("side_delt", 0)
+                + split_volume.get("rear_delt", 0)
+            )
+        elif muscle in split_volume:
+            volume_allocation[muscle] = split_volume[muscle]
+        else:
+            volume_allocation[muscle] = DEFAULT_VOLUME.get(muscle, 8)
 
     return {"volume_allocation": volume_allocation, "muscle_gaps": muscle_gaps}
 
@@ -360,23 +415,46 @@ async def generate_program(
                 if muscle not in muscle_gaps:
                     muscle_gaps[muscle] = default_gap
 
-            from app.engines.engine2.periodization import VOLUME_LANDMARKS
+            # Division-aware volume via split designer (respects importance weights)
+            from app.engines.engine2.split_designer import (
+                compute_need_scores,
+                compute_volume_budget,
+            )
+            division = getattr(profile, "division", "classic_physique") or "classic_physique"
+            need_scores = compute_need_scores(muscle_gaps, division)
+            split_volume = compute_volume_budget(muscle_gaps, need_scores, division)
+            # Division-aware delt aggregation safety clamp
+            _DELT_CAPS = {
+                "mens_physique": 24, "classic_physique": 24, "mens_open": 24,
+                "womens_bikini": 14, "womens_figure": 18, "womens_physique": 22, "wellness": 14,
+            }
+            _MAX_DELT = _DELT_CAPS.get(division, 20)
+            raw_delt = sum(split_volume.get(h, 0) for h in ("front_delt", "side_delt", "rear_delt"))
+            if raw_delt > _MAX_DELT:
+                sc = _MAX_DELT / raw_delt
+                for h in ("front_delt", "side_delt", "rear_delt"):
+                    if h in split_volume:
+                        split_volume[h] = round(split_volume[h] * sc)
             for muscle in volume_allocation:
-                gap = muscle_gaps.get(muscle, 3.0)
-                mev, _mav, mrv = VOLUME_LANDMARKS.get(muscle, (6, 12, 20))
-                gap_norm = min(1.0, max(0.0, gap / 10.0))
-                volume_allocation[muscle] = round(mev + gap_norm * (mrv - mev))
+                if muscle == "shoulders":
+                    volume_allocation[muscle] = (
+                        split_volume.get("front_delt", 0)
+                        + split_volume.get("side_delt", 0)
+                        + split_volume.get("rear_delt", 0)
+                    )
+                elif muscle in split_volume:
+                    volume_allocation[muscle] = split_volume[muscle]
     except (ValueError, KeyError) as e:
         logger.warning("HQI-driven volume allocation failed: %s", e)
 
-    # Deactivate old programs
-    old_result = await db.execute(
-        select(TrainingProgram).where(
-            TrainingProgram.user_id == user.id, TrainingProgram.is_active == True
-        )
+    # Atomically deactivate old programs — use a single UPDATE so two
+    # concurrent generation requests can't both leave multiple is_active=True rows.
+    from sqlalchemy import update as _update
+    await db.execute(
+        _update(TrainingProgram)
+        .where(TrainingProgram.user_id == user.id, TrainingProgram.is_active == True)
+        .values(is_active=False)
     )
-    for old in old_result.scalars().all():
-        old.is_active = False
 
     program = TrainingProgram(
         user_id=user.id,
@@ -512,10 +590,13 @@ async def get_session(
                 "last_actual_weight_kg": pts.actual_weight_kg,
             }
 
+    from app.services.training import _TECHNIQUE_COACHING
+
     sets = []
     for ts, name, muscle, equipment, movement_pattern, load_type in sets_rows:
         key = f"{name}_{ts.set_number}"
         ghost = prev_actuals.get(key, {})
+        technique = getattr(ts, "set_technique", None)
         sets.append({
             "id": str(ts.id),
             "exercise_name": name,
@@ -526,6 +607,11 @@ async def get_session(
             "set_number": ts.set_number,
             "prescribed_reps": ts.prescribed_reps,
             "prescribed_weight_kg": ts.prescribed_weight_kg,
+            "prescribed_rir": getattr(ts, "prescribed_rir", None),
+            "prescribed_rpe": getattr(ts, "prescribed_rpe", None),
+            "tempo": getattr(ts, "tempo", None),
+            "set_technique": technique,
+            "technique_cue": _TECHNIQUE_COACHING.get(technique) if technique else None,
             "actual_reps": ts.actual_reps,
             "actual_weight_kg": ts.actual_weight_kg,
             "rpe": ts.rpe,
@@ -535,6 +621,20 @@ async def get_session(
             "last_actual_reps": ghost.get("last_actual_reps"),
             "last_actual_weight_kg": ghost.get("last_actual_weight_kg"),
         })
+
+    # Compute estimated duration + workout window from the user's profile anchor.
+    from app.services.training import estimate_session_duration_minutes, compute_workout_window
+    profile_row = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    _profile = profile_row.scalar_one_or_none()
+    duration_min = estimate_session_duration_minutes([r[0] for r in sets_rows])
+    anchor_mode = (getattr(_profile, "training_time_anchor", None) or "start") if _profile else "start"
+    if _profile and anchor_mode == "end":
+        anchor_time = getattr(_profile, "training_end_time", None)
+    else:
+        anchor_time = getattr(_profile, "training_start_time", None) if _profile else None
+    window = compute_workout_window(anchor_time, anchor_mode, duration_min)
 
     return {
         "id": str(session.id),
@@ -546,6 +646,12 @@ async def get_session(
         "stale_baselines": session.stale_baselines,
         "split_type": session.split_type,
         "dup_profile": session.dup_profile,
+        "estimated_duration_min": duration_min,
+        "workout_window": {
+            "anchor_mode": anchor_mode,
+            "start_time": window["start"],
+            "end_time": window["end"],
+        },
         "sets": sets,
     }
 
@@ -1340,6 +1446,150 @@ async def get_strength_history_top(
         ]
 
     return {"exercises": exercises_output}
+
+
+# ---------------------------------------------------------------------------
+# Strength Progression — e1RM of main compounds over time
+# ---------------------------------------------------------------------------
+
+_MAIN_LIFT_KEYS = {
+    "squat": ["back squat", "barbell squat", "squat"],
+    "bench": ["bench press", "barbell bench"],
+    "deadlift": ["deadlift", "conventional deadlift"],
+    "ohp": ["overhead press", "military press", "standing press"],
+}
+
+_LIFT_LABELS = {
+    "squat": "Squat",
+    "bench": "Bench",
+    "deadlift": "Deadlift",
+    "ohp": "OHP",
+}
+
+_LIFT_COLORS = {
+    "squat": "#22c55e",
+    "bench": "#c8a84e",
+    "deadlift": "#ef4444",
+    "ohp": "#3b82f6",
+}
+
+
+def _classify_main_lift(exercise_name: str) -> str | None:
+    name = (exercise_name or "").lower()
+    for lift_key, patterns in _MAIN_LIFT_KEYS.items():
+        if any(pat in name for pat in patterns):
+            return lift_key
+    return None
+
+
+@router.get("/strength/progression")
+async def get_strength_progression(
+    days: int = 180,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns e1RM time series for each of the main compound lifts.
+    Uses StrengthLog entries where available, or falls back to computing
+    e1RM from completed TrainingSets via the Epley formula.
+    """
+    from datetime import date as _d, timedelta as _td
+    cutoff = _d.today() - _td(days=max(1, min(days, 365)))
+
+    result = await db.execute(
+        select(StrengthLog, Exercise.name)
+        .join(Exercise, StrengthLog.exercise_id == Exercise.id)
+        .where(StrengthLog.user_id == user.id, StrengthLog.recorded_date >= cutoff)
+        .order_by(StrengthLog.recorded_date)
+    )
+    entries = result.all()
+
+    series: dict[str, list[dict]] = {k: [] for k in _MAIN_LIFT_KEYS.keys()}
+    for log, ex_name in entries:
+        lift = _classify_main_lift(ex_name)
+        if not lift:
+            continue
+        e1rm = log.estimated_1rm
+        if e1rm is None and log.weight_kg and log.reps:
+            # Epley formula
+            e1rm = log.weight_kg * (1 + log.reps / 30)
+        if e1rm is None:
+            continue
+        series[lift].append({
+            "date": str(log.recorded_date),
+            "e1rm_kg": round(float(e1rm), 1),
+        })
+
+    return {
+        "series": [
+            {
+                "lift": lift,
+                "label": _LIFT_LABELS[lift],
+                "color": _LIFT_COLORS[lift],
+                "data": series[lift],
+            }
+            for lift in _MAIN_LIFT_KEYS.keys()
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Weekly Volume vs MEV/MAV/MRV Landmarks
+# ---------------------------------------------------------------------------
+
+@router.get("/volume/weekly")
+async def get_weekly_volume(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Aggregate working-set volume per muscle group for the current training week
+    (Monday-Sunday). Returns rows of {muscle, sets, mev, mav, mrv} so the
+    frontend can display landmark-relative bars.
+    """
+    from datetime import date as _d, timedelta as _td
+    from sqlalchemy import and_
+    from app.engines.engine2.split_designer import _VOLUME_LANDMARKS
+
+    today = _d.today()
+    monday = today - _td(days=today.weekday())
+    sunday = monday + _td(days=6)
+
+    result = await db.execute(
+        select(Exercise.primary_muscle, TrainingSet.is_warmup)
+        .join(TrainingSet, TrainingSet.exercise_id == Exercise.id)
+        .join(TrainingSession, TrainingSet.session_id == TrainingSession.id)
+        .where(
+            and_(
+                TrainingSession.user_id == user.id,
+                TrainingSession.session_date >= monday,
+                TrainingSession.session_date <= sunday,
+            )
+        )
+    )
+    counts: dict[str, int] = {}
+    for muscle, is_warmup in result.all():
+        if is_warmup or not muscle:
+            continue
+        counts[muscle] = counts.get(muscle, 0) + 1
+
+    rows = []
+    for muscle, landmarks in _VOLUME_LANDMARKS.items():
+        mev, mav, mrv = landmarks
+        rows.append({
+            "muscle": muscle,
+            "sets": counts.get(muscle, 0),
+            "mev": mev,
+            "mav": mav,
+            "mrv": mrv,
+        })
+    # Sort by muscle name alphabetically for a stable layout
+    rows.sort(key=lambda r: r["muscle"])
+    return {
+        "week_start": str(monday),
+        "week_end": str(sunday),
+        "rows": rows,
+    }
 
 
 # ---------------------------------------------------------------------------

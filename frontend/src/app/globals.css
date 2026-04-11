@@ -48,16 +48,19 @@ body {
   letter-spacing: 0.01em;
 }
 
-/* Desktop background image — hidden on mobile for performance */
-@media (min-width: 768px) {
+/* Background image — visible on desktop + mobile, low opacity */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url("/bg.jpg") center center / cover no-repeat fixed;
+  opacity: 0.22;
+  pointer-events: none;
+}
+@media (max-width: 767px) {
   body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background: url("/bg.jpg") center center / cover no-repeat fixed;
-    opacity: 0.12;
-    pointer-events: none;
+    background-attachment: scroll;
   }
 }
 

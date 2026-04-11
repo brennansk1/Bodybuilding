@@ -71,8 +71,12 @@ async def submit_daily(
         rmssd=rmssd,
         resting_hr=data.resting_hr,
         sleep_quality=sleep_quality,
+        sleep_hours=data.sleep_hours,
         soreness_score=soreness_score,
         sore_muscles=data.sore_muscles,
+        stress_score=data.stress_score,
+        mood_score=data.mood_score,
+        energy_score=data.energy_score,
         notes=data.notes,
         recorded_date=today,
     )
@@ -92,23 +96,74 @@ async def submit_daily(
 
     await db.flush()
 
-    # Compute ARI to feedback immediately
+    # Compute ARI — 7-day rolling baseline per HRV research (Plews/Buchheit).
     baseline_result = await db.execute(
         select(HRVLog).where(HRVLog.user_id == user.id)
-        .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at)).limit(14)
+        .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at)).limit(7)
     )
     hrv_history = baseline_result.scalars().all()
     baseline_rmssd = sum(h.rmssd for h in hrv_history) / len(hrv_history) if hrv_history else rmssd
+    hr_history = [h.resting_hr for h in hrv_history if h.resting_hr is not None]
+    baseline_hr = sum(hr_history) / len(hr_history) if hr_history else data.resting_hr
 
-    from app.engines.engine2.ari import compute_ari, get_ari_zone
-    ari_score = compute_ari(
+    from app.engines.engine2.ari import (
+        compute_ari_breakdown,
+        get_zone_recommendation,
+        menstrual_phase,
+        apply_cycle_modifier,
+        get_ari_zone,
+    )
+    ari_breakdown = compute_ari_breakdown(
         rmssd=rmssd,
-        resting_hr=data.resting_hr or 60,
+        resting_hr=data.resting_hr,
         sleep_quality_1_10=sleep_quality,
         soreness_1_10=soreness_score,
         baseline_rmssd=baseline_rmssd,
+        baseline_hr=baseline_hr,
+        sleep_hours=data.sleep_hours,
+        stress_1_10=data.stress_score,
+        mood_1_10=data.mood_score,
+        energy_1_10=data.energy_score,
     )
-    ari_zone = get_ari_zone(ari_score)
+
+    # Menstrual cycle adjustment for female athletes with tracking enabled.
+    profile_row = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    _profile = profile_row.scalar_one_or_none()
+    cycle_info = None
+    if _profile and getattr(_profile, "sex", None) == "female" and getattr(_profile, "cycle_tracking_enabled", False):
+        cycle_info = menstrual_phase(getattr(_profile, "cycle_start_date", None))
+
+    if cycle_info:
+        adjusted_score = apply_cycle_modifier(ari_breakdown["score"], cycle_info)
+        ari_breakdown["score"] = adjusted_score
+        ari_breakdown["zone"] = get_ari_zone(adjusted_score)
+
+    ari_score = ari_breakdown["score"]
+    ari_zone = ari_breakdown["zone"]
+    ari_recommendation = get_zone_recommendation(ari_score)
+    if cycle_info:
+        ari_recommendation += " " + cycle_info["coaching_note"]
+
+    # Persist ARI breakdown so future queries can explain the score.
+    ari_log = ARILog(
+        user_id=user.id,
+        ari_score=ari_score,
+        hrv_component=ari_breakdown["hrv"],
+        sleep_component=ari_breakdown["sleep"],
+        soreness_component=ari_breakdown["soreness"],
+        hr_component=ari_breakdown["hr"],
+        stress_component=ari_breakdown["wellness"],
+        recorded_date=today,
+    )
+    # Replace any prior entry for today so the row reflects the latest check-in.
+    existing_ari = await db.execute(
+        select(ARILog).where(ARILog.user_id == user.id, ARILog.recorded_date == today)
+    )
+    if old_ari := existing_ari.scalar_one_or_none():
+        await db.delete(old_ari)
+    db.add(ari_log)
 
     # 4. Engine 2 — Daily session autoregulation for morning soreness
     from app.models.training import TrainingSession
@@ -135,6 +190,15 @@ async def submit_daily(
         "weight_kg": weight_kg,
         "ari_score": ari_score,
         "zone": ari_zone,
+        "recommendation": ari_recommendation,
+        "components": {
+            "hrv": ari_breakdown["hrv"],
+            "sleep": ari_breakdown["sleep"],
+            "soreness": ari_breakdown["soreness"],
+            "hr": ari_breakdown["hr"],
+            "wellness": ari_breakdown["wellness"],
+        },
+        "menstrual_phase": cycle_info,
         "autoregulation": autoreg_msg,
     }
 
@@ -251,9 +315,10 @@ async def submit_weekly(
     ari_score = None
     ari_zone = None
     if latest_hrv:
+        # 7-day rolling baseline (HRV research standard)
         baseline_result = await db.execute(
             select(HRVLog).where(HRVLog.user_id == user.id)
-            .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at)).limit(14)
+            .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at)).limit(7)
         )
         hrv_history = baseline_result.scalars().all()
         baseline_rmssd = sum(h.rmssd for h in hrv_history) / len(hrv_history)
@@ -262,39 +327,47 @@ async def submit_weekly(
 
         soreness = getattr(latest_hrv, "soreness_score", None) or 5.0
 
-        from app.engines.engine2.ari import (
-            compute_ari, get_ari_zone,
-            _hrv_score, _sleep_score, _soreness_score,
-        )
-        ari_score = compute_ari(
+        from app.engines.engine2.ari import compute_ari_breakdown
+        ari_breakdown = compute_ari_breakdown(
             rmssd=latest_hrv.rmssd,
-            resting_hr=latest_hrv.resting_hr or 60,
-            sleep_quality_1_10=latest_hrv.sleep_quality or 7,
+            resting_hr=latest_hrv.resting_hr,
+            sleep_quality_1_10=latest_hrv.sleep_quality,
             soreness_1_10=soreness,
             baseline_rmssd=baseline_rmssd,
             baseline_hr=baseline_hr,
+            sleep_hours=getattr(latest_hrv, "sleep_hours", None),
+            stress_1_10=getattr(latest_hrv, "stress_score", None),
+            mood_1_10=getattr(latest_hrv, "mood_score", None),
+            energy_1_10=getattr(latest_hrv, "energy_score", None),
         )
-        ari_zone = get_ari_zone(ari_score)
+        ari_score = ari_breakdown["score"]
+        ari_zone = ari_breakdown["zone"]
 
         ari_log = ARILog(
             user_id=user.id,
             ari_score=ari_score,
-            hrv_component=_hrv_score(latest_hrv.rmssd, baseline_rmssd),
-            sleep_component=_sleep_score(latest_hrv.sleep_quality or 7),
-            soreness_component=_soreness_score(soreness),
+            hrv_component=ari_breakdown["hrv"],
+            sleep_component=ari_breakdown["sleep"],
+            soreness_component=ari_breakdown["soreness"],
+            hr_component=ari_breakdown["hr"],
+            stress_component=ari_breakdown["wellness"],
             recorded_date=today,
         )
         db.add(ari_log)
 
-    # Early deload detection: last 5 ARI logs
+    # Early deload detection — trigger when ≥3 of the last 5 ARI scores
+    # dropped below 42. The previous "all 5 below 40" gate was too strict
+    # and missed clearly overtrained athletes with a lucky high day.
     early_deload_recommended = False
     ari_history_result = await db.execute(
         select(ARILog).where(ARILog.user_id == user.id)
         .order_by(desc(ARILog.recorded_date), desc(ARILog.created_at)).limit(5)
     )
     recent_ari_logs = ari_history_result.scalars().all()
-    if len(recent_ari_logs) >= 5 and all(a.ari_score < 40 for a in recent_ari_logs):
-        early_deload_recommended = True
+    if len(recent_ari_logs) >= 5:
+        low_days = sum(1 for a in recent_ari_logs if a.ari_score < 42)
+        if low_days >= 3:
+            early_deload_recommended = True
 
     # -----------------------------------------------------------------------
     # Engine 3: Kinetic rate-of-change → calorie adjustment
@@ -1037,8 +1110,32 @@ async def get_checkin_gaps(
     from app.models.training import TrainingSession
     from sqlalchemy import and_
 
-    cutoff = date.fromisoformat(since) if since else date.today() - timedelta(days=14)
     today_date = date.today()
+
+    # Default cutoff = 14 days ago, clamped so we never report gaps before
+    # the program actually started (otherwise new users see a missing-checkin
+    # banner the moment they finish onboarding).
+    profile_result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    program_start = getattr(profile, "program_start_date", None) if profile else None
+
+    default_cutoff = today_date - timedelta(days=14)
+    if program_start and program_start > default_cutoff:
+        default_cutoff = program_start
+    cutoff = date.fromisoformat(since) if since else default_cutoff
+    if program_start and cutoff < program_start:
+        cutoff = program_start
+    if cutoff > today_date:
+        # Program hasn't started yet — nothing to check.
+        return {
+            "missing_daily_checkins": [],
+            "missing_weight_entries": [],
+            "missed_workouts": [],
+            "since": str(cutoff),
+            "total_gaps": 0,
+        }
 
     # Find all dates that SHOULD have check-ins (every day since cutoff)
     all_dates = []
@@ -1088,6 +1185,50 @@ async def get_checkin_gaps(
         "since": str(cutoff),
         "total_gaps": len(missing_daily) + len(missed_workouts),
     }
+
+
+@router.get("/recovery/trend")
+async def get_recovery_trend(
+    days: int = 30,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return the ARI composite recovery score per day for the last N days.
+    Falls back to a raw HRV-derived estimate when no ARI entry exists.
+    """
+    cutoff = date.today() - timedelta(days=max(1, min(days, 365)))
+
+    ari_result = await db.execute(
+        select(ARILog.recorded_date, ARILog.ari_score)
+        .where(ARILog.user_id == user.id, ARILog.recorded_date >= cutoff)
+        .order_by(ARILog.recorded_date)
+    )
+    ari_rows = ari_result.all()
+
+    if ari_rows:
+        return {
+            "data": [
+                {"date": str(d), "score": round(float(s), 1)}
+                for d, s in ari_rows
+            ]
+        }
+
+    # Fallback: derive a rough score from HRV + sleep + soreness (no ARI yet).
+    hrv_result = await db.execute(
+        select(HRVLog.recorded_date, HRVLog.rmssd, HRVLog.sleep_quality, HRVLog.soreness_score)
+        .where(HRVLog.user_id == user.id, HRVLog.recorded_date >= cutoff)
+        .order_by(HRVLog.recorded_date)
+    )
+    fallback = []
+    for d, rmssd, sleep_q, sore in hrv_result.all():
+        # Normalize: rmssd 20-80 → 0-100, sleep 1-10 → 0-100, soreness 1-10 inverted.
+        hrv_pct = max(0.0, min(100.0, ((rmssd - 20) / 60) * 100)) if rmssd is not None else 50.0
+        sleep_pct = (float(sleep_q) * 10) if sleep_q is not None else 50.0
+        sore_pct = ((10 - float(sore)) * 10) if sore is not None else 50.0
+        score = 0.5 * hrv_pct + 0.3 * sleep_pct + 0.2 * sore_pct
+        fallback.append({"date": str(d), "score": round(score, 1)})
+    return {"data": fallback}
 
 
 class DailyBackfillRequest(BaseModel):

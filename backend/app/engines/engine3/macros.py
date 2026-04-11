@@ -339,11 +339,31 @@ def compute_macros(
     remaining_kcal = target_calories - protein_kcal - fat_kcal
     carbs_g = round(max(remaining_kcal / _KCAL_PER_G_CARB, 0.0), 1)
 
+    # Coaching warnings — late-cut alcohol prohibition, low fat floor, etc.
+    warnings: list[str] = []
+    lean_threshold = 10.0 if sex == "male" else 16.0
+    if phase_lower in ("cut", "peak") and body_fat_pct is not None and body_fat_pct <= lean_threshold:
+        warnings.append(
+            "Alcohol is strictly off during final 8 weeks of prep — it dehydrates, "
+            "impairs CNS recovery, and interferes with glycogen storage."
+        )
+    if fat_floor < 0.6 and sex == "female":
+        warnings.append(
+            "Female athletes should never drop below 0.6 g/kg fat — hormonal health "
+            "and menstrual function are non-negotiable."
+        )
+    if phase_lower in ("cut", "peak"):
+        warnings.append(
+            "Track body weight + waist daily. A single bad data point is noise; "
+            "trust 7-day rolling trends over single-day spikes."
+        )
+
     return {
         "protein_g": protein_g,
         "fat_g": fat_g,
         "carbs_g": carbs_g,
         "target_calories": round(target_calories, 0),
+        "coach_warnings": warnings,
     }
 
 
@@ -493,7 +513,12 @@ def compute_restoration_macros(
     }
 
 
-def compute_division_nutrition_priorities(division: str, phase: str) -> dict:
+def compute_division_nutrition_priorities(
+    division: str,
+    phase: str,
+    body_fat_pct: float | None = None,
+    sex: str = "male",
+) -> dict:
     """
     Return division-specific nutrition guidance that modulates the macro
     prescription for a given competition category.
@@ -605,6 +630,20 @@ def compute_division_nutrition_priorities(division: str, phase: str) -> dict:
                 "Peak week follows a full depletion-load cycle similar to men's open.",
             ],
         },
+        "wellness": {
+            # Lower-body-dominant division. Higher glute/hamstring volume
+            # demands more carbs on leg days; upper body stays moderate.
+            "protein_per_kg": {"bulk": 1.8, "cut": 2.2, "maintain": 2.0, "peak": 2.2, "restoration": 2.0},
+            "carb_cycling_factor": 0.30,
+            "fat_per_kg_floor": 0.80,
+            "meal_frequency_target": 5,
+            "mps_threshold_g": 32,
+            "notes": [
+                "Lower-body dominant — carb cycling prioritises glute/hamstring training days.",
+                "Upper body should stay soft — moderate surplus avoids over-developing shoulders/back.",
+                "Hormonal health is non-negotiable — fat stays ≥0.8 g/kg even during prep.",
+            ],
+        },
     }
 
     # Normalize division name
@@ -626,9 +665,21 @@ def compute_division_nutrition_priorities(division: str, phase: str) -> dict:
         max(_PROTEIN_MIN_PER_KG, min(_PROTEIN_MAX_PER_KG, raw_override))
         if raw_override is not None else None
     )
+
+    # Dynamic carb cycling by body fat — elite late-cut prep widens the
+    # swing to preserve glycogen fullness on training days while running
+    # a steeper deficit on rest days.
+    carb_swing = profile["carb_cycling_factor"]
+    if phase_key in ("cut", "mini_cut") and body_fat_pct is not None:
+        lean_threshold = 8.0 if sex == "male" else 14.0
+        if body_fat_pct <= lean_threshold:
+            carb_swing = min(0.40, carb_swing + 0.10)
+        elif body_fat_pct <= lean_threshold + 3:
+            carb_swing = min(0.37, carb_swing + 0.05)
+
     return {
         "protein_per_kg_override": clamped_override,
-        "carb_cycling_factor": profile["carb_cycling_factor"],
+        "carb_cycling_factor": round(carb_swing, 3),
         "fat_per_kg_floor": profile["fat_per_kg_floor"],
         "meal_frequency_target": profile["meal_frequency_target"],
         "mps_threshold_g": profile["mps_threshold_g"],
@@ -715,7 +766,7 @@ def compute_peri_workout_carb_split(carbs_g: float, meal_count: int = 5) -> dict
 
 # Intra-workout HBCD scaling by session muscle tags
 # Large compound sessions (legs, back) deplete 2-3x more glycogen than isolation days
-_INTRA_HBCD_BY_MUSCLE: dict[str, int] = {
+INTRA_HBCD_BY_MUSCLE: dict[str, int] = {
     "quads": 50, "hamstrings": 50, "glutes": 40, "back": 45,
     "chest": 25, "front_delt": 20, "side_delt": 15, "rear_delt": 15,
     "shoulders": 25,
@@ -792,7 +843,7 @@ def compute_chrono_meal_plan(
         if session_muscles:
             # Take the max HBCD demand from the session's muscle tags
             intra_carbs = max(
-                (_INTRA_HBCD_BY_MUSCLE.get(m.lower(), 20) for m in session_muscles),
+                (INTRA_HBCD_BY_MUSCLE.get(m.lower(), 20) for m in session_muscles),
                 default=20,
             )
         else:
@@ -937,3 +988,225 @@ def adjust_macros_for_phase(
         "carbs_g": new_carbs,
         "fat_g": new_fat,
     }
+
+
+# ---------------------------------------------------------------------------
+# Hydration prescription
+# ---------------------------------------------------------------------------
+#
+# Olympia-level prep demands deliberate water intake. Guidelines synthesised
+# from Armstrong (2007), IOC consensus (2019) and contest prep literature:
+#   Offseason / maintain:  35 ml/kg BW
+#   Bulk / lean_bulk:      38 ml/kg BW  (higher protein turnover, more sweat)
+#   Cut / mini_cut:        42 ml/kg BW  (satiety aid, thermogenic, electrolyte turnover)
+#   Peak week (load days): 50 ml/kg BW  (glycogen compartmentalization)
+#   Peak week (cut days):  progressive restriction — handled in peak_week.py
+#   Contest day:           sip strategy — handled in peak_week.py
+#
+# On top of the baseline, hot climates add +500 ml and each training session
+# adds ~500 ml (replacing ~1% BW sweat loss, typical for 60-min session).
+
+_HYDRATION_ML_PER_KG: dict[str, float] = {
+    "offseason":   35.0,
+    "maintain":    35.0,
+    "bulk":        38.0,
+    "lean_bulk":   38.0,
+    "cut":         42.0,
+    "mini_cut":    42.0,
+    "restoration": 36.0,
+    "peak_week":   50.0,
+    "peak":        50.0,
+    "contest":     0.0,   # handled separately by peak_week.py
+}
+
+
+def compute_hydration_target(
+    weight_kg: float,
+    phase: str,
+    training_session_today: bool = True,
+    hot_climate: bool = False,
+) -> dict:
+    """Daily hydration prescription in millilitres and ounces.
+
+    Returns ``{baseline_ml, training_add_ml, climate_add_ml, total_ml, total_oz,
+    per_hour_awake_ml, coaching_note}``. ``per_hour_awake_ml`` assumes a 16-hour
+    waking day and spreads intake evenly so athletes don't gulp 2 L pre-sleep.
+    """
+    key = (phase or "maintain").strip().lower()
+    per_kg = _HYDRATION_ML_PER_KG.get(key, 35.0)
+    baseline = per_kg * max(weight_kg, 40.0)
+    training_add = 500.0 if training_session_today else 0.0
+    climate_add = 500.0 if hot_climate else 0.0
+    total_ml = round(baseline + training_add + climate_add)
+    total_oz = round(total_ml / 29.5735, 1)
+    per_hour = round(total_ml / 16.0)
+
+    coaching_note = (
+        f"Sip ~{per_hour} ml every waking hour. Stop 2 h before bed to avoid "
+        f"mid-night wake-ups. Add ~500 ml extra per intense training session."
+    )
+    if key in ("cut", "mini_cut"):
+        coaching_note += " Higher intake aids satiety and thermogenesis during deficit."
+    elif key in ("peak_week", "peak"):
+        coaching_note += " Peak-week protocol may override — see peak-week page for day-by-day schedule."
+
+    return {
+        "baseline_ml": round(baseline),
+        "training_add_ml": round(training_add),
+        "climate_add_ml": round(climate_add),
+        "total_ml": total_ml,
+        "total_oz": total_oz,
+        "per_hour_awake_ml": per_hour,
+        "coaching_note": coaching_note,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Protein distribution validator
+# ---------------------------------------------------------------------------
+#
+# Leucine-driven muscle protein synthesis plateaus at ~0.40 g protein / kg BW
+# per dose (Moore et al. 2015, Schoenfeld & Aragon 2018). Elite prep aims to
+# hit this threshold 4–6 times daily to maximise anabolic signaling windows.
+#
+# This helper validates a meal plan's distribution and returns a list of
+# violations (meal-level info + what it would take to fix them).
+
+_MPS_THRESHOLD_PER_KG = 0.40   # leucine threshold
+_MPS_CEILING_PER_KG = 0.55     # above this has diminishing returns
+
+
+def validate_protein_distribution(
+    meals: list[dict],
+    weight_kg: float,
+) -> dict:
+    """Check per-meal protein adequacy.
+
+    ``meals`` is a list of dicts each containing at least ``{"label": str,
+    "ingredients": [{"protein_g": float, ...}, ...]}`` — the ``Meal.to_dict``
+    output is directly compatible.
+
+    Returns ``{all_meals_pass, violations, target_per_meal_g, ceiling_per_meal_g,
+    total_protein_g, recommended_meal_count}``.
+    """
+    target_per_meal = round(_MPS_THRESHOLD_PER_KG * weight_kg, 1)
+    ceiling_per_meal = round(_MPS_CEILING_PER_KG * weight_kg, 1)
+
+    # Only real meals (with ingredients) contribute MPS signalling — a fasted
+    # placeholder slot doesn't count.
+    scored = []
+    total_protein = 0.0
+    for m in meals:
+        ingredients = m.get("ingredients") or []
+        if not ingredients:
+            continue
+        protein = sum(float(i.get("protein_g", 0) or 0) for i in ingredients)
+        total_protein += protein
+        scored.append({
+            "meal_number": m.get("meal_number"),
+            "label": m.get("label"),
+            "protein_g": round(protein, 1),
+            "hits_threshold": protein >= target_per_meal,
+            "over_ceiling": protein > ceiling_per_meal,
+        })
+
+    violations = [s for s in scored if not s["hits_threshold"] or s["over_ceiling"]]
+
+    # How many full-dose meals the daily total supports.
+    recommended_meal_count = 0
+    if target_per_meal > 0:
+        recommended_meal_count = max(3, min(6, int(total_protein / target_per_meal)))
+
+    return {
+        "all_meals_pass": len(violations) == 0 and len(scored) > 0,
+        "target_per_meal_g": target_per_meal,
+        "ceiling_per_meal_g": ceiling_per_meal,
+        "total_protein_g": round(total_protein, 1),
+        "mps_dose_count": sum(1 for s in scored if s["hits_threshold"]),
+        "recommended_meal_count": recommended_meal_count,
+        "per_meal": scored,
+        "violations": violations,
+        "explanation": (
+            f"Each meal should deliver ≥{target_per_meal}g protein "
+            f"({_MPS_THRESHOLD_PER_KG} g/kg BW) to trigger muscle protein "
+            f"synthesis. 4–6 MPS doses daily maximises anabolic windows."
+        ),
+    }
+
+
+def compute_energy_availability_kcal_per_kg_ffm(
+    target_calories: float,
+    exercise_kcal_per_day: float,
+    ffm_kg: float,
+) -> float:
+    """EA = (intake - exercise kcal) / FFM. Values <30 kcal/kg/day trigger
+    relative energy deficiency (RED-S). Elite coaches hard-refeed below 30."""
+    if ffm_kg <= 0:
+        return 0.0
+    return round((target_calories - exercise_kcal_per_day) / ffm_kg, 1)
+
+
+# ---------------------------------------------------------------------------
+# Micronutrient + fiber coverage
+# ---------------------------------------------------------------------------
+
+def validate_micronutrient_coverage(
+    meals: list[dict],
+    sex: str = "male",
+) -> dict:
+    """Compute RDI coverage for key micronutrients + fiber from a meal plan.
+
+    ``meals`` is the meal_planner.to_dict shape. Each ingredient contributes
+    its quantity_g × per-100g micronutrient values from the food database
+    fallback table. Returns a dict with per-nutrient ``{intake, target,
+    coverage_pct, deficient}`` plus an overall ``deficiencies`` list for the
+    UI.
+    """
+    from app.engines.engine3.food_database import PER_100G_MICROS, RDI_TARGETS
+
+    targets = RDI_TARGETS.get((sex or "male").lower(), RDI_TARGETS["male"])
+    totals: dict[str, float] = {k: 0.0 for k in targets}
+
+    for meal in meals or []:
+        for ing in meal.get("ingredients") or []:
+            name = ing.get("name", "")
+            qty_g = float(ing.get("quantity_g", 0) or 0)
+            if qty_g <= 0:
+                continue
+            micros = PER_100G_MICROS.get(name) or {}
+            factor = qty_g / 100.0
+            for key in totals:
+                if key in micros:
+                    totals[key] += micros[key] * factor
+
+    coverage = {}
+    deficiencies: list[str] = []
+    for key, target in targets.items():
+        intake = round(totals[key], 1)
+        pct = round(intake / target * 100.0, 1) if target > 0 else 0.0
+        deficient = pct < 75.0
+        coverage[key] = {
+            "intake": intake,
+            "target": target,
+            "coverage_pct": pct,
+            "deficient": deficient,
+        }
+        if deficient:
+            deficiencies.append(key)
+
+    return {
+        "coverage": coverage,
+        "deficiencies": deficiencies,
+        "rdi_notes": _MICRONUTRIENT_COACHING_NOTES if deficiencies else [],
+    }
+
+
+_MICRONUTRIENT_COACHING_NOTES: list[str] = [
+    "Iron: add red meat, oysters, spinach, or iron-fortified cereals.",
+    "Zinc: oysters, beef, pumpkin seeds, or zinc supplementation.",
+    "Magnesium: pumpkin seeds, almonds, dark leafy greens, dark chocolate.",
+    "Calcium: dairy, sardines with bones, fortified plant milks.",
+    "Vitamin D: fatty fish, fortified milk, or 1000-2000 IU supplement.",
+    "Fiber: add vegetables, berries, oats, chia/flax, or psyllium husk.",
+    "Potassium: potato, banana, coconut water, leafy greens.",
+]

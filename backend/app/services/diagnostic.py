@@ -187,6 +187,7 @@ def _recommend_phase(
     profile_prefs: dict | None = None,
     competition_date=None,
     weeks_out: int | None = None,
+    body_weight_kg: float = 85.0,
 ) -> dict:
     """
     Cross-engine feedback: Engine 1 → Engine 3 phase recommendation.
@@ -264,7 +265,7 @@ def _recommend_phase(
         if comp_d:
             division_key = (profile_prefs or {}).get("division", "classic_physique")
             target_bf = get_stage_bf_target(division_key, sex)
-            cut_est = estimate_cut_duration(bf, target_bf, 85.0, sex)  # weight placeholder
+            cut_est = estimate_cut_duration(bf, target_bf, body_weight_kg, sex)
             cut_needed = cut_est["weeks_needed"]
 
             # Build feasibility info to attach to the recommendation
@@ -294,7 +295,7 @@ def _recommend_phase(
                 # Tight timeline — start cutting NOW, get as close as possible
                 if weeks_out < cut_needed - 2:
                     from app.engines.engine1.prep_timeline import _simulate_cut_to_deadline
-                    sim = _simulate_cut_to_deadline(bf, target_bf, 85.0, max(0, weeks_out - 1))
+                    sim = _simulate_cut_to_deadline(bf, target_bf, body_weight_kg, max(0, weeks_out - 1))
                     prep_info["projected_stage_bf_pct"] = sim["projected_bf_pct"]
                     prep_info["ideal_conditioning"] = sim["reached_target"]
                 return {
@@ -312,7 +313,28 @@ def _recommend_phase(
             else:
                 # Extra time — lean bulk first, then cut
                 bulk_weeks = weeks_out - cut_needed - 1  # -1 for peak week
-                if avg_pct < 80:
+
+                # BF ceiling for productive bulking: above ~16% (male) / ~25% (female)
+                # nutrient partitioning is poor — surplus goes to fat, not muscle.
+                # No Olympia-level coach would bulk an athlete above this threshold.
+                bulk_bf_ceiling = 16.0 if sex == "male" else 25.0
+                bf_too_high = bf > bulk_bf_ceiling
+
+                if bf_too_high:
+                    # BF is too high for productive bulking — cut immediately.
+                    # The extended timeline allows a gentler, more sustainable deficit.
+                    return {
+                        "recommended_phase": "cut",
+                        "reason": (
+                            f"Body fat at {bf:.1f}% exceeds the {bulk_bf_ceiling:.0f}% ceiling "
+                            f"for productive bulking (poor nutrient partitioning). "
+                            f"Cut immediately — the {weeks_out}-week timeline allows a gentle "
+                            f"deficit with diet breaks for muscle preservation."
+                        ),
+                        "confidence": "high",
+                        "prep_plan": prep_info,
+                    }
+                elif avg_pct < 80 and not bf_too_high:
                     phase = "bulk" if avg_pct < 70 and bulk_weeks > 8 else "lean_bulk"
                     return {
                         "recommended_phase": phase,
@@ -322,16 +344,6 @@ def _recommend_phase(
                             f"then {cut_needed}-week cut to reach {target_bf:.1f}% BF."
                         ),
                         "confidence": "high",
-                        "prep_plan": prep_info,
-                    }
-                elif bf > fat_threshold + 5:
-                    return {
-                        "recommended_phase": "cut",
-                        "reason": (
-                            f"BF at {bf:.1f}% is elevated. Brief cut to improve insulin sensitivity, "
-                            f"then lean bulk before the main {cut_needed}-week contest cut."
-                        ),
-                        "confidence": "medium",
                         "prep_plan": prep_info,
                     }
                 else:

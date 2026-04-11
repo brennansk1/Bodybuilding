@@ -30,6 +30,8 @@ class UserProfile(Base):
     disliked_exercises: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     injury_history: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     training_start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)  # "HH:MM" format
+    training_end_time: Mapped[str | None] = mapped_column(String(5), nullable=True)  # "HH:MM" format
+    training_time_anchor: Mapped[str | None] = mapped_column(String(10), nullable=True, default="start")  # "start" | "end"
     training_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)  # session length in minutes
     days_per_week: Mapped[int | None] = mapped_column(Integer, nullable=True, default=5)
     program_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)

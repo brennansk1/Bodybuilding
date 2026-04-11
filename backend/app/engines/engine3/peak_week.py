@@ -154,7 +154,8 @@ def compute_peak_week_protocol(
             "protocol_day": "load_1",
             "carbs_factor": _LOAD_CARBS_PER_KG,
             "fat_g": round(lbm * 0.4, 0),
-            "sodium_mg": _SODIUM_VERY_LOW,
+            # sodium_mg overridden by sodium_schedule below (higher for SGLT1).
+            "sodium_mg": _SODIUM_NORMAL,
             "water_ml": _WATER_REDUCED,
             "notes": (
                 "Primary carb load. High-GI carbs from rice, white potato, "
@@ -167,7 +168,8 @@ def compute_peak_week_protocol(
             "protocol_day": "load_2",
             "carbs_factor": _LOAD_CARBS_PER_KG * 0.8,
             "fat_g": round(lbm * 0.3, 0),
-            "sodium_mg": _SODIUM_VERY_LOW,
+            # sodium_mg overridden by sodium_schedule below.
+            "sodium_mg": _SODIUM_NORMAL,
             "water_ml": _WATER_REDUCED,
             "notes": (
                 "Continue carb load at slightly lower carbs. "
@@ -181,7 +183,8 @@ def compute_peak_week_protocol(
             "protocol_day": "show_day",
             "carbs_factor": _SHOW_CARBS_PER_KG,
             "fat_g": round(lbm * 0.3, 0),
-            "sodium_mg": _SODIUM_VERY_LOW,
+            # sodium_mg overridden by sodium_schedule below.
+            "sodium_mg": _SODIUM_LOW,
             "water_ml": _WATER_REDUCED,
             "notes": (
                 "Show day. Small, easily digestible carb meals every 90 min "

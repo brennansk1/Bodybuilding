@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     # DB connection pool settings
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
+    # Telegram bot integration — single shared bot for all users.
+    # Leave empty to disable the feature entirely.
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = ""  # without the leading @
+    # Optional webhook secret — if set, incoming webhook POSTs must include
+    # it in the X-Telegram-Bot-Api-Secret-Token header (set via setWebhook).
+    TELEGRAM_WEBHOOK_SECRET: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

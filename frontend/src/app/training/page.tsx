@@ -18,6 +18,11 @@ interface TrainingSet {
   set_number: number;
   prescribed_reps: number;
   prescribed_weight_kg: number | null;
+  prescribed_rir?: number | null;
+  prescribed_rpe?: number | null;
+  tempo?: string | null;
+  set_technique?: string | null;
+  technique_cue?: string | null;
   actual_reps: number | null;
   actual_weight_kg: number | null;
   rpe: number | null;
@@ -41,6 +46,12 @@ interface TrainingSession {
   sets: TrainingSet[];
   stale_baselines?: boolean;
   dup_profile?: string;
+  estimated_duration_min?: number;
+  workout_window?: {
+    anchor_mode: "start" | "end";
+    start_time: string | null;
+    end_time: string | null;
+  };
 }
 
 interface Program {
@@ -286,6 +297,14 @@ export default function TrainingPage() {
   const [sLogging, setSLogging] = useState(false);
   const [sLogged, setSLogged] = useState(false);
 
+  // ── Pre-workout readiness (ARI) ──
+  const [readiness, setReadiness] = useState<{
+    ari_score: number;
+    zone: "green" | "yellow" | "red";
+    components?: Record<string, number>;
+    recommendation?: string;
+  } | null>(null);
+
   // ── Cardio prescription + logging state ──
   const [cardioPrescription, setCardioPrescription] = useState<{
     cardio: {
@@ -470,6 +489,15 @@ export default function TrainingPage() {
           setCardioFasted(rx.cardio?.fasted ?? true);
         }
       }).catch(() => {});
+      // Pre-workout readiness: latest ARI zone + recommendation
+      api.get<{
+        ari_score: number;
+        zone: "green" | "yellow" | "red";
+        components?: Record<string, number>;
+        recommendation?: string;
+      }>("/engine2/ari")
+        .then(setReadiness)
+        .catch(() => setReadiness(null));
       // BUG-03 fix: check if cardio already logged today (localStorage-based)
       try {
         const lastCardio = localStorage.getItem("cpos_cardio_logged_date");
@@ -664,14 +692,15 @@ export default function TrainingPage() {
     setRestTimer({ active: false, seconds: 0, isCompound: true, isFst7: false });
     if (pendingAdvance) {
       setPendingAdvance(false);
-      // Auto-advance to next incomplete set in Now Playing mode
+      // Auto-advance to next INCOMPLETE set in Now Playing mode. The previous
+      // logic had a dead loop that returned on the first iteration, so the
+      // pointer never skipped past already-logged sets.
       setCurrentSetIndex((prev) => {
-        const next = prev + 1;
-        // Find next incomplete starting from next index
-        for (let i = next; i < allWorkingSets.length; i++) {
-          return i; // advance regardless — let user decide to mark done or skip
+        for (let i = prev + 1; i < allWorkingSets.length; i++) {
+          if (!completedSets[allWorkingSets[i].id]) return i;
         }
-        return prev; // last set — stay
+        // No incomplete sets remaining — stay on current (user can finish).
+        return prev;
       });
     }
   };
@@ -1108,6 +1137,51 @@ export default function TrainingPage() {
             </div>
           )}
 
+          {/* Pre-workout readiness banner — only on today's session */}
+          {session && isToday && readiness && (
+            <div
+              className={`card py-3 border-l-4 ${
+                readiness.zone === "green"
+                  ? "border-green-500/70"
+                  : readiness.zone === "yellow"
+                    ? "border-yellow-500/70"
+                    : "border-red-500/80"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${
+                      readiness.zone === "green"
+                        ? "bg-green-500/20 text-green-400"
+                        : readiness.zone === "yellow"
+                          ? "bg-yellow-500/20 text-yellow-400"
+                          : "bg-red-500/20 text-red-400"
+                    }`}
+                  >
+                    {Math.round(readiness.ari_score)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] text-jungle-dim uppercase tracking-wider">
+                      Readiness · {readiness.zone}
+                    </p>
+                    <p className="text-xs text-jungle-text leading-tight">
+                      {readiness.recommendation || "Log today's check-in for a readiness score."}
+                    </p>
+                  </div>
+                </div>
+                {readiness.zone !== "red" && (
+                  <a
+                    href="/checkin"
+                    className="text-[10px] text-jungle-accent whitespace-nowrap hover:underline"
+                  >
+                    Update
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Session */}
           {session && (
             <>
@@ -1122,7 +1196,18 @@ export default function TrainingPage() {
                       </h2>
                       <p className="text-jungle-dim text-[11px]">
                         Wk {session.week_number} · {completedCount}/{totalCount} sets
+                        {session.estimated_duration_min ? ` · ~${session.estimated_duration_min} min` : ""}
                       </p>
+                      {session.workout_window?.start_time && session.workout_window?.end_time && (
+                        <p className="text-[11px] text-jungle-accent font-mono mt-0.5">
+                          {session.workout_window.start_time}
+                          <span className="text-jungle-dim mx-1">→</span>
+                          {session.workout_window.end_time}
+                          <span className="text-jungle-dim ml-1.5 text-[9px]">
+                            ({session.workout_window.anchor_mode === "end" ? "end anchored" : "start anchored"})
+                          </span>
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -1250,16 +1335,38 @@ export default function TrainingPage() {
 
                       {/* Prescribed target */}
                       {currentSet.prescribed_weight_kg && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[10px] text-jungle-dim uppercase tracking-wide">Target:</span>
                           <span className="text-sm font-semibold text-jungle-muted">
                             {useLbs ? (currentSet.prescribed_weight_kg * 2.20462).toFixed(1) : currentSet.prescribed_weight_kg.toFixed(1)} {unit} × {currentSet.prescribed_reps}
                           </span>
+                          {currentSet.prescribed_rir !== null && currentSet.prescribed_rir !== undefined && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-jungle-accent/10 text-jungle-accent font-semibold">
+                              @ RIR {currentSet.prescribed_rir} · RPE {currentSet.prescribed_rpe}
+                            </span>
+                          )}
+                          {currentSet.tempo && (
+                            <span className="text-[10px] text-jungle-dim font-mono">
+                              tempo {currentSet.tempo}
+                            </span>
+                          )}
                           {prev && (
                             <span className="text-[10px] text-jungle-dim ml-auto">
                               Last: {prev.weight}{unit} × {prev.reps}
                             </span>
                           )}
+                        </div>
+                      )}
+
+                      {/* Intensification technique cue */}
+                      {currentSet.technique_cue && (
+                        <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2">
+                          <p className="text-[10px] text-red-400 uppercase tracking-wider font-bold mb-0.5">
+                            {currentSet.set_technique?.replace(/_/g, " ")} — last set
+                          </p>
+                          <p className="text-[11px] text-jungle-text leading-tight">
+                            {currentSet.technique_cue}
+                          </p>
                         </div>
                       )}
 

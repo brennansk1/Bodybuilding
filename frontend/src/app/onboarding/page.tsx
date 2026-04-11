@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
+import { showError } from "@/components/Toast";
+import { validateRequired, extractErrorMessage } from "@/lib/validation";
 
 const DIVISIONS = [
   { value: "mens_open", label: "Men's Open", desc: "Maximum muscle mass and conditioning" },
@@ -102,21 +104,38 @@ export default function OnboardingPage() {
 
     // Step-specific validation
     if (step === 1) {
+      const missing = validateRequired(
+        { sex, heightCm, division },
+        { sex: "Sex", heightCm: "Height", division: "Division" }
+      );
+      if (missing) {
+        setError(missing);
+        showError(missing);
+        return;
+      }
       if (!heightCm || parseFloat(heightCm) < 100 || parseFloat(heightCm) > 250) {
-        setError("Please enter a valid height between 100–250 cm.");
+        const msg = "Please enter a valid height between 100–250 cm.";
+        setError(msg);
+        showError(msg);
         return;
       }
       if (age && (parseInt(age) < 14 || parseInt(age) > 80)) {
-        setError("Age must be between 14 and 80.");
+        const msg = "Age must be between 14 and 80.";
+        setError(msg);
+        showError(msg);
         return;
       }
       if (manualBodyFatPct && (parseFloat(manualBodyFatPct) < 3 || parseFloat(manualBodyFatPct) > 50)) {
-        setError("Body fat % must be between 3 and 50.");
+        const msg = "Body fat % must be between 3 and 50.";
+        setError(msg);
+        showError(msg);
         return;
       }
     }
     if (step === 2 && (!bodyWeight || parseFloat(bodyWeight) < 30)) {
-      setError("Please enter your body weight (minimum 30 kg).");
+      const msg = "Please enter your body weight (minimum 30 kg).";
+      setError(msg);
+      showError(msg);
       return;
     }
 
@@ -177,7 +196,9 @@ export default function OnboardingPage() {
       }
       setStep(step + 1);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "An error occurred");
+      const msg = extractErrorMessage(e, "An error occurred");
+      setError(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }

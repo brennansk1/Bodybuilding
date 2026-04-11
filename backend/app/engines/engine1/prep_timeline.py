@@ -241,9 +241,12 @@ def estimate_cut_duration(
     target_fat_mass = lean_mass / (1.0 - target_bf_pct / 100.0) * (target_bf_pct / 100.0)
     fat_to_lose_kg = fat_mass - target_fat_mass
 
-    # Account for ~15-20% lean tissue loss during a cut (conservative estimate)
-    # Total weight loss ≈ fat_to_lose / 0.82
-    total_weight_to_lose = fat_to_lose_kg / 0.82
+    # Lean tissue loss during a coached cut with adequate protein (≥2.0 g/kg)
+    # and resistance training is ~10-12% of total weight loss (Helms et al. 2014).
+    # Suboptimal protein produces ~18% lean loss. Default to the coached ratio
+    # since this system prescribes adequate protein for all athletes.
+    _FAT_LOSS_RATIO = 0.88  # 88% of weight lost is fat, 12% lean
+    total_weight_to_lose = fat_to_lose_kg / _FAT_LOSS_RATIO
     projected_stage_weight = current_weight_kg - total_weight_to_lose
 
     # Simulate week-by-week loss with adaptation
@@ -276,8 +279,8 @@ def estimate_cut_duration(
         sim_weight -= weekly_loss
         total_lost += weekly_loss
 
-        # Recalculate BF% (assume 82% of loss is fat)
-        fat_lost_this_week = weekly_loss * 0.82
+        # Recalculate BF% (88% of loss is fat with coached protein/training)
+        fat_lost_this_week = weekly_loss * _FAT_LOSS_RATIO
         sim_fat = sim_weight * (sim_bf / 100.0) - fat_lost_this_week
         sim_bf = max(target_bf_pct, (sim_fat / sim_weight) * 100.0) if sim_weight > 0 else target_bf_pct
 
@@ -349,7 +352,7 @@ def _simulate_cut_to_deadline(
         sim_weight -= weekly_loss
         total_lost += weekly_loss
 
-        fat_lost = weekly_loss * 0.82
+        fat_lost = weekly_loss * 0.88
         sim_fat = sim_weight * (sim_bf / 100.0) - fat_lost
         sim_bf = max(target_bf_pct, (sim_fat / sim_weight) * 100.0) if sim_weight > 0 else target_bf_pct
 
@@ -397,6 +400,15 @@ def compute_smart_phase_plan(
 
     warnings: list[str] = []
 
+    # ── Body fat threshold for bulking ──
+    # No Olympia-level coach would bulk an athlete above ~16% BF (male) or
+    # ~25% BF (female).  Nutrient partitioning is poor at higher body fat —
+    # surplus calories go disproportionately to fat rather than muscle.
+    # The athlete must diet down first to improve insulin sensitivity and
+    # growth partitioning before any surplus phase.
+    _BULK_BF_CEILING = {"male": 16.0, "female": 25.0}
+    bf_too_high_for_bulk = current_bf_pct > _BULK_BF_CEILING.get(sex, 16.0)
+
     # ── Determine how to split the available time ──
 
     if current_bf_pct <= target_bf + 1.0:
@@ -404,6 +416,23 @@ def compute_smart_phase_plan(
         actual_cut_weeks = min(4, available_for_cut)  # light polish cut
         lean_bulk_weeks = max(0, available_for_cut - actual_cut_weeks)
         conditioning_note = "Near stage conditioning. Light deficit to dial in."
+    elif bf_too_high_for_bulk:
+        # Body fat too high for productive bulking — cut immediately.
+        # The extra time allows a gentler, more sustainable deficit with
+        # diet breaks, which better preserves muscle and metabolic rate.
+        actual_cut_weeks = available_for_cut
+        lean_bulk_weeks = 0
+        conditioning_note = (
+            f"Body fat ({current_bf_pct:.1f}%) is above the "
+            f"{_BULK_BF_CEILING.get(sex, 16.0):.0f}% threshold for productive "
+            f"bulking. Cutting immediately — the extended timeline allows a "
+            f"gentler deficit with diet breaks for better muscle preservation."
+        )
+        warnings.append(
+            f"Skipping lean bulk phase: {current_bf_pct:.1f}% BF exceeds the "
+            f"{_BULK_BF_CEILING.get(sex, 16.0):.0f}% ceiling for nutrient "
+            f"partitioning. Starting deficit immediately."
+        )
     elif ideal_cut_weeks <= available_for_cut:
         # Ideal case: enough time for full cut + some lean bulk
         actual_cut_weeks = ideal_cut_weeks
