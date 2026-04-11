@@ -41,6 +41,7 @@ interface Profile {
     cut_threshold_bf_pct?: number;
     cheat_meals_per_week?: number;
     intra_workout_nutrition?: boolean;
+    fasted_training?: boolean;
     initial_phase?: string;
     preferred_proteins?: string[];
     preferred_carbs?: string[];
@@ -148,6 +149,7 @@ export default function SettingsPage() {
   const [cardioMachine, setCardioMachine] = useState("treadmill");
   const [fastedCardio, setFastedCardio] = useState(true);
   const [intraWorkout, setIntraWorkout] = useState(false);
+  const [fastedTraining, setFastedTraining] = useState(false);
   const [equipment, setEquipment] = useState<string[]>([]);
   const [dislikedRaw, setDislikedRaw] = useState("");
   const [injuryRaw, setInjuryRaw] = useState("");
@@ -162,8 +164,6 @@ export default function SettingsPage() {
   const [blacklistedFoods, setBlacklistedFoods] = useState<string[]>([]);
 
   // ── Dashboard visualizations ────────────────────────────────────────────────
-  const [dashViz, setDashViz] = useState<Record<string, boolean>>({});
-  const [dashVizSaving, setDashVizSaving] = useState(false);
 
   // ── HealthKit API keys ───────────────────────────────────────────────────────
   interface HealthKitKey {
@@ -181,14 +181,19 @@ export default function SettingsPage() {
   // ── Telegram bot ────────────────────────────────────────────────────────────
   interface TelegramStatus {
     enabled: boolean;
+    shared_bot_available?: boolean;
     linked: boolean;
+    has_own_bot?: boolean;
     bot_username: string | null;
     notify: Record<string, boolean>;
   }
   const [telegramStatus, setTelegramStatus] = useState<TelegramStatus | null>(null);
-  const [telegramCode, setTelegramCode] = useState<string | null>(null);
+  const [telegramBotTokenInput, setTelegramBotTokenInput] = useState("");
+  const [telegramLinkedUsername, setTelegramLinkedUsername] = useState<string | null>(null);
   const [telegramDeepLink, setTelegramDeepLink] = useState<string | null>(null);
   const [telegramLoading, setTelegramLoading] = useState(false);
+  const [telegramLinkError, setTelegramLinkError] = useState("");
+  const [showTelegramGuide, setShowTelegramGuide] = useState(false);
 
   // ── Notifications ───────────────────────────────────────────────────────────
   const [notifyCheckin, setNotifyCheckin] = useState(false);
@@ -237,6 +242,7 @@ export default function SettingsPage() {
         setCardioMachine(prefs.cardio_machine ?? "treadmill");
         setFastedCardio(prefs.fasted_cardio ?? true);
         setIntraWorkout(prefs.intra_workout_nutrition ?? false);
+        setFastedTraining(prefs.fasted_training ?? false);
         setEquipment(p.available_equipment ?? []);
         setDislikedRaw((p.disliked_exercises ?? []).join(", "));
         setInjuryRaw((p.injury_history ?? []).join(", "));
@@ -250,7 +256,8 @@ export default function SettingsPage() {
         setBlacklistedFoods(prefs.blacklisted_foods ?? []);
         // Dashboard visualizations — preferences.dashboard_viz
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setDashViz(((prefs as any).dashboard_viz as Record<string, boolean>) ?? {});
+        // dashboard_viz is loaded implicitly — the Edit Dashboard mode on
+        // the dashboard page itself reads from dashboard_settings.viz.
       }).catch(() => {});
 
       if (typeof window !== "undefined") {
@@ -307,18 +314,33 @@ export default function SettingsPage() {
   };
 
   // ── Telegram helpers ────────────────────────────────────────────────────────
-  const generateTelegramCode = async () => {
+  // Per-user bot flow: user pastes a BotFather token, we validate + register
+  // the webhook server-side, and route all subsequent messages through
+  // their own bot. The legacy /link/generate shared-bot flow is no longer
+  // reachable from this UI (it 503'd because the shared bot isn't set).
+  const linkTelegramWithToken = async () => {
+    const token = telegramBotTokenInput.trim();
+    if (!token || !token.includes(":")) {
+      setTelegramLinkError("That doesn't look like a BotFather token (expected format: 123456:ABC…)");
+      return;
+    }
     setTelegramLoading(true);
+    setTelegramLinkError("");
     try {
       const res = await api.post<{
-        code: string;
-        deep_link: string;
+        linked: boolean;
         bot_username: string;
-      }>("/telegram/link/generate", {});
-      setTelegramCode(res.code);
+        deep_link: string;
+      }>("/telegram/link/token", { bot_token: token });
+      setTelegramLinkedUsername(res.bot_username);
       setTelegramDeepLink(res.deep_link);
+      setTelegramBotTokenInput("");
+      const fresh = await api.get<TelegramStatus>("/telegram/status");
+      setTelegramStatus(fresh);
+      showSuccess(`Linked to @${res.bot_username}`);
     } catch (err) {
-      showError(extractErrorMessage(err, "Couldn't generate a link code. Telegram may not be configured on this server."));
+      const msg = extractErrorMessage(err, "Couldn't link that bot. Check the token and try again.");
+      setTelegramLinkError(msg);
     } finally {
       setTelegramLoading(false);
     }
@@ -328,8 +350,9 @@ export default function SettingsPage() {
     setTelegramLoading(true);
     try {
       await api.post("/telegram/unlink", {});
-      setTelegramCode(null);
+      setTelegramLinkedUsername(null);
       setTelegramDeepLink(null);
+      setTelegramBotTokenInput("");
       const fresh = await api.get<TelegramStatus>("/telegram/status");
       setTelegramStatus(fresh);
       showSuccess("Telegram disconnected");
@@ -360,40 +383,9 @@ export default function SettingsPage() {
     { key: "missed_checkin", label: "Missed check-in nudge" },
   ];
 
-  // ── Dashboard viz toggle helper ─────────────────────────────────────────────
-  const toggleDashViz = async (key: string, value: boolean) => {
-    const next = { ...dashViz, [key]: value };
-    setDashViz(next);
-    setDashVizSaving(true);
-    try {
-      await api.patch("/onboarding/profile", { preferences: { dashboard_viz: next } });
-    } catch (err) {
-      showError(extractErrorMessage(err, "Couldn't save dashboard settings"));
-      setDashViz(dashViz); // revert
-    } finally {
-      setDashVizSaving(false);
-    }
-  };
-
-  const DASH_VIZ_OPTIONS: { key: string; label: string; desc: string }[] = [
-    { key: "spider", label: "Proportion Spider", desc: "% of Ideal per muscle site" },
-    { key: "muscle_gaps", label: "Muscle Gaps", desc: "Lean size vs. division ideal" },
-    { key: "pds_trajectory", label: "PDS Trajectory", desc: "Glide path over time" },
-    { key: "heatmap", label: "Hypertrophy Heatmap", desc: "Body map colored by gap" },
-    { key: "symmetry", label: "Bilateral Symmetry", desc: "Left vs. right balance" },
-    { key: "phase_rec", label: "Phase Recommendation", desc: "Current phase + urgency" },
-    { key: "comp_class", label: "Competition Class", desc: "Division + weight cap" },
-    { key: "growth_projection", label: "Growth Projection", desc: "Per-site % of ideal" },
-    { key: "detail_metrics", label: "Detail Metrics", desc: "Lat spread, VMO" },
-    { key: "ari", label: "Autonomic Fuel Gauge", desc: "ARI recovery readiness" },
-    { key: "adherence", label: "Adherence Grid", desc: "12-week compliance" },
-    { key: "prep_timeline", label: "Prep Timeline", desc: "Competition countdown" },
-    { key: "strength_progression", label: "Strength Progression", desc: "e1RM of top lifts (new)" },
-    { key: "body_weight_trend", label: "Body Weight Trend", desc: "Rolling avg + phase (new)" },
-    { key: "macro_adherence", label: "Macro Adherence", desc: "30-day P/C/F target hit (new)" },
-    { key: "weekly_volume", label: "Weekly Volume vs Landmarks", desc: "Sets vs MEV/MAV/MRV (new)" },
-    { key: "recovery_trend", label: "Recovery Trend", desc: "ARI composite over time (new)" },
-  ];
+  // Dashboard viz toggles moved to the dashboard's Edit Dashboard mode.
+  // The legacy `dashboard_viz` key in preferences is still loaded above for
+  // back-compat with older users who haven't migrated to dashboard_settings yet.
 
   // ── Save ────────────────────────────────────────────────────────────────────
   const saveProfile = async () => {
@@ -467,6 +459,7 @@ export default function SettingsPage() {
           cut_threshold_bf_pct: cutThreshold ? parseFloat(cutThreshold) : null,
           cheat_meals_per_week: cheatMeals ? parseInt(cheatMeals) : 0,
           intra_workout_nutrition: intraWorkout,
+          fasted_training: fastedTraining,
           initial_phase: currentPhase || null,
           preferred_proteins: preferredProteins,
           preferred_carbs: preferredCarbs,
@@ -517,6 +510,7 @@ export default function SettingsPage() {
       JSON.stringify(originalPrefs.blacklisted_foods ?? []) !== JSON.stringify(blacklistedFoods) ||
       (originalPrefs.cheat_meals_per_week ?? 0) !== parseInt(cheatMeals || "0") ||
       (originalPrefs.intra_workout_nutrition ?? false) !== intraWorkout ||
+      (originalPrefs.fasted_training ?? false) !== fastedTraining ||
       (originalPrefs.initial_phase ?? "") !== (currentPhase || "") ||
       structuralKeysChanged;   // body composition changes affect macros
 
@@ -1048,6 +1042,19 @@ export default function SettingsPage() {
                   onChange={setIntraWorkout}
                 />
 
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <Toggle
+                      label="Fasted training (skip pre-workout meal)"
+                      checked={fastedTraining}
+                      onChange={setFastedTraining}
+                    />
+                    <p className="text-[10px] text-jungle-dim mt-1 ml-0">
+                      Leave OFF to get a real pre-workout breakfast (oats + whey + banana). Turn ON only if you explicitly want to train on an empty stomach.
+                    </p>
+                  </div>
+                </div>
+
                 <div>
                   <label className="label-field">Preferred Cardio Machine</label>
                   <select
@@ -1355,17 +1362,11 @@ export default function SettingsPage() {
                     </span>
                   )}
                 </div>
-                {telegramStatus && !telegramStatus.enabled ? (
-                  <p className="text-xs text-jungle-dim">
-                    The bot isn&apos;t configured on this deployment. Ask the admin to set
-                    <code className="mx-1 px-1 bg-jungle-deeper rounded text-jungle-accent">TELEGRAM_BOT_TOKEN</code>
-                    in the backend environment.
-                  </p>
-                ) : telegramStatus?.linked ? (
+                {telegramStatus?.linked ? (
                   <>
                     <p className="text-xs text-jungle-dim">
-                      Your Coronado account is linked to Telegram. Adjust which reminders
-                      you receive below, or disconnect the chat.
+                      Your Coronado account is linked to <strong>@{telegramStatus.bot_username}</strong>.
+                      Adjust which reminders you receive below, or disconnect.
                     </p>
                     <div className="space-y-2">
                       {TELEGRAM_NOTIFY_OPTIONS.map((opt) => (
@@ -1393,41 +1394,53 @@ export default function SettingsPage() {
                 ) : (
                   <>
                     <p className="text-xs text-jungle-dim">
-                      Link your Coronado account to Telegram to get workout previews,
-                      meal reminders, and check-in nudges directly in chat. Generate a
-                      one-time code and send it to the bot.
+                      Get workout previews, meal reminders, and readiness alerts in Telegram.
+                      You bring your own bot from BotFather (free, takes 30 seconds) — the chat
+                      is 100% yours.
                     </p>
-                    {telegramCode ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between rounded-lg bg-jungle-deeper px-3 py-3">
-                          <div>
-                            <p className="text-[10px] text-jungle-dim uppercase tracking-wide">Link code</p>
-                            <p className="text-2xl font-mono font-bold text-jungle-accent tracking-widest">{telegramCode}</p>
-                          </div>
-                          <span className="text-[10px] text-jungle-dim">Expires in 15 min</span>
-                        </div>
-                        {telegramDeepLink && (
-                          <a
-                            href={telegramDeepLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-primary block text-center"
-                          >
-                            Open in Telegram
-                          </a>
-                        )}
-                        <p className="text-[10px] text-jungle-dim text-center">
-                          Or message @{telegramStatus?.bot_username || "the bot"} with: <code>/start {telegramCode}</code>
-                        </p>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={generateTelegramCode}
-                        disabled={telegramLoading}
-                        className="btn-primary w-full disabled:opacity-50"
+                    <button
+                      type="button"
+                      onClick={() => setShowTelegramGuide(true)}
+                      className="w-full py-2 text-xs text-jungle-accent border border-jungle-accent/40 rounded-lg hover:bg-jungle-accent/10 transition-colors"
+                    >
+                      📖 How to create a Telegram bot (BotFather guide)
+                    </button>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-jungle-dim uppercase tracking-wider">
+                        Paste your BotFather token
+                      </label>
+                      <input
+                        type="text"
+                        value={telegramBotTokenInput}
+                        onChange={(e) => {
+                          setTelegramBotTokenInput(e.target.value);
+                          setTelegramLinkError("");
+                        }}
+                        placeholder="123456:ABC-..."
+                        className="input-field text-xs font-mono"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      {telegramLinkError && (
+                        <p className="text-[10px] text-red-400">{telegramLinkError}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={linkTelegramWithToken}
+                      disabled={telegramLoading || !telegramBotTokenInput.trim()}
+                      className="btn-primary w-full disabled:opacity-50"
+                    >
+                      {telegramLoading ? "Linking..." : "Link Bot"}
+                    </button>
+                    {telegramLinkedUsername && telegramDeepLink && (
+                      <a
+                        href={telegramDeepLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-center text-xs text-jungle-accent hover:underline"
                       >
-                        {telegramLoading ? "Generating..." : "Generate Link Code"}
-                      </button>
+                        Open @{telegramLinkedUsername} in Telegram → send /start
+                      </a>
                     )}
                   </>
                 )}
@@ -1575,38 +1588,6 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              {/* Dashboard Visualizations */}
-              <div className="card space-y-3">
-                <div className="flex items-center justify-between">
-                  <SectionHeader>Dashboard Visualizations</SectionHeader>
-                  {dashVizSaving && (
-                    <span className="text-[10px] text-jungle-accent">Saving...</span>
-                  )}
-                </div>
-                <p className="text-xs text-jungle-dim">
-                  Toggle cards on or off. Changes save immediately. Some newer
-                  visualizations require additional data (strength logs, recent check-ins).
-                </p>
-                <div className="space-y-2">
-                  {DASH_VIZ_OPTIONS.map((opt) => (
-                    <div
-                      key={opt.key}
-                      className="flex items-center justify-between py-1.5 border-b border-jungle-border/30 last:border-b-0"
-                    >
-                      <div className="min-w-0 flex-1 pr-3">
-                        <p className="text-sm text-jungle-text font-medium">{opt.label}</p>
-                        <p className="text-[10px] text-jungle-dim">{opt.desc}</p>
-                      </div>
-                      <Toggle
-                        label=""
-                        checked={dashViz[opt.key] !== false}
-                        onChange={(v) => toggleDashViz(opt.key, v)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Export */}
               <div className="card space-y-3">
                 <SectionHeader>Data Export</SectionHeader>
@@ -1690,6 +1671,142 @@ export default function SettingsPage() {
       <div className="h-20" />
 
       {/* iPhone Shortcut setup guide modal */}
+      {showTelegramGuide && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
+          onClick={() => setShowTelegramGuide(false)}
+        >
+          <div
+            className="bg-jungle-card border border-jungle-border rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-jungle-card/95 backdrop-blur-md border-b border-jungle-border px-4 py-3 flex items-center justify-between z-10">
+              <h3 className="text-sm font-bold text-jungle-text">🤖 BotFather — Create a Telegram Bot</h3>
+              <button
+                type="button"
+                onClick={() => setShowTelegramGuide(false)}
+                className="text-jungle-dim hover:text-jungle-accent text-2xl leading-none px-2"
+                aria-label="Close guide"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-5 text-[12px] text-jungle-text leading-relaxed">
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">What is this?</h4>
+                <p className="text-jungle-muted">
+                  BotFather is Telegram&apos;s official bot for creating bots. You&apos;ll chat
+                  with it to create a brand-new private bot that belongs to you. Coronado
+                  then uses that bot to send you coaching messages (workout previews,
+                  readiness alerts, meal reminders). The bot is 100% yours — no one else
+                  can see your chats or data.
+                </p>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 1 — Open BotFather</h4>
+                <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>Open Telegram on your phone or desktop.</li>
+                  <li>
+                    Search for <strong>@BotFather</strong> (the real one has a blue
+                    checkmark).
+                  </li>
+                  <li>Tap <strong>Start</strong> or send <code className="bg-jungle-deeper px-1.5 py-0.5 rounded text-jungle-accent">/start</code>.</li>
+                </ol>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 2 — Create the bot</h4>
+                <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>
+                    Send <code className="bg-jungle-deeper px-1.5 py-0.5 rounded text-jungle-accent">/newbot</code> to BotFather.
+                  </li>
+                  <li>
+                    BotFather asks for a <strong>name</strong> (displayed in chat).
+                    Pick whatever you like — e.g. <em>Coronado Coach</em>.
+                  </li>
+                  <li>
+                    Next, BotFather asks for a <strong>username</strong>. It must end in
+                    <code className="mx-1 bg-jungle-deeper px-1 rounded">bot</code> and be globally unique.
+                    Try something like <code className="bg-jungle-deeper px-1 rounded">yourname_coronado_bot</code>.
+                  </li>
+                </ol>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 3 — Copy the token</h4>
+                <p className="text-jungle-muted">
+                  BotFather replies with a congratulations message that includes a line like:
+                </p>
+                <pre className="text-[10px] bg-jungle-deeper px-3 py-2.5 rounded overflow-x-auto text-jungle-accent leading-snug">{`Use this token to access the HTTP API:
+1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ1234567890
+
+Keep your token secure and store it safely...`}</pre>
+                <p className="text-jungle-muted">
+                  The long string (<code className="bg-jungle-deeper px-1 rounded">1234567890:ABC…</code>)
+                  is your <strong>bot token</strong>. Tap and hold it in Telegram to copy.
+                </p>
+                <p className="text-[10px] text-jungle-dim">
+                  ⚠️ Treat this token like a password. Anyone with it can control your bot.
+                </p>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 4 — Paste it into Coronado</h4>
+                <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>Close this guide.</li>
+                  <li>
+                    Paste the token into the <strong>BotFather token</strong> input below
+                    and tap <strong>Link Bot</strong>.
+                  </li>
+                  <li>
+                    If the token is valid, Coronado registers a webhook on your bot and
+                    the link is live immediately.
+                  </li>
+                  <li>
+                    <strong>One more step:</strong> open your bot chat in Telegram and send
+                    <code className="mx-1 bg-jungle-deeper px-1 rounded">/start</code>.
+                    This tells Coronado which chat ID to send messages to.
+                  </li>
+                </ol>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Troubleshooting</h4>
+                <ul className="list-disc ml-5 space-y-1 text-jungle-muted">
+                  <li>
+                    <strong>&quot;Telegram rejected that bot token&quot;</strong> — check for
+                    typos or extra whitespace. The token should start with digits, have
+                    a <code className="bg-jungle-deeper px-1 rounded">:</code>, and contain
+                    only letters/digits/underscores/hyphens.
+                  </li>
+                  <li>
+                    <strong>&quot;failed to register a webhook&quot;</strong> — the backend&apos;s
+                    public URL isn&apos;t reachable from Telegram&apos;s servers. Admin needs to
+                    set <code className="bg-jungle-deeper px-1 rounded">PUBLIC_BASE_URL</code>
+                    to a publicly-routable HTTPS address.
+                  </li>
+                  <li>
+                    <strong>Bot doesn&apos;t respond to /start</strong> — double-check you&apos;re
+                    messaging the right bot (the username you just created, not @BotFather).
+                  </li>
+                </ul>
+              </section>
+
+              <div className="pt-2 border-t border-jungle-border">
+                <button
+                  type="button"
+                  onClick={() => setShowTelegramGuide(false)}
+                  className="btn-primary w-full"
+                >
+                  Got it — back to settings
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showShortcutGuide && (
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"

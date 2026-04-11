@@ -145,34 +145,43 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male", floor
         )}
       </div>
 
-      {/* Legend — continuous gradient bar */}
-      <div className="mt-2 space-y-1">
-        <div className="h-2 rounded-full w-full" style={{
-          background: "linear-gradient(to right, rgb(220,38,38), rgb(234,88,12) 45%, rgb(234,179,8) 64%, rgb(132,204,22) 77%, rgb(34,197,94) 86%, rgb(16,185,129))"
-        }} />
-        <div className="flex justify-between text-[9px] text-jungle-dim px-0.5">
-          {[
-            { label: "0%", sub: "Gap" },
-            { label: "50%" },
-            { label: "70%" },
-            { label: "85%" },
-            { label: "95%" },
-            { label: "110%", sub: "Ideal" },
-          ].map(({ label, sub }) => (
-            <span key={label} className="text-center leading-tight">
-              <span>{label}</span>
-              {sub && <span className="block text-jungle-accent/60">{sub}</span>}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Avg % of Ideal banner */}
-      {overall !== undefined && (
-        <div className="text-center mt-2 text-xs text-jungle-accent font-semibold">
-          Avg % of Ideal: {Math.round(overall)}%
-        </div>
-      )}
+      {/* Overall averaged score + quick stats. Legend lives on the dashboard
+          card now (driven by the user's floor slider) so we don't duplicate. */}
+      {overall !== undefined && (() => {
+        const scores = Object.values(muscleScores).filter((v): v is number => typeof v === "number");
+        const belowIdeal = scores.filter((s) => s < 95).length;
+        const atIdeal = scores.filter((s) => s >= 95 && s < 105).length;
+        const aboveIdeal = scores.filter((s) => s >= 105).length;
+        return (
+          <div className="mt-2 pt-2 border-t border-jungle-border/40">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[9px] text-jungle-dim uppercase tracking-wider">Avg % of ideal</p>
+                <p
+                  className="text-2xl font-bold"
+                  style={{ color: scoreToColor(overall) }}
+                >
+                  {Math.round(overall)}%
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-lg font-bold text-red-400">{belowIdeal}</p>
+                  <p className="text-[9px] text-jungle-dim">gapped</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-green-400">{atIdeal}</p>
+                  <p className="text-[9px] text-jungle-dim">at ideal</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-emerald-400">{aboveIdeal}</p>
+                  <p className="text-[9px] text-jungle-dim">above</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

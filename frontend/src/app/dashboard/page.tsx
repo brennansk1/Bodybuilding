@@ -179,9 +179,18 @@ const GAP_TYPE_COLORS: Record<string, string> = {
   reduce_girth: "#f97316",
 };
 
-// User-requested snap stops for the heatmap color-scale floor slider.
-// Index 0-5 on the slider maps to these percentages.
-const HEATMAP_FLOOR_STOPS = [0, 50, 70, 85, 95, 110];
+// Heatmap color-scale floor slider — 10% steps from 0 to 110.
+// Labels are shown at the anchor stops the user originally requested:
+// 0% Gap, 50%, 70%, 85%, 95%, 110% Ideal.
+const HEATMAP_FLOOR_STOPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110];
+const HEATMAP_FLOOR_LABELS: Record<number, string> = {
+  0: "Gap",
+  50: "50",
+  70: "70",
+  85: "85",
+  95: "95",
+  110: "Ideal",
+};
 
 // Single source of truth for dashboard card metadata. Drives edit mode
 // (labels, default order) and the Settings visibility list.
@@ -203,6 +212,9 @@ const CARD_REGISTRY: Array<{ key: string; label: string }> = [
   { key: "macro_adherence", label: "Macro Adherence" },
   { key: "weekly_volume", label: "Weekly Volume" },
   { key: "recovery_trend", label: "Recovery Trend" },
+  { key: "mesocycle_progress", label: "Mesocycle Progress" },
+  { key: "energy_availability", label: "Energy Availability" },
+  { key: "training_time", label: "Weekly Training Time" },
 ];
 const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
 const LABEL_OF: Record<string, string> = Object.fromEntries(
@@ -346,6 +358,15 @@ export default function DashboardPage() {
   const [weeklyVolume, setWeeklyVolume] = useState<VolumeRow[]>([]);
   interface RecoveryPoint { date: string; score: number; }
   const [recoveryTrend, setRecoveryTrend] = useState<RecoveryPoint[]>([]);
+  // Mesocycle program state for the new Mesocycle Progress widget
+  interface ProgramState { current_week: number; mesocycle_weeks: number; split_type: string; }
+  const [program, setProgram] = useState<ProgramState | null>(null);
+  // Cardio prescription for the Weekly Training Time widget
+  interface CardioPrescriptionState {
+    cardio?: { duration_min?: number; sessions_per_week?: number };
+    summary?: { cardio_sessions?: number };
+  }
+  const [cardioPrescription, setCardioPrescription] = useState<CardioPrescriptionState | null>(null);
   const [runningDiag, setRunningDiag] = useState(false);
   const [diagnostic, setDiagnostic] = useState<DiagnosticData | null>(null);
   const [classEstimate, setClassEstimate] = useState<ClassEstimate | null>(null);
@@ -452,6 +473,9 @@ export default function DashboardPage() {
     softFetch<{ series: StrengthSeries[] }>("/engine2/strength/progression", (r) => setStrengthSeries(r.series || []));
     softFetch<{ rows: VolumeRow[] }>("/engine2/volume/weekly", (r) => setWeeklyVolume(r.rows || []));
     softFetch<{ data: RecoveryPoint[] }>("/checkin/recovery/trend?days=30", (r) => setRecoveryTrend(r.data || []));
+    // For Mesocycle Progress + Weekly Training Time widgets
+    softFetch<ProgramState>("/engine2/program/current", setProgram);
+    softFetch<CardioPrescriptionState>("/engine3/cardio/prescription", setCardioPrescription);
 
     // Today's plan previews
     const todayStr = new Date().toISOString().split("T")[0];
@@ -692,73 +716,137 @@ export default function DashboardPage() {
           </div>
         ) : null}
         {pds ? (
-          <div className="card mb-6 bg-jungle-gradient">
-            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
-              <div className="text-center sm:text-left shrink-0">
-                <p className="text-jungle-muted text-xs uppercase tracking-wider">
-                  Physique Development Score
-                </p>
-                <p className="text-5xl font-bold text-jungle-accent mt-1">
-                  {pds.current.pds_score}
-                </p>
-                <p className="text-jungle-fern text-sm mt-1 capitalize font-medium">
-                  {pds.current.tier} tier
-                </p>
-              </div>
-              <div className="hidden sm:block w-px h-16 bg-jungle-border" />
-              <div className="flex flex-wrap gap-x-6 gap-y-2 text-center">
-                {Object.entries(pds.current.components).map(([key, val]) => (
-                  <div key={key}>
-                    <p className="text-xs text-jungle-muted uppercase tracking-wide">{key.replace(/_/g, " ")}</p>
-                    <p className="text-lg font-semibold">{Math.round(val)}</p>
+          <div className="card mb-6 bg-jungle-gradient space-y-4">
+            {/* Row 1 — PDS score + component rings + re-run button */}
+            <div className="flex flex-col md:flex-row items-center gap-5 md:gap-6">
+              {/* Big PDS ring */}
+              <div className="shrink-0 flex items-center gap-4">
+                <div className="relative w-24 h-24">
+                  <svg viewBox="0 0 100 100" className="w-24 h-24 -rotate-90">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#1a3328" strokeWidth="8" />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#c8a84e"
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                      strokeDasharray={`${(pds.current.pds_score / 100) * 263.9} 263.9`}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-2xl font-bold text-jungle-accent leading-none">{Math.round(pds.current.pds_score)}</span>
+                    <span className="text-[9px] text-jungle-dim uppercase tracking-wider mt-0.5">PDS</span>
                   </div>
-                ))}
+                </div>
+                <div className="text-left">
+                  <p className="text-[10px] text-jungle-muted uppercase tracking-wider">
+                    Physique Development Score
+                  </p>
+                  <p className="text-jungle-fern text-sm capitalize font-semibold mt-0.5">
+                    {pds.current.tier} tier
+                  </p>
+                  {pds.history && pds.history.length >= 2 && (() => {
+                    const latest = pds.history[pds.history.length - 1].pds_score;
+                    const prev = pds.history[pds.history.length - 2].pds_score;
+                    const delta = latest - prev;
+                    return (
+                      <p className={`text-[11px] mt-0.5 ${delta >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)} vs last
+                      </p>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Component mini-rings */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-1 w-full">
+                {Object.entries(pds.current.components).map(([key, val]) => {
+                  const pct = Math.max(0, Math.min(100, val));
+                  const color = pct >= 80 ? "#22c55e" : pct >= 60 ? "#c8a84e" : pct >= 40 ? "#f97316" : "#ef4444";
+                  return (
+                    <div key={key} className="flex flex-col items-center">
+                      <div className="relative w-14 h-14">
+                        <svg viewBox="0 0 100 100" className="w-14 h-14 -rotate-90">
+                          <circle cx="50" cy="50" r="40" fill="none" stroke="#1a3328" strokeWidth="8" />
+                          <circle
+                            cx="50" cy="50" r="40"
+                            fill="none"
+                            stroke={color}
+                            strokeWidth="8"
+                            strokeLinecap="round"
+                            strokeDasharray={`${(pct / 100) * 251.3} 251.3`}
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-sm font-bold" style={{ color }}>{Math.round(val)}</span>
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-jungle-muted uppercase tracking-wider mt-1 text-center capitalize">
+                        {key.replace(/_/g, " ")}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Actions */}
+              <div className="shrink-0 flex md:flex-col gap-2">
+                <button
+                  onClick={runDiagnostics}
+                  disabled={runningDiag}
+                  className="btn-secondary text-xs px-3 py-1.5 disabled:opacity-50"
+                >
+                  {runningDiag ? "Running…" : "↻ Re-run"}
+                </button>
+                <a href="/progress" className="btn-secondary text-xs px-3 py-1.5 text-center">
+                  Progress →
+                </a>
+              </div>
+            </div>
+
+            {/* Row 2 — Body composition strip */}
+            {(diagnostic?.body_fat || diagnostic?.weight_cap) && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-jungle-border/50">
                 {diagnostic?.body_fat && (
                   <>
-                    <div className="hidden sm:block w-px h-8 self-center bg-jungle-border" />
                     <div>
-                      <p className="text-xs text-jungle-muted uppercase tracking-wide">Body Fat</p>
-                      <p className="text-lg font-semibold">{diagnostic.body_fat.body_fat_pct}%</p>
+                      <p className="text-[9px] text-jungle-dim uppercase tracking-wider">Body Fat</p>
+                      <p className="text-lg font-bold text-jungle-text">{diagnostic.body_fat.body_fat_pct.toFixed(1)}%</p>
                       {diagnostic.body_fat.confidence && (
-                        <p className="text-[9px] text-jungle-dim capitalize">{diagnostic.body_fat.confidence} conf.</p>
+                        <p className="text-[9px] text-jungle-dim capitalize">{diagnostic.body_fat.confidence} conf</p>
                       )}
                     </div>
                     {diagnostic.body_fat.lean_mass_kg && (
                       <div>
-                        <p className="text-xs text-jungle-muted uppercase tracking-wide">LBM</p>
-                        <p className="text-lg font-semibold">{wt(diagnostic.body_fat.lean_mass_kg)} {unit}</p>
+                        <p className="text-[9px] text-jungle-dim uppercase tracking-wider">LBM</p>
+                        <p className="text-lg font-bold text-jungle-text">{wt(diagnostic.body_fat.lean_mass_kg)} {unit}</p>
+                        <p className="text-[9px] text-jungle-dim">current lean mass</p>
                       </div>
                     )}
                   </>
                 )}
                 {diagnostic?.weight_cap && (
                   <>
-                    <div className="hidden sm:block w-px h-8 self-center bg-jungle-border" />
                     <div>
-                      <p className="text-xs text-jungle-muted uppercase tracking-wide">Weight Cap</p>
-                      <p className="text-lg font-semibold">{wt(diagnostic.weight_cap.weight_cap_kg)} {unit}</p>
+                      <p className="text-[9px] text-jungle-dim uppercase tracking-wider">Weight Cap</p>
+                      <p className="text-lg font-bold text-jungle-accent">{wt(diagnostic.weight_cap.weight_cap_kg)} {unit}</p>
                       <p className="text-[9px] text-jungle-dim">IFBB division cap</p>
                     </div>
                     <div>
-                      <p className="text-xs text-jungle-muted uppercase tracking-wide">Target LBM</p>
-                      <p className="text-lg font-semibold">{wt(diagnostic.weight_cap.target_lbm_kg)} {unit}</p>
+                      <p className="text-[9px] text-jungle-dim uppercase tracking-wider">Target LBM</p>
+                      <p className="text-lg font-bold text-green-400">{wt(diagnostic.weight_cap.target_lbm_kg)} {unit}</p>
+                      {diagnostic.body_fat?.lean_mass_kg && (
+                        <p className="text-[9px] text-jungle-dim">
+                          +{wt(diagnostic.weight_cap.target_lbm_kg - diagnostic.body_fat.lean_mass_kg)} {unit} to go
+                        </p>
+                      )}
                     </div>
                   </>
                 )}
               </div>
-              <div className="sm:ml-auto flex flex-col gap-2">
-                <button
-                  onClick={runDiagnostics}
-                  disabled={runningDiag}
-                  className="btn-secondary text-xs px-3 py-1.5 disabled:opacity-50"
-                >
-                  {runningDiag ? "Running…" : "Re-run Diagnostics"}
-                </button>
-                <a href="/progress" className="btn-secondary text-xs px-3 py-1.5 text-center">
-                  View Progress
-                </a>
-              </div>
-            </div>
+            )}
           </div>
         ) : (
           <div className="card mb-6 border-dashed border-jungle-border text-center py-8">
@@ -985,18 +1073,18 @@ export default function DashboardPage() {
                   sex="male"
                   floorPct={heatmapFloor}
                 />
-                {/* Color-scale floor slider — snaps to the 6 user-requested stops */}
-                <div className="mt-3 pt-3 border-t border-jungle-border/40">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] text-jungle-dim uppercase tracking-wider">Color floor</span>
-                    <span className="text-[10px] text-jungle-accent font-mono">{heatmapFloor}%</span>
+                {/* Color-scale floor slider — 10% steps from 0 to 110 */}
+                <div className="mt-3 pt-3 border-t border-jungle-border/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-jungle-dim uppercase tracking-wider">Color scale floor</span>
+                    <span className="text-[10px] text-jungle-accent font-mono">{heatmapFloor}% {heatmapFloor === 0 ? "(Gap)" : heatmapFloor >= 110 ? "(Ideal)" : ""}</span>
                   </div>
                   <input
                     type="range"
                     min={0}
-                    max={5}
+                    max={HEATMAP_FLOOR_STOPS.length - 1}
                     step={1}
-                    value={HEATMAP_FLOOR_STOPS.indexOf(heatmapFloor) >= 0 ? HEATMAP_FLOOR_STOPS.indexOf(heatmapFloor) : 2}
+                    value={Math.max(0, HEATMAP_FLOOR_STOPS.indexOf(heatmapFloor))}
                     onChange={(e) => {
                       const next = HEATMAP_FLOOR_STOPS[parseInt(e.target.value)];
                       setHeatmapFloor(next);
@@ -1005,13 +1093,50 @@ export default function DashboardPage() {
                     className="w-full accent-jungle-accent"
                     aria-label="Heatmap color scale floor"
                   />
-                  <div className="flex justify-between text-[9px] text-jungle-dim mt-1">
-                    <span>0%<br/><span className="text-jungle-dim/60">Gap</span></span>
-                    <span>50%</span>
-                    <span>70%</span>
-                    <span>85%</span>
-                    <span>95%</span>
-                    <span>110%<br/><span className="text-jungle-dim/60">Ideal</span></span>
+                  {/* Labeled stops — shows major anchors */}
+                  <div className="relative h-4 text-[8px] text-jungle-dim">
+                    {HEATMAP_FLOOR_STOPS.map((stop, i) => {
+                      const label = HEATMAP_FLOOR_LABELS[stop];
+                      if (!label) return null;
+                      const pct = (i / (HEATMAP_FLOOR_STOPS.length - 1)) * 100;
+                      return (
+                        <span
+                          key={stop}
+                          className="absolute -translate-x-1/2 text-center leading-tight"
+                          style={{ left: `${pct}%` }}
+                        >
+                          {stop}%
+                          {label !== String(stop) && (
+                            <>
+                              <br />
+                              <span className="text-jungle-dim/60">{label}</span>
+                            </>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {/* Gradient legend — reflects current floor */}
+                  <div className="pt-3">
+                    <div
+                      className="h-2 rounded-full"
+                      style={{
+                        background: `linear-gradient(to right,
+                          rgb(120,10,10) 0%,
+                          rgb(220,38,38) ${(heatmapFloor / 110) * 100}%,
+                          rgb(234,88,12) ${((heatmapFloor + (110 - heatmapFloor) * 0.22) / 110) * 100}%,
+                          rgb(234,179,8) ${((heatmapFloor + (110 - heatmapFloor) * 0.42) / 110) * 100}%,
+                          rgb(180,210,20) ${((heatmapFloor + (110 - heatmapFloor) * 0.6) / 110) * 100}%,
+                          rgb(80,200,60) ${((heatmapFloor + (110 - heatmapFloor) * 0.78) / 110) * 100}%,
+                          rgb(34,197,94) ${((heatmapFloor + (110 - heatmapFloor) * 0.9) / 110) * 100}%,
+                          rgb(16,185,129) 100%)`,
+                      }}
+                    />
+                    <div className="flex justify-between text-[9px] text-jungle-dim mt-1">
+                      <span>Under-developed</span>
+                      <span>At ideal</span>
+                      <span>Elite</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1512,6 +1637,174 @@ export default function DashboardPage() {
             >
               <RecoveryTrendChart data={recoveryTrend} />
             </ChartCard>
+            </SortableCard>
+          )}
+
+          {/* Mesocycle Progress (new) — ring + phase label + deload countdown */}
+          {isVizOn("mesocycle_progress") && program && (
+            <SortableCard id="mesocycle_progress" label="Meso" editMode={editMode} orderIndex={orderOf("mesocycle_progress")} onHide={() => hideCard("mesocycle_progress")}>
+              <ChartCard
+                title="Mesocycle Progress"
+                subtitle={`Week ${program.current_week} of ${program.mesocycle_weeks}`}
+                tooltip="Where you are in the current 6-week mesocycle. Weeks 1-2 MEV, 3-4 MAV, week 5 MRV (peak overload), week 6 deload. The ring shows your progress through the block; the deload is when you pull back and resupercompensate."
+              >
+                {(() => {
+                  const totalWeeks = program.mesocycle_weeks || 6;
+                  const week = program.current_week || 1;
+                  const pct = Math.min(100, (week / totalWeeks) * 100);
+                  const weeksToDeload = Math.max(0, totalWeeks - week);
+                  const phase = week <= 2 ? "MEV" : week <= 4 ? "MAV" : week === 5 ? "MRV" : "DELOAD";
+                  const phaseColor = phase === "MEV" ? "#a3e635" : phase === "MAV" ? "#c8a84e" : phase === "MRV" ? "#f97316" : "#3b82f6";
+                  return (
+                    <div className="flex items-center gap-4 mt-2">
+                      <div className="relative w-20 h-20 shrink-0">
+                        <svg viewBox="0 0 100 100" className="w-20 h-20 -rotate-90">
+                          <circle cx="50" cy="50" r="42" fill="none" stroke="#1a3328" strokeWidth="8" />
+                          <circle cx="50" cy="50" r="42" fill="none" stroke={phaseColor} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(pct / 100) * 263.9} 263.9`} />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-xl font-bold text-jungle-text leading-none">{week}</span>
+                          <span className="text-[9px] text-jungle-dim">of {totalWeeks}</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 space-y-1.5 min-w-0">
+                        <div>
+                          <span className="text-[9px] text-jungle-dim uppercase tracking-wider">Phase</span>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: `${phaseColor}20`, color: phaseColor }}>{phase}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-jungle-dim uppercase tracking-wider">Deload</span>
+                          <p className="text-xs text-jungle-text">
+                            {weeksToDeload === 0 ? "This week" : `in ${weeksToDeload} week${weeksToDeload === 1 ? "" : "s"}`}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-jungle-dim uppercase tracking-wider">Split</span>
+                          <p className="text-xs text-jungle-muted capitalize">{program.split_type.replace(/_/g, " ")}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </ChartCard>
+            </SortableCard>
+          )}
+
+          {/* Energy Availability (new) — RED-S gauge */}
+          {isVizOn("energy_availability") && todayMacros && (
+            <SortableCard id="energy_availability" label="EA" editMode={editMode} orderIndex={orderOf("energy_availability")} onHide={() => hideCard("energy_availability")}>
+              <ChartCard
+                title="Energy Availability"
+                subtitle="kcal / kg FFM / day"
+                tooltip="Energy Availability = (intake − exercise kcal) / fat-free mass. The RED-S (Relative Energy Deficiency in Sport) threshold is 30 kcal/kg FFM. Below 25 is critical — hormones, bone density and immunity suffer."
+              >
+                {(() => {
+                  const ea = (todayMacros as { energy_availability?: { ea_kcal_per_kg_ffm?: number; status?: string; message?: string } })?.energy_availability;
+                  if (!ea || typeof ea.ea_kcal_per_kg_ffm !== "number") {
+                    return <EmptyState label="Need body composition + active prescription to compute EA" />;
+                  }
+                  const value = ea.ea_kcal_per_kg_ffm;
+                  const status = ea.status || "unknown";
+                  const statusColor = status === "ok" ? "#22c55e" : status === "warning" ? "#f97316" : "#ef4444";
+                  const pct = Math.max(0, Math.min(100, (value / 55) * 100)); // scale to 55 as "max healthy"
+                  return (
+                    <div className="mt-3 space-y-3">
+                      <div className="text-center">
+                        <p className="text-3xl font-bold leading-none" style={{ color: statusColor }}>
+                          {value.toFixed(0)}
+                        </p>
+                        <p className="text-[9px] text-jungle-dim uppercase tracking-wider mt-1">kcal/kg FFM</p>
+                      </div>
+                      {/* Gauge bar with RED-S threshold markers */}
+                      <div className="relative">
+                        <div className="h-3 bg-jungle-deeper rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${pct}%`, backgroundColor: statusColor }}
+                          />
+                        </div>
+                        {/* 25 and 30 threshold lines */}
+                        <div className="absolute top-0 bottom-0 w-px bg-red-500/70" style={{ left: `${(25 / 55) * 100}%` }} />
+                        <div className="absolute top-0 bottom-0 w-px bg-yellow-500/70" style={{ left: `${(30 / 55) * 100}%` }} />
+                        <div className="flex justify-between text-[9px] text-jungle-dim mt-1">
+                          <span>0</span>
+                          <span className="text-red-400">25</span>
+                          <span className="text-yellow-400">30</span>
+                          <span>55</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-jungle-muted leading-snug">
+                        {ea.message || "Track your intake to get a live EA reading."}
+                      </p>
+                    </div>
+                  );
+                })()}
+              </ChartCard>
+            </SortableCard>
+          )}
+
+          {/* Weekly Training Time (new) */}
+          {isVizOn("training_time") && (
+            <SortableCard id="training_time" label="Time" editMode={editMode} orderIndex={orderOf("training_time")} onHide={() => hideCard("training_time")}>
+              <ChartCard
+                title="Weekly Training Time"
+                subtitle="This week's gym budget"
+                tooltip="How many hours you're spending in the gym this week. Pro bodybuilders typically train 5-6 days × 60-90 min + 3-5 cardio sessions. This card helps you see the total weekly time commitment and plan around real life."
+              >
+                {weeklyVolume && weeklyVolume.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {(() => {
+                      // Rough estimate: working sets × 2.5 min each + cardio sessions × duration
+                      const totalWorkingSets = weeklyVolume.reduce((a, r) => a + (r.sets || 0), 0);
+                      const liftingHours = (totalWorkingSets * 2.5) / 60;
+                      const cardioHours = (cardioPrescription?.summary?.cardio_sessions || 0) *
+                        (cardioPrescription?.cardio?.duration_min || 30) / 60;
+                      const totalHours = liftingHours + cardioHours;
+                      const liftingPct = totalHours > 0 ? (liftingHours / totalHours) * 100 : 0;
+                      return (
+                        <>
+                          <div className="text-center">
+                            <p className="text-3xl font-bold text-jungle-text leading-none">{totalHours.toFixed(1)}h</p>
+                            <p className="text-[9px] text-jungle-dim uppercase tracking-wider mt-1">total this week</p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div>
+                              <div className="flex justify-between text-[10px] mb-0.5">
+                                <span className="text-jungle-accent">Lifting</span>
+                                <span className="text-jungle-text font-mono">{liftingHours.toFixed(1)}h · {totalWorkingSets} sets</span>
+                              </div>
+                              <div className="h-2 bg-jungle-deeper rounded-full overflow-hidden">
+                                <div className="h-full bg-jungle-accent" style={{ width: `${liftingPct}%` }} />
+                              </div>
+                            </div>
+                            {cardioHours > 0 && (
+                              <div>
+                                <div className="flex justify-between text-[10px] mb-0.5">
+                                  <span className="text-blue-400">Cardio</span>
+                                  <span className="text-jungle-text font-mono">{cardioHours.toFixed(1)}h · {cardioPrescription?.summary?.cardio_sessions}×/wk</span>
+                                </div>
+                                <div className="h-2 bg-jungle-deeper rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-400" style={{ width: `${100 - liftingPct}%` }} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-jungle-dim mt-2">
+                            {totalHours < 5 ? "Low-volume week — good for recovery." :
+                             totalHours < 10 ? "Standard pro bodybuilder window." :
+                             totalHours < 14 ? "High-volume week — monitor recovery." :
+                             "Very high — make sure sleep + food match the work."}
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <EmptyState label="Complete a session to populate weekly time" />
+                )}
+              </ChartCard>
             </SortableCard>
           )}
 

@@ -294,46 +294,75 @@ export default function NutritionPage() {
                 ))}
               </div>
 
-              {activeMacros && (
-                <>
-                  <div className="text-center">
-                    <p className="text-3xl font-bold text-jungle-text">{Math.round(activeMacros.calories)}</p>
-                    <p className="text-[10px] text-jungle-dim">kcal target</p>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="text-center bg-jungle-deeper rounded-xl py-2">
-                      <p className="text-lg font-bold text-blue-400">{Math.round(activeMacros.protein_g)}g</p>
-                      <p className="text-[9px] text-jungle-dim">Protein ({pPct}%)</p>
-                    </div>
-                    <div className="text-center bg-jungle-deeper rounded-xl py-2">
-                      <p className="text-lg font-bold text-amber-400">{Math.round(activeMacros.carbs_g)}g</p>
-                      <p className="text-[9px] text-jungle-dim">Carbs ({cPct}%)</p>
-                    </div>
-                    <div className="text-center bg-jungle-deeper rounded-xl py-2">
-                      <p className="text-lg font-bold text-red-400">{Math.round(activeMacros.fat_g)}g</p>
-                      <p className="text-[9px] text-jungle-dim">Fat ({fPct}%)</p>
-                    </div>
-                  </div>
-
-                  {/* Pie Chart + Macro Explanation */}
-                  <div className="flex items-center gap-4 pt-2 border-t border-jungle-border/40">
-                    <MacroPieChart pPct={pPct} cPct={cPct} fPct={fPct} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <div className="flex gap-1.5">
-                          <span className="flex items-center gap-1 text-[9px]"><span className="w-2 h-2 rounded-full bg-blue-400" />P</span>
-                          <span className="flex items-center gap-1 text-[9px]"><span className="w-2 h-2 rounded-full bg-amber-400" />C</span>
-                          <span className="flex items-center gap-1 text-[9px]"><span className="w-2 h-2 rounded-full bg-red-400" />F</span>
-                        </div>
+              {activeMacros && (() => {
+                const protCals = Math.round(activeMacros.protein_g * 4);
+                const carbCals = Math.round(activeMacros.carbs_g * 4);
+                const fatCals = Math.round(activeMacros.fat_g * 9);
+                const totalCals = protCals + carbCals + fatCals;
+                // Segment widths for the stacked horizontal bar
+                const pWidth = totalCals ? (protCals / totalCals) * 100 : 0;
+                const cWidth = totalCals ? (carbCals / totalCals) * 100 : 0;
+                const fWidth = totalCals ? (fatCals / totalCals) * 100 : 0;
+                return (
+                  <>
+                    {/* Calorie hero */}
+                    <div className="flex items-end gap-3 justify-center pb-2">
+                      <p className="text-4xl font-bold text-jungle-text leading-none">{Math.round(activeMacros.calories)}</p>
+                      <div className="pb-0.5">
+                        <p className="text-[10px] text-jungle-dim uppercase tracking-wider leading-tight">kcal target</p>
+                        <p className="text-[10px] text-jungle-accent leading-tight">{dayTab === "training" ? "Training Day" : "Rest Day"}</p>
                       </div>
-                      <p className="text-[10px] text-jungle-muted leading-relaxed">
-                        {PHASE_MACRO_EXPLANATIONS[rx.phase] || PHASE_MACRO_EXPLANATIONS.maintain}
-                      </p>
                     </div>
-                  </div>
-                </>
-              )}
+
+                    {/* Stacked macro bar */}
+                    <div>
+                      <div className="flex h-3 rounded-full overflow-hidden bg-jungle-deeper">
+                        <div style={{ width: `${pWidth}%` }} className="bg-blue-400" />
+                        <div style={{ width: `${cWidth}%` }} className="bg-amber-400" />
+                        <div style={{ width: `${fWidth}%` }} className="bg-red-400" />
+                      </div>
+                      <div className="flex justify-between text-[9px] text-jungle-dim mt-1">
+                        <span>{pPct}% P</span>
+                        <span>{cPct}% C</span>
+                        <span>{fPct}% F</span>
+                      </div>
+                    </div>
+
+                    {/* Macro cards with per-kg metric */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-jungle-deeper rounded-xl p-2.5 border-t-2 border-blue-400/60">
+                        <div className="flex items-baseline gap-1">
+                          <p className="text-xl font-bold text-blue-400">{Math.round(activeMacros.protein_g)}</p>
+                          <p className="text-[10px] text-jungle-dim">g</p>
+                        </div>
+                        <p className="text-[9px] text-jungle-muted uppercase tracking-wider mt-0.5">Protein</p>
+                        <p className="text-[9px] text-jungle-dim">{protCals} kcal</p>
+                      </div>
+                      <div className="bg-jungle-deeper rounded-xl p-2.5 border-t-2 border-amber-400/60">
+                        <div className="flex items-baseline gap-1">
+                          <p className="text-xl font-bold text-amber-400">{Math.round(activeMacros.carbs_g)}</p>
+                          <p className="text-[10px] text-jungle-dim">g</p>
+                        </div>
+                        <p className="text-[9px] text-jungle-muted uppercase tracking-wider mt-0.5">Carbs</p>
+                        <p className="text-[9px] text-jungle-dim">{carbCals} kcal</p>
+                      </div>
+                      <div className="bg-jungle-deeper rounded-xl p-2.5 border-t-2 border-red-400/60">
+                        <div className="flex items-baseline gap-1">
+                          <p className="text-xl font-bold text-red-400">{Math.round(activeMacros.fat_g)}</p>
+                          <p className="text-[10px] text-jungle-dim">g</p>
+                        </div>
+                        <p className="text-[9px] text-jungle-muted uppercase tracking-wider mt-0.5">Fat</p>
+                        <p className="text-[9px] text-jungle-dim">{fatCals} kcal</p>
+                      </div>
+                    </div>
+
+                    {/* Coach explanation */}
+                    <p className="text-[10px] text-jungle-muted leading-relaxed pt-2 border-t border-jungle-border/40">
+                      {PHASE_MACRO_EXPLANATIONS[rx.phase] || PHASE_MACRO_EXPLANATIONS.maintain}
+                    </p>
+                  </>
+                );
+              })()}
             </div>
 
             {/* ── Today's Intake vs Target ── */}

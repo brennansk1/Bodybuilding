@@ -1100,6 +1100,12 @@ async def _build_meal_plan_for_day(
             )
             session_muscles = [row[0] for row in muscle_result.all() if row[0]]
 
+    # Only opt into fasted training if the user has explicitly set it.
+    # Previously the meal planner auto-forced fasted mode for any workout
+    # before 7 AM, which gave early lifters an empty "Meal 1 — Fasted"
+    # instead of a real pre-workout breakfast.
+    fasted_training = prefs.get("fasted_training", False)
+
     return generate_meal_plan(
         phase=phase,
         division=division,
@@ -1118,6 +1124,7 @@ async def _build_meal_plan_for_day(
         preferred_fats=prefs.get("preferred_fats", []),
         blacklisted_foods=prefs.get("blacklisted_foods", []),
         intra_workout_nutrition=intra_enabled and is_training,
+        fasted_training=fasted_training,
         body_weight_kg=weight_for_fat,
         session_muscles=session_muscles,
     )

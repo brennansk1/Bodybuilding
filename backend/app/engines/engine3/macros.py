@@ -339,19 +339,106 @@ def compute_macros(
     remaining_kcal = target_calories - protein_kcal - fat_kcal
     carbs_g = round(max(remaining_kcal / _KCAL_PER_G_CARB, 0.0), 1)
 
-    # Coaching warnings — late-cut alcohol prohibition, low fat floor, etc.
+    # Coaching warnings — situational notes that surface at the right moment.
     warnings: list[str] = []
-    lean_threshold = 10.0 if sex == "male" else 16.0
-    if phase_lower in ("cut", "peak") and body_fat_pct is not None and body_fat_pct <= lean_threshold:
+    lean_threshold_male = 10.0
+    lean_threshold_female = 16.0
+    lean_threshold = lean_threshold_male if sex == "male" else lean_threshold_female
+    # Target BF for transition from cut → lean bulk (user-specific; defaults
+    # to 12% male / 18% female which is roughly the "visible abs + muscle
+    # retention window" most bodybuilders rebuild from).
+    target_cut_bf_male = 12.0
+    target_cut_bf_female = 18.0
+    target_cut_bf = target_cut_bf_male if sex == "male" else target_cut_bf_female
+
+    # ──────────────────────────────────────────────────────────────────────
+    # CUT phase notes — drive the athlete toward the target then transition.
+    # ──────────────────────────────────────────────────────────────────────
+    if phase_lower == "cut" and body_fat_pct is not None:
+        if body_fat_pct > target_cut_bf + 4:
+            warnings.append(
+                f"You're at {body_fat_pct:.1f}% BF — keep running the cut. Target: {target_cut_bf:.0f}% "
+                f"({(body_fat_pct - target_cut_bf):.1f}% to go). Expect ~0.5% BF loss per week on a clean deficit."
+            )
+        elif body_fat_pct > target_cut_bf + 1:
+            warnings.append(
+                f"Closing in on your target ({body_fat_pct:.1f}% now → {target_cut_bf:.0f}% target). "
+                f"Tighten adherence for the final stretch. Once you hit {target_cut_bf:.0f}%, transition to LEAN BULK: "
+                f"+250-400 kcal (mostly carbs), protein stays 2.0-2.2 g/kg. Expect 0.25-0.4 kg/week gain."
+            )
+        else:
+            warnings.append(
+                f"🎯 Target reached ({body_fat_pct:.1f}%). Switch to LEAN BULK: +300 kcal/day "
+                f"(mostly carbs), protein 2.0-2.2 g/kg, fat floor 0.9 g/kg. Track weekly — "
+                f"if BF climbs past {target_cut_bf + 2:.0f}%, stall the surplus and reassess."
+            )
+        if body_fat_pct <= lean_threshold:
+            warnings.append(
+                "Alcohol is strictly off during final 8 weeks of prep — it dehydrates, "
+                "impairs CNS recovery, and interferes with glycogen storage."
+            )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # BULK / LEAN BULK phase notes — warn before overshooting
+    # ──────────────────────────────────────────────────────────────────────
+    if phase_lower in ("bulk", "lean_bulk") and body_fat_pct is not None:
+        overshoot_bf = target_cut_bf + 6  # +6% over target = time to cut
+        if body_fat_pct >= overshoot_bf:
+            warnings.append(
+                f"⚠️ Body fat has climbed to {body_fat_pct:.1f}% — time to wind down the bulk and start a mini-cut. "
+                f"Your next phase target: get back to {target_cut_bf:.0f}% BF before another surplus."
+            )
+        elif body_fat_pct >= target_cut_bf + 3:
+            warnings.append(
+                f"You're {body_fat_pct:.1f}% BF — edging toward cut territory. "
+                f"Hold surplus tight; rate of gain should be < 0.3 kg/week or the cut will be long."
+            )
+        else:
+            warnings.append(
+                f"Bulk is clean ({body_fat_pct:.1f}% BF). Aim for 0.25-0.4 kg/week. "
+                f"If weight stalls 2+ weeks at high adherence, add +100-150 kcal carbs."
+            )
         warnings.append(
-            "Alcohol is strictly off during final 8 weeks of prep — it dehydrates, "
-            "impairs CNS recovery, and interferes with glycogen storage."
+            "Peri-workout carbs matter in a surplus: eat 50-80g fast carbs within 60 min pre/post training."
         )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # MAINTAIN phase — useful for reassessment windows
+    # ──────────────────────────────────────────────────────────────────────
+    if phase_lower == "maintain":
+        warnings.append(
+            "Maintenance is a reset window. Track weight daily — if it's stable ±0.5 kg for "
+            "10 days, you've found your true TDEE. From here, pick your next phase: "
+            "lean bulk (+300 kcal), cut (-400 kcal), or hold steady for another block."
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # PEAK phase — contest week is different from late cut
+    # ──────────────────────────────────────────────────────────────────────
+    if phase_lower == "peak":
+        warnings.append(
+            "Peak week is precision work — DO NOT improvise. Follow the day-by-day peak "
+            "protocol: depletion → load → show day. Trust the plan, avoid new foods, "
+            "hydrate on schedule."
+        )
+        if body_fat_pct is not None and body_fat_pct <= lean_threshold:
+            warnings.append(
+                "Alcohol is strictly off during final 8 weeks of prep — it dehydrates, "
+                "impairs CNS recovery, and interferes with glycogen storage."
+            )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Female-specific hormonal health guardrail
+    # ──────────────────────────────────────────────────────────────────────
     if fat_floor < 0.6 and sex == "female":
         warnings.append(
             "Female athletes should never drop below 0.6 g/kg fat — hormonal health "
             "and menstrual function are non-negotiable."
         )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Universal tracking reminder for deficit phases
+    # ──────────────────────────────────────────────────────────────────────
     if phase_lower in ("cut", "peak"):
         warnings.append(
             "Track body weight + waist daily. A single bad data point is noise; "
