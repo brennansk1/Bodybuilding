@@ -296,6 +296,8 @@ def check_ari_triggered_refeed(
     phase: str,
     current_bf_pct: float,
     sex: str,
+    recent_components: List[Dict[str, float]] | None = None,
+    cycle_phase: str | None = None,
 ) -> Dict[str, Any]:
     """Determine whether an emergency refeed is warranted based on ARI scores.
 
@@ -353,49 +355,328 @@ def check_ari_triggered_refeed(
         else:
             break
 
-    # Only trigger during deficit phases
+    # Loosen the trigger during late-luteal phase — HRV is biologically
+    # depressed (progesterone effect) and that's not an overtraining signal.
+    effective_threshold = _ARI_LOW_THRESHOLD
+    if cycle_phase == "late_luteal":
+        effective_threshold = _ARI_LOW_THRESHOLD - 5.0  # 50 instead of 55
+    elif cycle_phase == "early_luteal":
+        effective_threshold = _ARI_LOW_THRESHOLD - 2.0
+
+    # Recount with the effective threshold
+    consecutive_low = 0
+    for score in reversed(recent_ari_scores):
+        if score < effective_threshold:
+            consecutive_low += 1
+        else:
+            break
+
     is_deficit_phase = phase_lower in ("cut", "peak")
 
     triggered = (
         is_deficit_phase
         and consecutive_low >= _ARI_CONSECUTIVE_DAYS_TRIGGER
-        and avg_ari < _ARI_LOW_THRESHOLD
+        and avg_ari < effective_threshold
     )
 
-    if triggered:
+    # -----------------------------------------------------------------
+    # Root-cause analysis: if the low ARI is stress/wellness-dominant
+    # rather than HRV-dominant, the right prescription is a stress
+    # recovery break (off day, more sleep), not a carb refeed. The
+    # body isn't starved — the nervous system is cooked.
+    # -----------------------------------------------------------------
+    root_cause = "hrv"
+    stress_dominant = False
+    if triggered and recent_components:
+        recent = recent_components[-_ARI_CONSECUTIVE_DAYS_TRIGGER:]
+        avg_hrv = sum(c.get("hrv", 50) for c in recent) / max(1, len(recent))
+        avg_wellness = sum(c.get("wellness", 50) for c in recent) / max(1, len(recent))
+        avg_sleep = sum(c.get("sleep", 50) for c in recent) / max(1, len(recent))
+        if avg_wellness < avg_hrv - 10 and avg_wellness < 40:
+            stress_dominant = True
+            root_cause = "stress"
+        elif avg_sleep < avg_hrv - 10 and avg_sleep < 40:
+            root_cause = "sleep_debt"
+
+    if triggered and stress_dominant:
+        recommendation = "stress_recovery_break"
+        message = (
+            f"STRESS RECOVERY BREAK: avg wellness score is driving the ARI drop "
+            f"more than HRV. Don't refeed — take a full rest day and prioritise "
+            f"8+ hours of sleep tonight. Consider reducing life stressors for 48 h."
+        )
+    elif triggered and root_cause == "sleep_debt":
+        recommendation = "sleep_catch_up"
+        message = (
+            f"SLEEP DEBT: low ARI is driven primarily by poor sleep ({consecutive_low} "
+            f"nights below threshold). Prioritise 9+ hours tonight and tomorrow "
+            f"before considering a carb refeed."
+        )
+    elif triggered:
         lean_threshold = 10.0 if sex_lower == "male" else 18.0
+        recommendation = "carb_refeed"
         if current_bf_pct <= lean_threshold:
             message = (
-                f"EMERGENCY REFEED: ARI has been below {_ARI_LOW_THRESHOLD} for "
+                f"EMERGENCY REFEED: ARI has been below {effective_threshold:.0f} for "
                 f"{consecutive_low} consecutive days (avg {avg_ari:.1f}). "
                 f"Athlete is lean ({current_bf_pct:.1f}% BF) — schedule an "
                 f"immediate 2-day refeed at maintenance calories with 2x carbs."
             )
         else:
             message = (
-                f"EMERGENCY REFEED: ARI has been below {_ARI_LOW_THRESHOLD} for "
+                f"EMERGENCY REFEED: ARI has been below {effective_threshold:.0f} for "
                 f"{consecutive_low} consecutive days (avg {avg_ari:.1f}). "
                 f"Schedule a 1-day refeed at maintenance calories with 1.5x carbs."
             )
     elif is_deficit_phase and consecutive_low >= 2:
+        recommendation = "monitor"
         message = (
             f"ARI is trending low ({avg_ari:.1f} avg, {consecutive_low} "
-            f"consecutive days below {_ARI_LOW_THRESHOLD}). Monitor closely — "
+            f"consecutive days below {effective_threshold:.0f}). Monitor closely — "
             f"refeed may be needed soon."
         )
-    elif not is_deficit_phase and avg_ari < _ARI_LOW_THRESHOLD:
+    elif not is_deficit_phase and avg_ari < effective_threshold:
+        recommendation = "reduce_volume"
         message = (
             f"ARI is low ({avg_ari:.1f}) but athlete is not in a deficit phase "
             f"({phase}). Consider reducing training volume instead."
         )
     else:
+        recommendation = "none"
         message = f"ARI is adequate ({avg_ari:.1f}). No emergency refeed needed."
 
     return {
         "ari_refeed_triggered": triggered,
         "avg_ari": round(avg_ari, 1),
         "consecutive_low_days": consecutive_low,
+        "effective_threshold": effective_threshold,
+        "root_cause": root_cause,
+        "recommendation": recommendation,
+        "cycle_phase": cycle_phase,
         "message": message,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Energy Availability floor (RED-S protection)
+# ---------------------------------------------------------------------------
+# Energy Availability (EA) = (dietary energy intake − exercise energy expenditure) / FFM.
+# IOC consensus (Mountjoy 2018): values < 30 kcal/kg FFM/day trigger RED-S cascade
+# (hormonal suppression, menstrual disruption, bone loss, immune compromise).
+# Elite prep coaches never let athletes sit below EA 30 without a compensating
+# refeed schedule; critical below 25.
+
+_EA_WARNING_FLOOR = 30.0   # kcal/kg FFM/day
+_EA_CRITICAL_FLOOR = 25.0  # kcal/kg FFM/day
+
+
+def check_energy_availability_floor(
+    target_calories: float,
+    exercise_kcal_per_day: float,
+    ffm_kg: float,
+    sex: str = "male",
+) -> Dict[str, Any]:
+    """Check whether the prescribed intake crosses the RED-S energy availability floor.
+
+    Returns ``{ea_kcal_per_kg_ffm, status ("ok"|"warning"|"critical"),
+    message, recommendation}``.
+    """
+    if ffm_kg <= 0:
+        return {
+            "ea_kcal_per_kg_ffm": 0.0,
+            "status": "unknown",
+            "message": "FFM unknown — cannot compute energy availability.",
+            "recommendation": "log_body_composition",
+        }
+
+    ea = (target_calories - exercise_kcal_per_day) / ffm_kg
+
+    if ea >= _EA_WARNING_FLOOR:
+        status, recommendation = "ok", "none"
+        message = f"Energy availability {ea:.1f} kcal/kg FFM/day — within safe range."
+    elif ea >= _EA_CRITICAL_FLOOR:
+        status, recommendation = "warning", "raise_calories"
+        message = (
+            f"Energy availability {ea:.1f} kcal/kg FFM/day is below the RED-S "
+            f"warning floor of {_EA_WARNING_FLOOR:.0f}. Raise intake or reduce "
+            f"exercise expenditure to restore EA ≥ {_EA_WARNING_FLOOR:.0f}."
+        )
+    else:
+        status, recommendation = "critical", "halt_cut"
+        message = (
+            f"CRITICAL: Energy availability {ea:.1f} kcal/kg FFM/day is below the "
+            f"RED-S critical floor ({_EA_CRITICAL_FLOOR:.0f}). Halt the cut "
+            f"immediately — hormonal and metabolic damage is accumulating."
+        )
+
+    return {
+        "ea_kcal_per_kg_ffm": round(ea, 1),
+        "status": status,
+        "message": message,
+        "recommendation": recommendation,
+        "warning_floor": _EA_WARNING_FLOOR,
+        "critical_floor": _EA_CRITICAL_FLOOR,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Metabolic adaptation detector
+# ---------------------------------------------------------------------------
+# Detect long-term metabolic slowdown: when actual rate of weight change is
+# consistently under 50% of expected for 4+ weeks despite high adherence,
+# the athlete needs a full 2-week diet break (not just 1 week) to restore
+# leptin, thyroid, and NEAT before resuming the cut.
+
+def detect_metabolic_adaptation(
+    weight_history: List[tuple],  # [(date, weight_kg), ...]
+    expected_rate_kg_per_week: float,
+    adherence_pct: float = 100.0,
+    weeks_window: int = 4,
+) -> Dict[str, Any]:
+    """
+    Scan the last ``weeks_window`` weeks of weight history. If actual rate of
+    change is < 50% of expected (and adherence is high), signal metabolic
+    adaptation and recommend a 2-week diet break.
+    """
+    if len(weight_history) < weeks_window * 4:  # need at least 4 data points per week
+        return {
+            "adapted": False,
+            "reason": "insufficient_data",
+            "message": f"Need {weeks_window * 4}+ weight entries to detect adaptation.",
+        }
+
+    # Pick first + last data points within the window
+    window_start_idx = max(0, len(weight_history) - weeks_window * 7)
+    start_date, start_wt = weight_history[window_start_idx]
+    end_date, end_wt = weight_history[-1]
+
+    # Compute actual rate
+    try:
+        days = (end_date - start_date).days if hasattr(end_date, "year") else 0
+    except Exception:
+        days = 0
+    if days <= 0:
+        return {
+            "adapted": False,
+            "reason": "zero_span",
+            "message": "Start and end dates are the same — cannot compute rate.",
+        }
+
+    actual_rate_per_week = (end_wt - start_wt) / (days / 7.0)
+
+    # For a cut, expected rate is negative. Actual-vs-expected ratio:
+    if expected_rate_kg_per_week == 0:
+        return {
+            "adapted": False,
+            "reason": "no_expectation",
+            "message": "No expected rate set — cannot compare.",
+        }
+
+    ratio = actual_rate_per_week / expected_rate_kg_per_week
+    # ratio < 0.5 means we're losing (or gaining) at less than half the expected pace
+    adapted = (ratio < 0.5) and (adherence_pct >= 85.0)
+
+    if adapted:
+        return {
+            "adapted": True,
+            "actual_rate_kg_per_week": round(actual_rate_per_week, 3),
+            "expected_rate_kg_per_week": round(expected_rate_kg_per_week, 3),
+            "ratio": round(ratio, 2),
+            "reason": "metabolic_slowdown",
+            "prescription": {
+                "diet_break_weeks": 2,
+                "calorie_add": 500,
+                "carb_add_g": 100,
+                "duration_days": 14,
+            },
+            "message": (
+                f"Metabolic adaptation detected: actual rate "
+                f"{actual_rate_per_week:.3f} kg/wk vs expected "
+                f"{expected_rate_kg_per_week:.3f} kg/wk over {weeks_window} weeks "
+                f"at {adherence_pct:.0f}% adherence. Prescribe a 2-week full "
+                f"diet break at maintenance + 500 kcal/day before resuming cut."
+            ),
+        }
+    return {
+        "adapted": False,
+        "actual_rate_kg_per_week": round(actual_rate_per_week, 3),
+        "expected_rate_kg_per_week": round(expected_rate_kg_per_week, 3),
+        "ratio": round(ratio, 2),
+        "reason": "on_track" if ratio >= 0.5 else "adherence_too_low",
+        "message": (
+            f"Rate is {ratio * 100:.0f}% of expected — "
+            + ("within normal range." if ratio >= 0.5 else
+               f"below 50%, but adherence ({adherence_pct:.0f}%) is the likely culprit.")
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# RPE-driven volume autoregulation
+# ---------------------------------------------------------------------------
+# Compares actual session-average RPE to prescribed target. Chronic over-RPE
+# means the athlete is in the hole (reduce volume next session); chronic
+# under-RPE means the weights were too conservative (bump 2.5%).
+
+def autoregulate_volume_by_rpe(
+    recent_sessions: List[Dict[str, float]],  # [{"avg_rpe": 8.5, "prescribed_rpe": 7.0}, ...]
+    over_threshold: float = 1.5,
+    under_threshold: float = 1.0,
+    sessions_required: int = 3,
+) -> Dict[str, Any]:
+    """
+    Inspect the last ``sessions_required`` sessions. If actual RPE is
+    consistently over target by ``over_threshold`` or more, recommend a 10%
+    volume cut for the next session. If it's consistently under target by
+    ``under_threshold`` or more, recommend a 2.5% weight bump.
+    """
+    if len(recent_sessions) < sessions_required:
+        return {
+            "action": "none",
+            "reason": "insufficient_sessions",
+            "volume_multiplier": 1.0,
+            "weight_multiplier": 1.0,
+            "message": f"Need at least {sessions_required} sessions with RPE data.",
+        }
+
+    window = recent_sessions[-sessions_required:]
+    deltas = [s["avg_rpe"] - s["prescribed_rpe"] for s in window]
+    all_over = all(d >= over_threshold for d in deltas)
+    all_under = all(d <= -under_threshold for d in deltas)
+
+    if all_over:
+        return {
+            "action": "reduce_volume",
+            "reason": "chronic_rpe_excess",
+            "volume_multiplier": 0.90,
+            "weight_multiplier": 1.0,
+            "avg_delta": round(sum(deltas) / len(deltas), 2),
+            "message": (
+                f"Average RPE has been {over_threshold:.1f}+ points above target "
+                f"for {sessions_required} sessions. Reduce next-session volume by 10% "
+                f"so the athlete can dig out of the hole."
+            ),
+        }
+    if all_under:
+        return {
+            "action": "increase_load",
+            "reason": "chronic_rpe_deficit",
+            "volume_multiplier": 1.0,
+            "weight_multiplier": 1.025,
+            "avg_delta": round(sum(deltas) / len(deltas), 2),
+            "message": (
+                f"Average RPE has been {under_threshold:.1f}+ points below target "
+                f"for {sessions_required} sessions. Weights are too conservative — "
+                f"bump prescribed loads by 2.5% next session."
+            ),
+        }
+    return {
+        "action": "hold",
+        "reason": "on_target",
+        "volume_multiplier": 1.0,
+        "weight_multiplier": 1.0,
+        "avg_delta": round(sum(deltas) / len(deltas), 2),
+        "message": "RPE tracking prescribed targets within normal variance. Hold current plan.",
     }
 
 

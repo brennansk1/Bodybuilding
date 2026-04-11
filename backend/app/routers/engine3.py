@@ -470,13 +470,45 @@ async def run_autoregulation(
         )
         sf = sf_result.scalar_one_or_none()
         current_bf_pct = sf.body_fat_pct if sf else 15.0
+
+        # Pass the per-day ARI component breakdown so refeed logic can tell
+        # whether the drop is HRV-driven (needs carbs) or stress-driven
+        # (needs a rest day, not food).
+        recent_components = [
+            {
+                "hrv": log.hrv_component,
+                "sleep": log.sleep_component,
+                "soreness": log.soreness_component,
+                "hr": getattr(log, "hr_component", None) or 50,
+                "wellness": getattr(log, "stress_component", None) or 50,
+            }
+            for log in recent_ari_logs
+        ]
+
+        # Resolve menstrual cycle phase for female athletes
+        cycle_phase_name = None
+        if getattr(profile, "sex", None) == "female" and getattr(profile, "cycle_tracking_enabled", False):
+            from app.engines.engine2.ari import menstrual_phase
+            cycle_info = menstrual_phase(getattr(profile, "cycle_start_date", None))
+            if cycle_info:
+                cycle_phase_name = cycle_info.get("phase")
+
         try:
             refeed_check = check_ari_triggered_refeed(
                 recent_ari_scores=[log.ari_score for log in recent_ari_logs],
                 phase=phase,
                 current_bf_pct=current_bf_pct,
                 sex=sex,
+                recent_components=recent_components,
+                cycle_phase=cycle_phase_name,
             )
+            # Fire immediate Telegram alert if the refeed was triggered
+            if refeed_check and refeed_check.get("ari_refeed_triggered"):
+                try:
+                    from app.services.notification_dispatcher import dispatch_refeed_triggered
+                    await dispatch_refeed_triggered(db, profile, refeed_check)
+                except Exception as exc:
+                    logger.warning("Refeed trigger notification failed: %s", exc)
         except (ValueError, KeyError) as e:
             logger.warning("ARI-triggered refeed check failed: %s", e)
 
@@ -490,6 +522,63 @@ async def run_autoregulation(
     }
     locked = adherence_lock(adherence_pct, base_macros)
 
+    # Energy Availability floor check — RED-S protection
+    ea_check = None
+    try:
+        from app.engines.engine3.autoregulation import (
+            check_energy_availability_floor,
+            detect_metabolic_adaptation,
+        )
+        # Rough exercise kcal estimate: use 300 kcal/training session + NEAT.
+        # A proper estimate would pull from the cardio prescription; this is
+        # a pragmatic first pass.
+        training_days = (profile.preferences or {}).get("training_days_per_week", 5) if profile else 5
+        exercise_kcal = int(300 * training_days / 7)
+        ffm_kg = None
+        if sf_result and (sf := sf_result.scalar_one_or_none()):
+            ffm_kg = sf.lean_mass_kg
+        if not ffm_kg:
+            from app.models.measurement import BodyWeightLog as _BW
+            bw_q = await db.execute(
+                select(_BW).where(_BW.user_id == user.id)
+                .order_by(desc(_BW.recorded_date), desc(_BW.created_at)).limit(1)
+            )
+            latest_bw = bw_q.scalar_one_or_none()
+            if latest_bw:
+                # Assume 15% bf if unknown, so FFM = 0.85 × bw
+                ffm_kg = latest_bw.weight_kg * 0.85
+        if ffm_kg:
+            ea_check = check_energy_availability_floor(
+                target_calories=rx.target_calories,
+                exercise_kcal_per_day=exercise_kcal,
+                ffm_kg=ffm_kg,
+                sex=sex,
+            )
+    except Exception as e:
+        logger.warning("EA floor check failed: %s", e)
+
+    # Metabolic adaptation detector — needs 4+ weeks of weight history
+    adaptation_check = None
+    if phase in ("cut", "peak_week"):
+        try:
+            bw_history_q = await db.execute(
+                select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+                .order_by(BodyWeightLog.recorded_date).limit(60)
+            )
+            bw_history = [
+                (row.recorded_date, row.weight_kg)
+                for row in bw_history_q.scalars().all()
+            ]
+            expected_rate = -0.5 if phase == "cut" else -0.3  # kg/week defaults
+            adaptation_check = detect_metabolic_adaptation(
+                weight_history=bw_history,
+                expected_rate_kg_per_week=expected_rate,
+                adherence_pct=adherence_pct,
+                weeks_window=4,
+            )
+        except Exception as e:
+            logger.warning("Metabolic adaptation detection failed: %s", e)
+
     return {
         **locked,
         "metabolic_adaptation": {
@@ -497,6 +586,8 @@ async def run_autoregulation(
             "adapted_tdee": adapted_tdee,
             "adaptation_active": weeks_in_deficit > 0 and phase in ("cut", "peak_week"),
         },
+        "metabolic_adaptation_detector": adaptation_check,
+        "energy_availability": ea_check,
         "weight_trend": {
             "ewma_rate_kg_per_week": ewma_rate,
             "trend_direction": trend_direction,

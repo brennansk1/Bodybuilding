@@ -85,6 +85,32 @@ export default function OnboardingPage() {
   const [preferredCarbs, setPreferredCarbs] = useState<string[]>([]);
   const [preferredFats, setPreferredFats] = useState<string[]>([]);
 
+  // Optional Telegram link on Step 5 — totally skippable.
+  const [telegramToken, setTelegramToken] = useState("");
+  const [telegramLinking, setTelegramLinking] = useState(false);
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const [telegramBotUsername, setTelegramBotUsername] = useState("");
+  const [telegramLinkError, setTelegramLinkError] = useState("");
+
+  const handleLinkTelegram = async () => {
+    setTelegramLinking(true);
+    setTelegramLinkError("");
+    try {
+      const res = await api.post<{ linked: boolean; bot_username: string }>(
+        "/telegram/link/token",
+        { bot_token: telegramToken.trim() },
+      );
+      setTelegramLinked(true);
+      setTelegramBotUsername(res.bot_username || "your_bot");
+      setTelegramToken("");
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setTelegramLinkError(detail || "Couldn't link that bot. Check the token and try again.");
+    } finally {
+      setTelegramLinking(false);
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/auth/login");
@@ -567,29 +593,99 @@ export default function OnboardingPage() {
           )}
 
           {step === 5 && (
-            <div className="text-center py-6 space-y-5">
-              <div className="w-16 h-16 mx-auto rounded-full bg-jungle-accent/20 flex items-center justify-center">
-                <svg className="w-8 h-8 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
+            <div className="py-6 space-y-5">
+              <div className="text-center space-y-5">
+                <div className="w-16 h-16 mx-auto rounded-full bg-jungle-accent/20 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold">Ready to Launch</h3>
+                <p className="text-jungle-muted text-sm max-w-sm mx-auto">
+                  When you click Launch, Coronado will run all three engines and build your personalized system. This takes about 10 seconds.
+                </p>
+                <div className="text-left max-w-sm mx-auto space-y-2">
+                  {[
+                    { engine: "Engine 1", action: "Analyze your physique against division standards" },
+                    { engine: "Engine 2", action: "Generate your training program and split" },
+                    { engine: "Engine 3", action: "Calculate macros and build your meal plan" },
+                  ].map(({ engine, action }) => (
+                    <div key={engine} className="flex items-start gap-2 bg-jungle-deeper rounded-lg px-3 py-2">
+                      <span className="text-jungle-accent text-[10px] font-bold shrink-0 mt-0.5">{engine}</span>
+                      <span className="text-xs text-jungle-muted">{action}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <h3 className="text-lg font-semibold">Ready to Launch</h3>
-              <p className="text-jungle-muted text-sm max-w-sm mx-auto">
-                When you click Launch, Coronado will run all three engines and build your personalized system. This takes about 10 seconds.
-              </p>
-              <div className="text-left max-w-sm mx-auto space-y-2">
-                {[
-                  { engine: "Engine 1", action: "Analyze your physique against division standards" },
-                  { engine: "Engine 2", action: "Generate your training program and split" },
-                  { engine: "Engine 3", action: "Calculate macros and build your meal plan" },
-                ].map(({ engine, action }) => (
-                  <div key={engine} className="flex items-start gap-2 bg-jungle-deeper rounded-lg px-3 py-2">
-                    <span className="text-jungle-accent text-[10px] font-bold shrink-0 mt-0.5">{engine}</span>
-                    <span className="text-xs text-jungle-muted">{action}</span>
+
+              {/* Optional: Telegram Assistant */}
+              <div className="max-w-sm mx-auto border-t border-jungle-border pt-5">
+                <div className="bg-jungle-deeper/60 border border-jungle-border/60 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-jungle-text">Optional: Telegram Coach</h4>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-jungle-accent/20 text-jungle-accent font-semibold">OPTIONAL</span>
                   </div>
-                ))}
+                  {!telegramLinked ? (
+                    <>
+                      <p className="text-[11px] text-jungle-muted leading-snug">
+                        Get workout previews, meal reminders, and readiness alerts in Telegram.
+                        Bring your own bot (free) so the chat is 100% yours.
+                      </p>
+                      <details className="text-[10px] text-jungle-dim">
+                        <summary className="cursor-pointer text-jungle-accent hover:underline">How to create a bot (30 seconds)</summary>
+                        <ol className="list-decimal ml-4 mt-2 space-y-0.5 leading-snug">
+                          <li>Open Telegram, message <span className="text-jungle-accent">@BotFather</span></li>
+                          <li>Send <code className="bg-jungle-card/60 px-1 rounded">/newbot</code>, pick a name + username</li>
+                          <li>BotFather replies with a token (looks like <code className="bg-jungle-card/60 px-1 rounded">123456:ABC...</code>)</li>
+                          <li>Paste it below and tap Link Bot</li>
+                        </ol>
+                      </details>
+                      <input
+                        type="text"
+                        value={telegramToken}
+                        onChange={(e) => setTelegramToken(e.target.value)}
+                        placeholder="123456:ABC-..."
+                        className="input-field text-xs font-mono"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      {telegramLinkError && (
+                        <p className="text-[10px] text-red-400">{telegramLinkError}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleLinkTelegram}
+                          disabled={!telegramToken || telegramLinking}
+                          className="btn-primary flex-1 text-xs py-2 disabled:opacity-40"
+                        >
+                          {telegramLinking ? "Linking…" : "Link Bot"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTelegramToken("");
+                            setTelegramLinkError("");
+                          }}
+                          className="btn-secondary text-xs py-2 px-3"
+                        >
+                          Skip
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">✅</span>
+                        <span className="text-sm text-green-400 font-semibold">Linked to @{telegramBotUsername}</span>
+                      </div>
+                      <p className="text-[10px] text-jungle-dim">Open Telegram and send <code className="bg-jungle-card/60 px-1 rounded">/start</code> to your bot to confirm.</p>
+                    </div>
+                  )}
+                </div>
               </div>
-              <p className="text-[10px] text-jungle-dim">You can update all of these settings later from the Settings page.</p>
+
+              <p className="text-[10px] text-jungle-dim text-center">You can update all of these settings later from the Settings page.</p>
             </div>
           )}
 

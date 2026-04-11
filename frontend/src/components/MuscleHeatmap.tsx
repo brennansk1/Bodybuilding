@@ -2,13 +2,47 @@
 
 import { useState } from "react";
 
+type Rgb = [number, number, number];
+type ColorStop = [number, Rgb];
+
+/**
+ * Build the color-stop palette for the heatmap given a user-selectable floor.
+ * The range below `floorPct` is a single deep-red value. From `floorPct`
+ * upward we spread bright-red → orange → yellow → lime → green → emerald
+ * up to 110% ideal. This keeps the vivid palette anchored to wherever the
+ * user's data actually lives instead of wasting colors on impossible values.
+ */
+export function computeHeatmapStops(floorPct: number): ColorStop[] {
+  const floor = Math.max(0, Math.min(floorPct, 100));
+  const cap = 110;
+  const span = Math.max(1, cap - floor);
+  // Relative positions within the [floor..cap] band
+  const at = (t: number) => floor + span * t;
+  return [
+    [0,           [100, 8, 8]],    // deep red (any value under floor)
+    [floor,       [220, 38, 38]],  // bright red at the floor
+    [at(0.22),    [234, 88, 12]],  // orange
+    [at(0.42),    [234, 179, 8]],  // yellow
+    [at(0.60),    [180, 210, 20]], // yellow-lime
+    [at(0.78),    [80, 200, 60]],  // lime-green
+    [Math.min(100, at(0.90)), [34, 197, 94]], // green ~ideal
+    [cap,         [16, 185, 129]], // emerald (above ideal)
+  ];
+}
+
 interface MuscleHeatmapProps {
   siteScores: Record<string, number>;
   overall?: number;
   sex?: "male" | "female";
+  /**
+   * Color-scale floor (0-110). Anything at or below this value renders as
+   * deep red. The palette from `floorPct` up to 110 is compressed through
+   * red → orange → yellow → lime → green → emerald. Default 75.
+   */
+  floorPct?: number;
 }
 
-export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: MuscleHeatmapProps) {
+export default function MuscleHeatmap({ siteScores, overall, sex = "male", floorPct = 75 }: MuscleHeatmapProps) {
   const [hovered, setHovered] = useState<string | null>(null);
 
   const backgroundColor = "#0f1a0c";
@@ -53,23 +87,16 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: Mus
     shins:        siteScores.calf,
   };
 
+  // Compute the color-stop palette from the user's chosen floor.
+  // Anything at or below `floorPct` is deep red. Above floor we spread
+  // bright red → orange → yellow → lime → green → emerald across the
+  // remaining range up to 110% ideal, so the palette always fills the
+  // visible data band regardless of where the floor is pinned.
+  const stops = computeHeatmapStops(floorPct);
+
   function scoreToColor(score: number | undefined): string {
     if (score === undefined || score === null) return "#52525b"; // grey — not measured
-    // Raised floor gradient: the 75-105% band is where real differences live,
-    // so compress anything below 75% into a single saturated red and spread
-    // the vivid palette across 75-105%. A 78% score now looks dramatically
-    // different from a 92% score.
     const clamped = Math.max(0, Math.min(score, 110));
-    const stops: [number, [number, number, number]][] = [
-      [0,   [120, 10, 10]],   // near-black red (unreachable floor)
-      [75,  [220, 38, 38]],   // red — visible floor
-      [82,  [234, 88, 12]],   // orange (significantly behind)
-      [88,  [234, 179, 8]],   // yellow (moderately behind)
-      [92,  [180, 210, 20]],  // yellow-lime (slightly behind)
-      [96,  [80, 200, 60]],   // lime-green (close to ideal)
-      [100, [34, 197, 94]],   // green (at ideal)
-      [105, [16, 185, 129]],  // emerald (above ideal)
-    ];
     let lo = stops[0], hi = stops[stops.length - 1];
     for (let i = 0; i < stops.length - 1; i++) {
       if (clamped >= stops[i][0] && clamped <= stops[i + 1][0]) {

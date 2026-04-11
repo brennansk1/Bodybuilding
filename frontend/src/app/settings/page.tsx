@@ -165,6 +165,19 @@ export default function SettingsPage() {
   const [dashViz, setDashViz] = useState<Record<string, boolean>>({});
   const [dashVizSaving, setDashVizSaving] = useState(false);
 
+  // ── HealthKit API keys ───────────────────────────────────────────────────────
+  interface HealthKitKey {
+    id: string;
+    key_prefix: string;
+    label: string;
+    last_used_at: string | null;
+    created_at: string | null;
+  }
+  const [healthkitKeys, setHealthkitKeys] = useState<HealthKitKey[]>([]);
+  const [newHealthKitKey, setNewHealthKitKey] = useState<string | null>(null);
+  const [healthkitLoading, setHealthkitLoading] = useState(false);
+  const [showShortcutGuide, setShowShortcutGuide] = useState(false);
+
   // ── Telegram bot ────────────────────────────────────────────────────────────
   interface TelegramStatus {
     enabled: boolean;
@@ -250,10 +263,48 @@ export default function SettingsPage() {
 
       // Telegram link status
       api.get<TelegramStatus>("/telegram/status").then(setTelegramStatus).catch(() => {});
+      loadHealthKitKeys();
     }
   }, [user, loading, router]);
 
   if (loading || !user) return null;
+
+  // ── HealthKit helpers ───────────────────────────────────────────────────────
+  const loadHealthKitKeys = async () => {
+    try {
+      const keys = await api.get<HealthKitKey[]>("/auth/api-keys");
+      setHealthkitKeys(keys || []);
+    } catch {
+      // silently fail if not logged in yet
+    }
+  };
+
+  const createHealthKitKey = async () => {
+    setHealthkitLoading(true);
+    try {
+      const res = await api.post<{ api_key: string }>("/auth/api-keys", {
+        label: "iPhone Shortcut",
+      });
+      setNewHealthKitKey(res.api_key);
+      await loadHealthKitKeys();
+      showSuccess("API key created — copy it now!");
+    } catch (err) {
+      showError(extractErrorMessage(err, "Couldn't create API key"));
+    } finally {
+      setHealthkitLoading(false);
+    }
+  };
+
+  const revokeHealthKitKey = async (id: string) => {
+    if (!window.confirm("Revoke this API key? Any iPhone Shortcut using it will stop working.")) return;
+    try {
+      await api.delete(`/auth/api-keys/${id}`);
+      await loadHealthKitKeys();
+      showSuccess("API key revoked");
+    } catch (err) {
+      showError(extractErrorMessage(err, "Couldn't revoke key"));
+    }
+  };
 
   // ── Telegram helpers ────────────────────────────────────────────────────────
   const generateTelegramCode = async () => {
@@ -1382,6 +1433,101 @@ export default function SettingsPage() {
                 )}
               </div>
 
+              {/* HealthKit / iPhone Shortcut */}
+              <div className="card space-y-3">
+                <div className="flex items-center justify-between">
+                  <SectionHeader>HealthKit — iPhone Shortcut</SectionHeader>
+                  {healthkitKeys.length > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded font-semibold bg-green-500/20 text-green-400">
+                      {healthkitKeys.length} key{healthkitKeys.length === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-jungle-dim">
+                  Automate your morning check-in: an iPhone Shortcut reads body weight, HRV,
+                  resting heart rate and sleep duration from Apple HealthKit and posts them
+                  to Coronado. Create an API key below and follow the setup guide.
+                </p>
+
+                {/* Existing keys */}
+                {healthkitKeys.length > 0 && (
+                  <div className="space-y-1.5">
+                    {healthkitKeys.map((k) => (
+                      <div
+                        key={k.id}
+                        className="flex items-center justify-between py-2 px-3 bg-jungle-deeper rounded-lg"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-jungle-text font-medium truncate">{k.label}</p>
+                          <p className="text-[10px] text-jungle-dim font-mono">
+                            {k.key_prefix}… · {k.last_used_at ? `last used ${new Date(k.last_used_at).toLocaleDateString()}` : "never used"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => revokeHealthKitKey(k.id)}
+                          className="text-[10px] px-2 py-1 rounded text-red-400 border border-red-500/30 hover:bg-red-500/10 transition-colors"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Newly-created plaintext key (shown once) */}
+                {newHealthKitKey && (
+                  <div className="rounded-lg bg-jungle-accent/10 border border-jungle-accent/40 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-jungle-accent font-bold uppercase tracking-wider">Your new API key</p>
+                      <button
+                        type="button"
+                        onClick={() => setNewHealthKitKey(null)}
+                        className="text-[10px] text-jungle-dim hover:text-jungle-accent"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                    <code className="block text-[11px] font-mono text-jungle-text bg-jungle-deeper/80 px-2 py-2 rounded break-all">
+                      {newHealthKitKey}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(newHealthKitKey).catch(() => {});
+                        showSuccess("Copied to clipboard");
+                      }}
+                      className="btn-secondary w-full text-xs py-2"
+                    >
+                      Copy to clipboard
+                    </button>
+                    <p className="text-[10px] text-jungle-dim">
+                      ⚠️ This key is shown <strong>once</strong>. Paste it into your iPhone
+                      Shortcut now. If you lose it, generate a new one and revoke the old.
+                    </p>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={createHealthKitKey}
+                    disabled={healthkitLoading}
+                    className="btn-primary text-xs py-2 disabled:opacity-50"
+                  >
+                    {healthkitLoading ? "Creating..." : "+ New API Key"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowShortcutGuide(true)}
+                    className="btn-secondary text-xs py-2"
+                  >
+                    📱 Setup Guide
+                  </button>
+                </div>
+              </div>
+
               {/* Reminders */}
               <div className="card space-y-4">
                 <div className="flex items-center justify-between">
@@ -1542,6 +1688,153 @@ export default function SettingsPage() {
       )}
 
       <div className="h-20" />
+
+      {/* iPhone Shortcut setup guide modal */}
+      {showShortcutGuide && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
+          onClick={() => setShowShortcutGuide(false)}
+        >
+          <div
+            className="bg-jungle-card border border-jungle-border rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-jungle-card/95 backdrop-blur-md border-b border-jungle-border px-4 py-3 flex items-center justify-between z-10">
+              <h3 className="text-sm font-bold text-jungle-text">📱 iPhone Shortcut Setup Guide</h3>
+              <button
+                type="button"
+                onClick={() => setShowShortcutGuide(false)}
+                className="text-jungle-dim hover:text-jungle-accent text-2xl leading-none px-2"
+                aria-label="Close guide"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-5 text-[12px] text-jungle-text leading-relaxed">
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">What this does</h4>
+                <p className="text-jungle-muted">
+                  Runs every morning at 7 AM. Pulls last night&apos;s body weight, HRV, resting heart rate and sleep duration
+                  from Apple HealthKit and posts them to Coronado — your daily check-in is filled in automatically.
+                </p>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Before you start</h4>
+                <ol className="list-decimal ml-5 space-y-1 text-jungle-muted">
+                  <li>Create an API key above (tap <strong>+ New API Key</strong>) and copy it — it&apos;s only shown once.</li>
+                  <li>Make sure Apple Health has recent body weight + HRV data (a watch helps).</li>
+                </ol>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 1 — Create the Shortcut</h4>
+                <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>Open the <strong>Shortcuts</strong> app on your iPhone.</li>
+                  <li>Tap <strong>+</strong> (top right) to create a new shortcut.</li>
+                  <li>Name it <code className="bg-jungle-deeper px-1.5 py-0.5 rounded text-jungle-accent">Coronado Morning Sync</code>.</li>
+                </ol>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 2 — Pull HealthKit data</h4>
+                <p className="text-jungle-muted">
+                  Add these actions in order. Search each action name in the <em>Add Action</em> panel.
+                </p>
+                <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>
+                    <strong>Find Health Samples</strong> — set category <code className="bg-jungle-deeper px-1 rounded">Body Mass</code>,
+                    sort by <em>End Date (Latest First)</em>, limit <em>1</em>.
+                  </li>
+                  <li>Tap <em>Get details of Health Sample</em> — select <em>Value</em>. Rename the magic variable to <code className="bg-jungle-deeper px-1 rounded">Weight</code>.</li>
+                  <li>
+                    <strong>Find Health Samples</strong> — category <code className="bg-jungle-deeper px-1 rounded">Heart Rate Variability</code>,
+                    latest 1, get <em>Value</em> → rename <code className="bg-jungle-deeper px-1 rounded">HRV</code>.
+                  </li>
+                  <li>
+                    <strong>Find Health Samples</strong> — category <code className="bg-jungle-deeper px-1 rounded">Resting Heart Rate</code>,
+                    latest 1, get <em>Value</em> → rename <code className="bg-jungle-deeper px-1 rounded">RestingHR</code>.
+                  </li>
+                  <li>
+                    <strong>Find Health Samples</strong> — category <code className="bg-jungle-deeper px-1 rounded">Sleep Analysis</code>,
+                    last 24 hours, all samples. Then <strong>Calculate</strong> the total <em>Duration</em> in hours →
+                    rename <code className="bg-jungle-deeper px-1 rounded">SleepHours</code>.
+                  </li>
+                </ol>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 3 — POST to Coronado</h4>
+                <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>Add a <strong>Text</strong> action and paste this JSON body (keep the magic variables):</li>
+                </ol>
+                <pre className="text-[10px] bg-jungle-deeper px-3 py-2.5 rounded overflow-x-auto text-jungle-text leading-snug">{`{
+  "body_weight_kg": [Weight],
+  "hrv_sdnn_ms":    [HRV],
+  "resting_hr":     [RestingHR],
+  "sleep_hours":    [SleepHours]
+}`}</pre>
+                <ol start={2} className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>Add <strong>Get Contents of URL</strong>. Configure:</li>
+                </ol>
+                <div className="bg-jungle-deeper/60 border border-jungle-border rounded-lg p-3 space-y-1 text-[11px] font-mono text-jungle-muted">
+                  <div>URL: <span className="text-jungle-accent">https://your-coronado-host/api/v1/checkin/daily/healthkit</span></div>
+                  <div>Method: <span className="text-jungle-accent">POST</span></div>
+                  <div>Headers:</div>
+                  <div className="pl-3"><span className="text-jungle-accent">X-API-Key</span> : <em>(paste the API key from above)</em></div>
+                  <div className="pl-3"><span className="text-jungle-accent">Content-Type</span> : application/json</div>
+                  <div>Request Body: <span className="text-jungle-accent">JSON</span> → attach the Text action from step 1</div>
+                </div>
+                <p className="text-[10px] text-jungle-dim">
+                  💡 Replace <code>your-coronado-host</code> with your actual backend URL
+                  (for local access that&apos;s <code className="text-jungle-accent">http://192.168.1.14:8000</code>).
+                  Shortcuts needs an <strong>https://</strong> URL if you&apos;re outside your home network.
+                </p>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 4 — Automate it</h4>
+                <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
+                  <li>In the Shortcuts app, tap the <strong>Automation</strong> tab.</li>
+                  <li>Tap <strong>+</strong> → <em>Create Personal Automation</em>.</li>
+                  <li>Pick <strong>Time of Day</strong> → set to <strong>7:00 AM</strong>, repeat <strong>Daily</strong>.</li>
+                  <li>Next → add action <strong>Run Shortcut</strong> → pick <em>Coronado Morning Sync</em>.</li>
+                  <li>Toggle <strong>Run Immediately</strong> ON (so it fires without a notification prompt).</li>
+                  <li>Done. It&apos;ll fire every morning silently.</li>
+                </ol>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Test it</h4>
+                <p className="text-jungle-muted">
+                  Run the shortcut manually from the Shortcuts app. If it succeeds, your Coronado daily check-in will show today&apos;s weight + HRV right away.
+                  If it fails, open <strong>Show Result</strong> on the Get Contents of URL action to see the error message.
+                </p>
+              </section>
+
+              <section className="space-y-2">
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Troubleshooting</h4>
+                <ul className="list-disc ml-5 space-y-1 text-jungle-muted">
+                  <li><strong>401 Unauthorized</strong> — API key typo or revoked. Create a new one.</li>
+                  <li><strong>422 Unprocessable Entity</strong> — one of the HealthKit values is missing. Make sure Apple Health has weight/HRV data for the last 24 hours.</li>
+                  <li><strong>SDNN vs rMSSD</strong> — Apple reports SDNN. Coronado auto-converts (SDNN × 0.8 ≈ rMSSD) and notes this on your check-in. No action needed.</li>
+                  <li><strong>No sleep data</strong> — the field is optional. The check-in still works without it.</li>
+                </ul>
+              </section>
+
+              <div className="pt-2 border-t border-jungle-border">
+                <button
+                  type="button"
+                  onClick={() => setShowShortcutGuide(false)}
+                  className="btn-primary w-full"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -48,13 +48,26 @@ body {
   letter-spacing: 0.01em;
 }
 
-/* Background image — visible on desktop + mobile, low opacity */
+/* Background image — visible on desktop + mobile, low opacity.
+   WebP is served first (80 KB) with a 275 KB JPG fallback for legacy browsers.
+   Both files live in /public/. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: url("/bg.jpg") center center / cover no-repeat fixed;
+  background-image: image-set(
+    url("/bg.webp") type("image/webp"),
+    url("/bg.jpg") type("image/jpeg")
+  );
+  background-image: -webkit-image-set(
+    url("/bg.webp") type("image/webp"),
+    url("/bg.jpg") type("image/jpeg")
+  );
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   opacity: 0.22;
   pointer-events: none;
 }

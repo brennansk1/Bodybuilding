@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { showToast } from "@/components/Toast";
@@ -15,6 +15,22 @@ import BodyWeightTrendChart from "@/components/BodyWeightTrendChart";
 import MacroAdherenceChart from "@/components/MacroAdherenceChart";
 import WeeklyVolumeChart from "@/components/WeeklyVolumeChart";
 import RecoveryTrendChart from "@/components/RecoveryTrendChart";
+import SortableCard from "@/components/SortableCard";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import OnboardingWizard, { shouldShowWizard } from "@/components/OnboardingWizard";
 
 interface PDSEntry {
@@ -163,6 +179,36 @@ const GAP_TYPE_COLORS: Record<string, string> = {
   reduce_girth: "#f97316",
 };
 
+// User-requested snap stops for the heatmap color-scale floor slider.
+// Index 0-5 on the slider maps to these percentages.
+const HEATMAP_FLOOR_STOPS = [0, 50, 70, 85, 95, 110];
+
+// Single source of truth for dashboard card metadata. Drives edit mode
+// (labels, default order) and the Settings visibility list.
+const CARD_REGISTRY: Array<{ key: string; label: string }> = [
+  { key: "spider", label: "Proportion Spider" },
+  { key: "muscle_gaps", label: "Muscle Gaps" },
+  { key: "pds_trajectory", label: "PDS Trajectory" },
+  { key: "heatmap", label: "Hypertrophy Heatmap" },
+  { key: "symmetry", label: "Bilateral Symmetry" },
+  { key: "phase_rec", label: "Phase Recommendation" },
+  { key: "comp_class", label: "Competition Class" },
+  { key: "growth_projection", label: "Growth Projection" },
+  { key: "detail_metrics", label: "Detail Metrics" },
+  { key: "ari", label: "Autonomic Fuel Gauge" },
+  { key: "adherence", label: "Adherence Grid" },
+  { key: "prep_timeline", label: "Prep Timeline" },
+  { key: "strength_progression", label: "Strength Progression" },
+  { key: "body_weight_trend", label: "Body Weight Trend" },
+  { key: "macro_adherence", label: "Macro Adherence" },
+  { key: "weekly_volume", label: "Weekly Volume" },
+  { key: "recovery_trend", label: "Recovery Trend" },
+];
+const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
+const LABEL_OF: Record<string, string> = Object.fromEntries(
+  CARD_REGISTRY.map((c) => [c.key, c.label])
+);
+
 function pctToBarColor(pct: number): string {
   if (pct >= 95) return "#4ade80";
   if (pct >= 80) return "#a3e635";
@@ -202,6 +248,96 @@ export default function DashboardPage() {
   // dashboard_viz toggle map: visKey -> show/hide. Undefined = show.
   const [vizVisibility, setVizVisibility] = useState<Record<string, boolean>>({});
   const isVizOn = (key: string) => vizVisibility[key] !== false;
+
+  // Heatmap color-scale floor — user-selectable via slider on the heatmap card.
+  const [heatmapFloor, setHeatmapFloor] = useState<number>(75);
+  const heatmapSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveHeatmapFloor = (value: number) => {
+    if (heatmapSaveTimer.current) clearTimeout(heatmapSaveTimer.current);
+    heatmapSaveTimer.current = setTimeout(() => {
+      api.patch("/onboarding/profile", {
+        preferences: { dashboard_settings: { heatmap_floor: value } },
+      }).catch(() => {});
+    }, 500);
+  };
+
+  // Dashboard edit mode — drag/hide/reorder cards.
+  const [editMode, setEditMode] = useState(false);
+  const [cardOrder, setCardOrder] = useState<string[]>(DEFAULT_CARD_ORDER);
+  const [editSnapshot, setEditSnapshot] = useState<{
+    order: string[];
+    viz: Record<string, boolean>;
+  } | null>(null);
+  const [savingLayout, setSavingLayout] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const orderOf = (key: string): number => {
+    const idx = cardOrder.indexOf(key);
+    return idx === -1 ? cardOrder.length + CARD_REGISTRY.findIndex((c) => c.key === key) : idx;
+  };
+
+  const hideCard = (key: string) => {
+    setVizVisibility((prev) => ({ ...prev, [key]: false }));
+  };
+
+  const showCard = (key: string) => {
+    setVizVisibility((prev) => ({ ...prev, [key]: true }));
+    // Make sure the card is in the order list so it renders
+    setCardOrder((prev) => (prev.includes(key) ? prev : [...prev, key]));
+  };
+
+  const enterEditMode = () => {
+    setEditSnapshot({ order: [...cardOrder], viz: { ...vizVisibility } });
+    setEditMode(true);
+  };
+
+  const cancelEditMode = () => {
+    if (editSnapshot) {
+      setCardOrder(editSnapshot.order);
+      setVizVisibility(editSnapshot.viz);
+    }
+    setEditSnapshot(null);
+    setEditMode(false);
+  };
+
+  const saveLayout = async () => {
+    setSavingLayout(true);
+    try {
+      await api.patch("/onboarding/profile", {
+        preferences: {
+          dashboard_settings: {
+            order: cardOrder,
+            viz: vizVisibility,
+            heatmap_floor: heatmapFloor,
+          },
+        },
+      });
+      setEditSnapshot(null);
+      setEditMode(false);
+      showToast("Dashboard layout saved", "success");
+    } catch {
+      showToast("Couldn't save dashboard layout", "error");
+    } finally {
+      setSavingLayout(false);
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setCardOrder((prev) => {
+      const oldIdx = prev.indexOf(String(active.id));
+      const newIdx = prev.indexOf(String(over.id));
+      if (oldIdx < 0 || newIdx < 0) return prev;
+      return arrayMove(prev, oldIdx, newIdx);
+    });
+  };
+
+  const hiddenCards = CARD_REGISTRY.filter((c) => vizVisibility[c.key] === false);
 
   // New dashboard datasets
   interface StrengthSeries { lift: string; label: string; color: string; data: { date: string; e1rm_kg: number }[]; }
@@ -281,9 +417,35 @@ export default function DashboardPage() {
     softFetch<AdherenceEntry[]>("/engine3/adherence", setAdherence);
     softFetch<WeightEntry[]>("/checkin/weight-history?days=14", setRecentWeights);
 
-    // Pull dashboard viz visibility from profile.preferences.dashboard_viz.
-    api.get<{ preferences?: { dashboard_viz?: Record<string, boolean> } }>("/onboarding/profile")
-      .then((p) => setVizVisibility(p?.preferences?.dashboard_viz || {}))
+    // Pull dashboard viz visibility + heatmap floor + card order from profile.preferences.
+    // dashboard_settings is the new rich key; dashboard_viz is the legacy
+    // flat map we fall back to for users who haven't migrated yet.
+    api.get<{
+      preferences?: {
+        dashboard_viz?: Record<string, boolean>;
+        dashboard_settings?: {
+          viz?: Record<string, boolean>;
+          heatmap_floor?: number;
+          order?: string[];
+        };
+      };
+    }>("/onboarding/profile")
+      .then((p) => {
+        const prefs = p?.preferences || {};
+        const settings = prefs.dashboard_settings || {};
+        setVizVisibility(settings.viz || prefs.dashboard_viz || {});
+        if (typeof settings.heatmap_floor === "number") {
+          setHeatmapFloor(settings.heatmap_floor);
+        }
+        if (Array.isArray(settings.order) && settings.order.length > 0) {
+          // Keep only known keys; append any missing keys at the end so new
+          // cards added in future releases still render.
+          const known = new Set(DEFAULT_CARD_ORDER);
+          const sanitized = settings.order.filter((k: string) => known.has(k));
+          const missing = DEFAULT_CARD_ORDER.filter((k) => !sanitized.includes(k));
+          setCardOrder([...sanitized, ...missing]);
+        }
+      })
       .catch(() => {});
 
     // New dashboard data
@@ -296,23 +458,24 @@ export default function DashboardPage() {
     softFetch<any>(`/engine2/session/${todayStr}`, setTodaySession);
     softFetch<any>("/engine3/prescription/current", setTodayMacros);
 
-    // Run diagnostics first, then fetch freshly computed Engine 1 outputs
-    const runAndFetch = async () => {
-      try { await api.post("/engine1/run"); } catch { /* no measurements yet — expected before first check-in */ }
-      await Promise.all([
-        softFetch<PDSData>("/engine1/pds", setPds),
-        softFetch<MuscleGapsData>("/engine1/muscle-gaps", setMuscleGaps),
-        softFetch<SymmetryData>("/engine1/symmetry", setSymmetry),
-        softFetch<PhaseRecommendation>("/engine1/phase-recommendation", setPhaseRec),
-        softFetch<DiagnosticData>("/engine1/diagnostic", setDiagnostic),
-        softFetch<ClassEstimate>("/engine1/class-estimate", setClassEstimate),
-      ]);
+    // Fetch Engine 1 outputs from cache in parallel. We DO NOT re-run the
+    // full Engine 1 compute on every page load — that's an expensive
+    // recalculation that only makes sense after a new check-in. The user
+    // can click "Re-run Diagnostics" on the diagnostic card if they want
+    // a fresh pass. Huge perf win on repeat dashboard visits.
+    Promise.all([
+      softFetch<PDSData>("/engine1/pds", setPds),
+      softFetch<MuscleGapsData>("/engine1/muscle-gaps", setMuscleGaps),
+      softFetch<SymmetryData>("/engine1/symmetry", setSymmetry),
+      softFetch<PhaseRecommendation>("/engine1/phase-recommendation", setPhaseRec),
+      softFetch<DiagnosticData>("/engine1/diagnostic", setDiagnostic),
+      softFetch<ClassEstimate>("/engine1/class-estimate", setClassEstimate),
+    ]).then(() => {
       if (failCount > 3) {
         showToast("Some dashboard data failed to load. Check your connection.", "warning");
       }
       setDashLoading(false);
-    };
-    runAndFetch();
+    });
   }, [user, loading, router]);
 
   if (loading || !user) {
@@ -603,11 +766,75 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Edit dashboard controls — desktop only */}
+        <div className="hidden md:flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-jungle-muted uppercase tracking-wider">
+            Dashboard
+          </h2>
+          {!editMode ? (
+            <button
+              onClick={enterEditMode}
+              className="text-xs px-3 py-1.5 rounded-lg border border-jungle-border hover:border-jungle-accent text-jungle-muted hover:text-jungle-accent transition-colors"
+            >
+              ✎ Edit Dashboard
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-jungle-dim">
+                Drag cards to reorder · click × to hide
+              </span>
+              <button
+                onClick={cancelEditMode}
+                className="text-xs px-3 py-1.5 rounded-lg border border-jungle-border hover:border-red-500/60 text-jungle-muted hover:text-red-400 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveLayout}
+                disabled={savingLayout}
+                className="btn-primary text-xs py-1.5 px-3 disabled:opacity-50"
+              >
+                {savingLayout ? "Saving..." : "Save Layout"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Hidden cards drawer — only visible in edit mode */}
+        {editMode && hiddenCards.length > 0 && (
+          <div className="hidden md:block mb-4 p-3 bg-jungle-deeper/60 border border-jungle-border rounded-xl">
+            <p className="text-[10px] text-jungle-dim uppercase tracking-wider mb-2">
+              Hidden cards — click to add back
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {hiddenCards.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => showCard(c.key)}
+                  className="text-[11px] px-2.5 py-1 rounded-md bg-jungle-card border border-jungle-border hover:border-jungle-accent text-jungle-muted hover:text-jungle-accent"
+                >
+                  + {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Charts grid */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={cardOrder.filter((k) => vizVisibility[k] !== false)}
+            strategy={rectSortingStrategy}
+          >
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
 
           {/* Proportion Spider — % of Ideal */}
           {isVizOn("spider") && (
+          <SortableCard id="spider" label="Spider" editMode={editMode} orderIndex={orderOf("spider")} onHide={() => hideCard("spider")}>
           <ChartCard
             title="Proportion Spider"
             subtitle="% of Ideal per Site"
@@ -626,10 +853,12 @@ export default function DashboardPage() {
               <EmptyState label="Complete a check-in to see proportion analysis" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Muscle Gap Priorities */}
           {isVizOn("muscle_gaps") && (
+          <SortableCard id="muscle_gaps" label="Muscle Gaps" editMode={editMode} orderIndex={orderOf("muscle_gaps")} onHide={() => hideCard("muscle_gaps")}>
           <ChartCard
             title="Muscle Gaps"
             subtitle="Lean Size vs. Ideal"
@@ -699,10 +928,12 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to see gap priorities" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* PDS Glide Path */}
           {isVizOn("pds_trajectory") && (
+          <SortableCard id="pds_trajectory" label="PDS" editMode={editMode} orderIndex={orderOf("pds_trajectory")} onHide={() => hideCard("pds_trajectory")}>
           <ChartCard
             title="PDS Trajectory"
             subtitle="PDS Glide Path Over Time"
@@ -733,10 +964,12 @@ export default function DashboardPage() {
               <EmptyState label="Trajectory builds after multiple check-ins" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Hypertrophy Heatmap */}
           {isVizOn("heatmap") && (
+          <SortableCard id="heatmap" label="Heatmap" editMode={editMode} orderIndex={orderOf("heatmap")} onHide={() => hideCard("heatmap")}>
           <ChartCard
             title="Hypertrophy Heatmap"
             subtitle="Muscle Development"
@@ -750,16 +983,48 @@ export default function DashboardPage() {
                   )}
                   overall={muscleGaps.avg_pct_of_ideal}
                   sex="male"
+                  floorPct={heatmapFloor}
                 />
+                {/* Color-scale floor slider — snaps to the 6 user-requested stops */}
+                <div className="mt-3 pt-3 border-t border-jungle-border/40">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] text-jungle-dim uppercase tracking-wider">Color floor</span>
+                    <span className="text-[10px] text-jungle-accent font-mono">{heatmapFloor}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={5}
+                    step={1}
+                    value={HEATMAP_FLOOR_STOPS.indexOf(heatmapFloor) >= 0 ? HEATMAP_FLOOR_STOPS.indexOf(heatmapFloor) : 2}
+                    onChange={(e) => {
+                      const next = HEATMAP_FLOOR_STOPS[parseInt(e.target.value)];
+                      setHeatmapFloor(next);
+                      saveHeatmapFloor(next);
+                    }}
+                    className="w-full accent-jungle-accent"
+                    aria-label="Heatmap color scale floor"
+                  />
+                  <div className="flex justify-between text-[9px] text-jungle-dim mt-1">
+                    <span>0%<br/><span className="text-jungle-dim/60">Gap</span></span>
+                    <span>50%</span>
+                    <span>70%</span>
+                    <span>85%</span>
+                    <span>95%</span>
+                    <span>110%<br/><span className="text-jungle-dim/60">Ideal</span></span>
+                  </div>
+                </div>
               </div>
             ) : (
               <EmptyState label="Run diagnostics to generate heatmap" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Bilateral Symmetry */}
           {isVizOn("symmetry") && (
+          <SortableCard id="symmetry" label="Symmetry" editMode={editMode} orderIndex={orderOf("symmetry")} onHide={() => hideCard("symmetry")}>
           <ChartCard
             title="Bilateral Symmetry"
             subtitle="Left vs. Right Balance"
@@ -822,10 +1087,12 @@ export default function DashboardPage() {
               <EmptyState label="Log bilateral measurements to see symmetry analysis" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Phase Recommendation */}
           {isVizOn("phase_rec") && (
+          <SortableCard id="phase_rec" label="Phase" editMode={editMode} orderIndex={orderOf("phase_rec")} onHide={() => hideCard("phase_rec")}>
           <ChartCard
             title="Phase Recommendation"
             subtitle="Cross-Engine Analysis"
@@ -883,10 +1150,12 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to get a phase recommendation" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Competition Class — simplified */}
           {isVizOn("comp_class") && classEstimate && (
+            <SortableCard id="comp_class" label="Class" editMode={editMode} orderIndex={orderOf("comp_class")} onHide={() => hideCard("comp_class")}>
             <ChartCard
               title="Competition Class"
               subtitle="Division & Weight Limits"
@@ -918,10 +1187,12 @@ export default function DashboardPage() {
                 )}
               </div>
             </ChartCard>
+            </SortableCard>
           )}
 
           {/* Growth Projection — replaces Volumetric Ghost (engine internals aren't actionable) */}
           {isVizOn("growth_projection") && muscleGaps && (
+            <SortableCard id="growth_projection" label="Growth" editMode={editMode} orderIndex={orderOf("growth_projection")} onHide={() => hideCard("growth_projection")}>
             <ChartCard
               title="Growth Projection"
               subtitle="Where You Are vs. Where You Need To Be"
@@ -962,10 +1233,12 @@ export default function DashboardPage() {
                 )}
               </div>
             </ChartCard>
+            </SortableCard>
           )}
 
           {/* Detail Metrics — simplified, only shown when data exists */}
           {isVizOn("detail_metrics") && diagnostic?.advanced_measurements && (
+            <SortableCard id="detail_metrics" label="Detail" editMode={editMode} orderIndex={orderOf("detail_metrics")} onHide={() => hideCard("detail_metrics")}>
             <ChartCard
               title="Detail Metrics"
               subtitle="Lat Spread & Quad VMO"
@@ -1005,10 +1278,12 @@ export default function DashboardPage() {
                 )}
               </div>
             </ChartCard>
+            </SortableCard>
           )}
 
           {/* Autonomic Fuel Gauge */}
           {isVizOn("ari") && (
+          <SortableCard id="ari" label="ARI" editMode={editMode} orderIndex={orderOf("ari")} onHide={() => hideCard("ari")}>
           <ChartCard
             title="Autonomic Fuel Gauge"
             subtitle="Recovery Status · ARI"
@@ -1072,10 +1347,12 @@ export default function DashboardPage() {
               <EmptyState label="Submit HRV data during check-in to see readiness" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Adherence Grid */}
           {isVizOn("adherence") && (
+          <SortableCard id="adherence" label="Adherence" editMode={editMode} orderIndex={orderOf("adherence")} onHide={() => hideCard("adherence")}>
           <ChartCard
             title="Adherence Grid"
             subtitle="12-Week Compliance"
@@ -1089,10 +1366,12 @@ export default function DashboardPage() {
               <EmptyState label="Log adherence during check-in to see compliance grid" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Competition Countdown */}
           {isVizOn("prep_timeline") && (
+          <SortableCard id="prep_timeline" label="Prep" editMode={editMode} orderIndex={orderOf("prep_timeline")} onHide={() => hideCard("prep_timeline")}>
           <ChartCard title="Competition Countdown" subtitle="Prep Timeline">
             {weeksOut !== undefined ? (
               <div className="mt-3 space-y-3">
@@ -1164,10 +1443,12 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to load prep timeline" />
             )}
           </ChartCard>
+          </SortableCard>
           )}
 
           {/* Strength Progression (new) */}
           {isVizOn("strength_progression") && (
+            <SortableCard id="strength_progression" label="Strength" editMode={editMode} orderIndex={orderOf("strength_progression")} onHide={() => hideCard("strength_progression")}>
             <ChartCard
               title="Strength Progression"
               subtitle="e1RM of Main Lifts"
@@ -1175,10 +1456,12 @@ export default function DashboardPage() {
             >
               <StrengthProgressionChart series={strengthSeries} useLbs={useLbs} />
             </ChartCard>
+            </SortableCard>
           )}
 
           {/* Body Weight Trend (new) */}
           {isVizOn("body_weight_trend") && (
+            <SortableCard id="body_weight_trend" label="Weight" editMode={editMode} orderIndex={orderOf("body_weight_trend")} onHide={() => hideCard("body_weight_trend")}>
             <ChartCard
               title="Body Weight Trend"
               subtitle="7-day Rolling Average"
@@ -1190,10 +1473,12 @@ export default function DashboardPage() {
                 phase={phaseRec?.recommended_phase ?? null}
               />
             </ChartCard>
+            </SortableCard>
           )}
 
           {/* Macro Adherence (new) */}
           {isVizOn("macro_adherence") && (
+            <SortableCard id="macro_adherence" label="Macros" editMode={editMode} orderIndex={orderOf("macro_adherence")} onHide={() => hideCard("macro_adherence")}>
             <ChartCard
               title="Macro Adherence"
               subtitle="30-Day Nutrition Hit Rate"
@@ -1201,10 +1486,12 @@ export default function DashboardPage() {
             >
               <MacroAdherenceChart data={adherence} />
             </ChartCard>
+            </SortableCard>
           )}
 
           {/* Weekly Volume vs Landmarks (new) */}
           {isVizOn("weekly_volume") && (
+            <SortableCard id="weekly_volume" label="Volume" editMode={editMode} orderIndex={orderOf("weekly_volume")} onHide={() => hideCard("weekly_volume")}>
             <ChartCard
               title="Weekly Volume"
               subtitle="Sets vs MEV/MAV/MRV"
@@ -1212,10 +1499,12 @@ export default function DashboardPage() {
             >
               <WeeklyVolumeChart rows={weeklyVolume} />
             </ChartCard>
+            </SortableCard>
           )}
 
           {/* Recovery Trend (new) */}
           {isVizOn("recovery_trend") && (
+            <SortableCard id="recovery_trend" label="Recovery Trend" editMode={editMode} orderIndex={orderOf("recovery_trend")} onHide={() => hideCard("recovery_trend")}>
             <ChartCard
               title="Recovery Trend"
               subtitle="ARI Composite · 30 Days"
@@ -1223,8 +1512,15 @@ export default function DashboardPage() {
             >
               <RecoveryTrendChart data={recoveryTrend} />
             </ChartCard>
+            </SortableCard>
           )}
 
+        </div>
+          </SortableContext>
+        </DndContext>
+
+        {/* Quick Log Weight — outside the sortable grid */}
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
           {/* Quick Log Weight */}
           <div className={`card transition-all duration-300 ${quickLogged ? "animate-pulse" : ""}`}>
             <h3 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider mb-3">
@@ -1336,7 +1632,7 @@ export default function DashboardPage() {
   );
 }
 
-function ChartCard({
+const ChartCard = memo(function ChartCard({
   title,
   subtitle,
   tooltip,
@@ -1359,7 +1655,7 @@ function ChartCard({
       {children}
     </div>
   );
-}
+});
 
 /** Convert snake_case site keys to "Title Case" labels */
 function siteLabel(site: string): string {

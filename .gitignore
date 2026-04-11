@@ -49,7 +49,12 @@ uploads/
 # Auth tokens
 .audit_token
 
-# Large assets
+# Large assets (user photos, progress pics, etc.) — but DO allow the
+# small static assets under frontend/public (background image, icons).
 *.jpg
 *.jpeg
 *.png
+!frontend/public/**/*.jpg
+!frontend/public/**/*.jpeg
+!frontend/public/**/*.png
+!frontend/public/**/*.webp
