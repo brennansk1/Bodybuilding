@@ -1402,3 +1402,54 @@ async def dedupe_adherence(
 
     await db.flush()
     return {"duplicates_removed": deleted, "dates_affected": len(dup_dates)}
+
+
+@router.get("/sleep-week")
+async def get_sleep_week(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the last 7 days of sleep quality + hours for the dashboard widget.
+
+    Fills null entries for days that have no HRV log, so the frontend can render
+    a muted "no data" cell instead of collapsing the bar chart.
+    """
+    today = date.today()
+    start = today - timedelta(days=6)
+    rows_result = await db.execute(
+        select(HRVLog)
+        .where(
+            HRVLog.user_id == user.id,
+            HRVLog.recorded_date >= start,
+            HRVLog.recorded_date <= today,
+        )
+        .order_by(desc(HRVLog.recorded_date), desc(HRVLog.created_at))
+    )
+    rows = rows_result.scalars().all()
+    latest_per_day: dict[date, HRVLog] = {}
+    for row in rows:
+        latest_per_day.setdefault(row.recorded_date, row)
+
+    days = []
+    for i in range(7):
+        d = start + timedelta(days=i)
+        row = latest_per_day.get(d)
+        days.append({
+            "date": d.isoformat(),
+            "weekday": d.strftime("%a"),
+            "quality": float(row.sleep_quality) if row and row.sleep_quality is not None else None,
+            "hours": float(row.sleep_hours) if row and row.sleep_hours is not None else None,
+        })
+    logged = [d for d in days if d["quality"] is not None]
+    avg_quality = round(sum(d["quality"] for d in logged) / len(logged), 1) if logged else None
+    avg_hours = round(
+        sum(d["hours"] for d in logged if d["hours"] is not None)
+        / max(1, sum(1 for d in logged if d["hours"] is not None)),
+        1,
+    ) if logged else None
+    return {
+        "days": days,
+        "avg_quality": avg_quality,
+        "avg_hours": avg_hours,
+        "logged_count": len(logged),
+    }

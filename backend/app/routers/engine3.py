@@ -1782,3 +1782,83 @@ async def transition_phase(
         "carbs_g": new_rx.carbs_g,
         "fat_g": new_rx.fat_g,
     }
+
+
+# ---------------------------------------------------------------------------
+# Cheat meal tracking
+# ---------------------------------------------------------------------------
+
+class CheatMealCreate(BaseModel):
+    description: str = Field(..., max_length=200)
+    calories: int = Field(..., ge=0, le=10000)
+
+
+def _cheat_week_start(today: date_cls) -> date_cls:
+    """Return the Monday that starts today's ISO week."""
+    return today - timedelta(days=today.weekday())
+
+
+def _cheat_meal_stats(prefs: dict) -> dict:
+    allowed = int(prefs.get("cheat_meals_per_week", 0) or 0)
+    log: list = list(prefs.get("cheat_meal_log", []) or [])
+    today = date_cls.today()
+    week_start = _cheat_week_start(today)
+    used_this_week = 0
+    recent: list[dict] = []
+    for entry in log:
+        try:
+            d = date_cls.fromisoformat(str(entry.get("date", "")))
+        except ValueError:
+            continue
+        recent.append({
+            "date": d.isoformat(),
+            "description": str(entry.get("description", ""))[:200],
+            "calories": int(entry.get("calories", 0) or 0),
+        })
+        if d >= week_start:
+            used_this_week += 1
+    recent.sort(key=lambda e: e["date"], reverse=True)
+    return {
+        "allowed": allowed,
+        "used_this_week": used_this_week,
+        "remaining": max(0, allowed - used_this_week),
+        "week_start": week_start.isoformat(),
+        "recent": recent[:10],
+    }
+
+
+@router.get("/cheat-meal/stats")
+async def get_cheat_meal_stats(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
+    profile = profile_result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Complete onboarding first")
+    return _cheat_meal_stats(profile.preferences or {})
+
+
+@router.post("/cheat-meal")
+async def log_cheat_meal(
+    data: CheatMealCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
+    profile = profile_result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Complete onboarding first")
+
+    current = dict(profile.preferences or {})
+    log: list = list(current.get("cheat_meal_log", []) or [])
+    log.append({
+        "date": date_cls.today().isoformat(),
+        "description": data.description.strip(),
+        "calories": data.calories,
+    })
+    # Keep the last 30 entries so the log doesn't grow unbounded
+    current["cheat_meal_log"] = log[-30:]
+    profile.preferences = current
+    await db.flush()
+    return _cheat_meal_stats(current)

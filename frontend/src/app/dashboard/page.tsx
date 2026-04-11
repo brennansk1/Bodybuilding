@@ -32,6 +32,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import OnboardingWizard, { shouldShowWizard } from "@/components/OnboardingWizard";
+import { getQuoteForToday } from "@/lib/quotes";
 
 interface PDSEntry {
   date: string;
@@ -195,6 +196,13 @@ const HEATMAP_FLOOR_LABELS: Record<number, string> = {
 // Single source of truth for dashboard card metadata. Drives edit mode
 // (labels, default order) and the Settings visibility list.
 const CARD_REGISTRY: Array<{ key: string; label: string }> = [
+  { key: "workout_tomorrow", label: "Tomorrow's Workout" },
+  { key: "macro_adherence", label: "Macro Adherence" },
+  { key: "mesocycle_progress", label: "Mesocycle Progress" },
+  { key: "tomorrow_split", label: "Tomorrow's Split" },
+  { key: "daily_quote", label: "Daily Fire" },
+  { key: "goal_photo", label: "Your Goal" },
+  { key: "sleep_quality_week", label: "Sleep Quality Week" },
   { key: "spider", label: "Proportion Spider" },
   { key: "muscle_gaps", label: "Muscle Gaps" },
   { key: "pds_trajectory", label: "PDS Trajectory" },
@@ -209,14 +217,17 @@ const CARD_REGISTRY: Array<{ key: string; label: string }> = [
   { key: "prep_timeline", label: "Prep Timeline" },
   { key: "strength_progression", label: "Strength Progression" },
   { key: "body_weight_trend", label: "Body Weight Trend" },
-  { key: "macro_adherence", label: "Macro Adherence" },
   { key: "weekly_volume", label: "Weekly Volume" },
   { key: "recovery_trend", label: "Recovery Trend" },
-  { key: "mesocycle_progress", label: "Mesocycle Progress" },
   { key: "energy_availability", label: "Energy Availability" },
   { key: "training_time", label: "Weekly Training Time" },
 ];
 const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
+
+// On first dashboard load, seed only these 3 widgets visible. The user can
+// always add more via Edit Dashboard. A fresh install with all 20 widgets
+// shown at once is overwhelming.
+const ONBOARDING_DEFAULT_VIZ = ["workout_tomorrow", "macro_adherence", "mesocycle_progress"];
 const LABEL_OF: Record<string, string> = Object.fromEntries(
   CARD_REGISTRY.map((c) => [c.key, c.label])
 );
@@ -376,6 +387,30 @@ export default function DashboardPage() {
   const [todaySession, setTodaySession] = useState<{ session_type: string; sets: { exercise_name: string }[] } | null>(null);
   const [todayMacros, setTodayMacros] = useState<{ target_calories: number; protein_g: number; carbs_g: number; fat_g: number; phase: string } | null>(null);
 
+  // Tomorrow's session for the Tomorrow's Split + Tomorrow's Workout widgets
+  interface TomorrowSession {
+    session_type: string;
+    workout_window?: { est_minutes?: number };
+    sets: { exercise_name: string; is_warmup: boolean }[];
+  }
+  const [tomorrowSession, setTomorrowSession] = useState<TomorrowSession | null>(null);
+
+  // Sleep week for the Sleep Quality Week widget
+  interface SleepWeekDay { date: string; weekday: string; quality: number | null; hours: number | null; }
+  interface SleepWeekData { days: SleepWeekDay[]; avg_quality: number | null; avg_hours: number | null; logged_count: number; }
+  const [sleepWeek, setSleepWeek] = useState<SleepWeekData | null>(null);
+
+  // Goal + aspiration photo — stored in profile.preferences.aspiration
+  interface Aspiration { goal_text?: string; aspiration_photo_url?: string; }
+  const [aspiration, setAspiration] = useState<Aspiration | null>(null);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState("");
+  const [goalPhotoDraft, setGoalPhotoDraft] = useState<string | null>(null);
+  const [goalSaving, setGoalSaving] = useState(false);
+
+  // Daily inspirational quote — deterministic per day, zero network cost
+  const quote = getQuoteForToday();
+
   // Quick log weight state
   const [quickWeight, setQuickWeight] = useState("");
 
@@ -426,6 +461,8 @@ export default function DashboardPage() {
     setDiagnostic(null);
     setClassEstimate(null);
     setRecentWeights([]);
+    setTomorrowSession(null);
+    setSleepWeek(null);
 
     // Soft-fail helper: fetch data, set state on success, log on failure.
     // Dashboard widgets are independent — one failure shouldn't block others.
@@ -444,6 +481,8 @@ export default function DashboardPage() {
     api.get<{
       preferences?: {
         dashboard_viz?: Record<string, boolean>;
+        onboarding_viz_initialized?: boolean;
+        aspiration?: Aspiration;
         dashboard_settings?: {
           viz?: Record<string, boolean>;
           heatmap_floor?: number;
@@ -454,20 +493,58 @@ export default function DashboardPage() {
       .then((p) => {
         const prefs = p?.preferences || {};
         const settings = prefs.dashboard_settings || {};
-        setVizVisibility(settings.viz || prefs.dashboard_viz || {});
+        setAspiration(prefs.aspiration || null);
+
+        const hasSavedViz =
+          (settings.viz && Object.keys(settings.viz).length > 0) ||
+          (prefs.dashboard_viz && Object.keys(prefs.dashboard_viz).length > 0);
+        const isFreshUser = !hasSavedViz && !prefs.onboarding_viz_initialized;
+
+        if (isFreshUser) {
+          // First-run: show only 3 beginner widgets so new users aren't
+          // overwhelmed. They can opt-in to the rest via Edit Dashboard.
+          const seeded: Record<string, boolean> = {};
+          for (const key of DEFAULT_CARD_ORDER) {
+            seeded[key] = ONBOARDING_DEFAULT_VIZ.includes(key);
+          }
+          const seededOrder = [
+            ...ONBOARDING_DEFAULT_VIZ,
+            ...DEFAULT_CARD_ORDER.filter((k) => !ONBOARDING_DEFAULT_VIZ.includes(k)),
+          ];
+          setVizVisibility(seeded);
+          setCardOrder(seededOrder);
+          api.patch("/onboarding/profile", {
+            preferences: {
+              onboarding_viz_initialized: true,
+              dashboard_settings: { viz: seeded, order: seededOrder },
+            },
+          }).catch(() => {});
+        } else {
+          setVizVisibility(settings.viz || prefs.dashboard_viz || {});
+          if (Array.isArray(settings.order) && settings.order.length > 0) {
+            // Keep only known keys; append any missing keys at the end so new
+            // cards added in future releases still render (but stay hidden
+            // unless the user explicitly enables them).
+            const known = new Set(DEFAULT_CARD_ORDER);
+            const sanitized = settings.order.filter((k: string) => known.has(k));
+            const missing = DEFAULT_CARD_ORDER.filter((k) => !sanitized.includes(k));
+            setCardOrder([...sanitized, ...missing]);
+          }
+        }
         if (typeof settings.heatmap_floor === "number") {
           setHeatmapFloor(settings.heatmap_floor);
         }
-        if (Array.isArray(settings.order) && settings.order.length > 0) {
-          // Keep only known keys; append any missing keys at the end so new
-          // cards added in future releases still render.
-          const known = new Set(DEFAULT_CARD_ORDER);
-          const sanitized = settings.order.filter((k: string) => known.has(k));
-          const missing = DEFAULT_CARD_ORDER.filter((k) => !sanitized.includes(k));
-          setCardOrder([...sanitized, ...missing]);
-        }
       })
       .catch(() => {});
+
+    // Tomorrow's session for the Tomorrow widgets
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split("T")[0];
+    softFetch<TomorrowSession>(`/engine2/session/${tomorrowStr}`, setTomorrowSession);
+
+    // Sleep quality for the last 7 days
+    softFetch<SleepWeekData>("/checkin/sleep-week", setSleepWeek);
 
     // New dashboard data
     softFetch<{ series: StrengthSeries[] }>("/engine2/strength/progression", (r) => setStrengthSeries(r.series || []));
@@ -541,6 +618,43 @@ export default function DashboardPage() {
       showToast("Diagnostics failed to run. Try again.", "error");
     } finally {
       setRunningDiag(false);
+    }
+  };
+
+  const openGoalEditor = () => {
+    setGoalDraft(aspiration?.goal_text || "");
+    setGoalPhotoDraft(aspiration?.aspiration_photo_url || null);
+    setEditingGoal(true);
+  };
+
+  const handleGoalPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await api.postFormData<{ url: string }>("/upload", formData);
+      setGoalPhotoDraft(res.url);
+    } catch {
+      showToast("Photo upload failed", "error");
+    }
+  };
+
+  const saveGoal = async () => {
+    setGoalSaving(true);
+    try {
+      const next: Aspiration = {
+        goal_text: goalDraft.trim() || undefined,
+        aspiration_photo_url: goalPhotoDraft || undefined,
+      };
+      await api.patch("/onboarding/profile", { preferences: { aspiration: next } });
+      setAspiration(next);
+      setEditingGoal(false);
+      showToast("Goal saved", "success");
+    } catch {
+      showToast("Couldn't save goal", "error");
+    } finally {
+      setGoalSaving(false);
     }
   };
 
@@ -918,11 +1032,11 @@ export default function DashboardPage() {
             items={cardOrder.filter((k) => vizVisibility[k] !== false)}
             strategy={rectSortingStrategy}
           >
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+        <div className="columns-1 md:columns-2 xl:columns-3 gap-4 sm:gap-6">
+          {(() => {
+            const bodies: Record<string, React.ReactNode> = {};
 
-          {/* Proportion Spider — % of Ideal */}
-          {isVizOn("spider") && (
-          <SortableCard id="spider" label="Spider" editMode={editMode} orderIndex={orderOf("spider")} onHide={() => hideCard("spider")}>
+            if (isVizOn("spider")) bodies.spider = (
           <ChartCard
             title="Proportion Spider"
             subtitle="% of Ideal per Site"
@@ -941,12 +1055,9 @@ export default function DashboardPage() {
               <EmptyState label="Complete a check-in to see proportion analysis" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Muscle Gap Priorities */}
-          {isVizOn("muscle_gaps") && (
-          <SortableCard id="muscle_gaps" label="Muscle Gaps" editMode={editMode} orderIndex={orderOf("muscle_gaps")} onHide={() => hideCard("muscle_gaps")}>
+            if (isVizOn("muscle_gaps")) bodies.muscle_gaps = (
           <ChartCard
             title="Muscle Gaps"
             subtitle="Lean Size vs. Ideal"
@@ -1016,12 +1127,9 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to see gap priorities" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* PDS Glide Path */}
-          {isVizOn("pds_trajectory") && (
-          <SortableCard id="pds_trajectory" label="PDS" editMode={editMode} orderIndex={orderOf("pds_trajectory")} onHide={() => hideCard("pds_trajectory")}>
+            if (isVizOn("pds_trajectory")) bodies.pds_trajectory = (
           <ChartCard
             title="PDS Trajectory"
             subtitle="PDS Glide Path Over Time"
@@ -1052,12 +1160,9 @@ export default function DashboardPage() {
               <EmptyState label="Trajectory builds after multiple check-ins" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Hypertrophy Heatmap */}
-          {isVizOn("heatmap") && (
-          <SortableCard id="heatmap" label="Heatmap" editMode={editMode} orderIndex={orderOf("heatmap")} onHide={() => hideCard("heatmap")}>
+            if (isVizOn("heatmap")) bodies.heatmap = (
           <ChartCard
             title="Hypertrophy Heatmap"
             subtitle="Muscle Development"
@@ -1093,24 +1198,23 @@ export default function DashboardPage() {
                     className="w-full accent-jungle-accent"
                     aria-label="Heatmap color scale floor"
                   />
-                  {/* Labeled stops — shows major anchors */}
-                  <div className="relative h-4 text-[8px] text-jungle-dim">
-                    {HEATMAP_FLOOR_STOPS.map((stop, i) => {
+                  {/* Labeled stops — only the anchor stops (0/50/70/85/95/110)
+                      get labels to avoid label collision. All 12 stops are
+                      still reachable via the slider. */}
+                  <div className="relative h-7 text-[9px] text-jungle-dim">
+                    {HEATMAP_FLOOR_STOPS.map((stop) => {
                       const label = HEATMAP_FLOOR_LABELS[stop];
                       if (!label) return null;
-                      const pct = (i / (HEATMAP_FLOOR_STOPS.length - 1)) * 100;
+                      const pct = (stop / 110) * 100;
                       return (
                         <span
                           key={stop}
-                          className="absolute -translate-x-1/2 text-center leading-tight"
+                          className="absolute -translate-x-1/2 text-center leading-tight whitespace-nowrap min-w-[30px]"
                           style={{ left: `${pct}%` }}
                         >
-                          {stop}%
+                          <span className="block font-mono">{stop}%</span>
                           {label !== String(stop) && (
-                            <>
-                              <br />
-                              <span className="text-jungle-dim/60">{label}</span>
-                            </>
+                            <span className="block text-jungle-dim/60">{label}</span>
                           )}
                         </span>
                       );
@@ -1144,12 +1248,9 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to generate heatmap" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Bilateral Symmetry */}
-          {isVizOn("symmetry") && (
-          <SortableCard id="symmetry" label="Symmetry" editMode={editMode} orderIndex={orderOf("symmetry")} onHide={() => hideCard("symmetry")}>
+            if (isVizOn("symmetry")) bodies.symmetry = (
           <ChartCard
             title="Bilateral Symmetry"
             subtitle="Left vs. Right Balance"
@@ -1212,12 +1313,9 @@ export default function DashboardPage() {
               <EmptyState label="Log bilateral measurements to see symmetry analysis" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Phase Recommendation */}
-          {isVizOn("phase_rec") && (
-          <SortableCard id="phase_rec" label="Phase" editMode={editMode} orderIndex={orderOf("phase_rec")} onHide={() => hideCard("phase_rec")}>
+            if (isVizOn("phase_rec")) bodies.phase_rec = (
           <ChartCard
             title="Phase Recommendation"
             subtitle="Cross-Engine Analysis"
@@ -1275,12 +1373,9 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to get a phase recommendation" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Competition Class — simplified */}
-          {isVizOn("comp_class") && classEstimate && (
-            <SortableCard id="comp_class" label="Class" editMode={editMode} orderIndex={orderOf("comp_class")} onHide={() => hideCard("comp_class")}>
+            if (isVizOn("comp_class") && classEstimate) bodies.comp_class = (
             <ChartCard
               title="Competition Class"
               subtitle="Division & Weight Limits"
@@ -1312,12 +1407,9 @@ export default function DashboardPage() {
                 )}
               </div>
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Growth Projection — replaces Volumetric Ghost (engine internals aren't actionable) */}
-          {isVizOn("growth_projection") && muscleGaps && (
-            <SortableCard id="growth_projection" label="Growth" editMode={editMode} orderIndex={orderOf("growth_projection")} onHide={() => hideCard("growth_projection")}>
+            if (isVizOn("growth_projection") && muscleGaps) bodies.growth_projection = (
             <ChartCard
               title="Growth Projection"
               subtitle="Where You Are vs. Where You Need To Be"
@@ -1358,12 +1450,9 @@ export default function DashboardPage() {
                 )}
               </div>
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Detail Metrics — simplified, only shown when data exists */}
-          {isVizOn("detail_metrics") && diagnostic?.advanced_measurements && (
-            <SortableCard id="detail_metrics" label="Detail" editMode={editMode} orderIndex={orderOf("detail_metrics")} onHide={() => hideCard("detail_metrics")}>
+            if (isVizOn("detail_metrics") && diagnostic?.advanced_measurements) bodies.detail_metrics = (
             <ChartCard
               title="Detail Metrics"
               subtitle="Lat Spread & Quad VMO"
@@ -1403,12 +1492,9 @@ export default function DashboardPage() {
                 )}
               </div>
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Autonomic Fuel Gauge */}
-          {isVizOn("ari") && (
-          <SortableCard id="ari" label="ARI" editMode={editMode} orderIndex={orderOf("ari")} onHide={() => hideCard("ari")}>
+            if (isVizOn("ari")) bodies.ari = (
           <ChartCard
             title="Autonomic Fuel Gauge"
             subtitle="Recovery Status · ARI"
@@ -1472,12 +1558,9 @@ export default function DashboardPage() {
               <EmptyState label="Submit HRV data during check-in to see readiness" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Adherence Grid */}
-          {isVizOn("adherence") && (
-          <SortableCard id="adherence" label="Adherence" editMode={editMode} orderIndex={orderOf("adherence")} onHide={() => hideCard("adherence")}>
+            if (isVizOn("adherence")) bodies.adherence = (
           <ChartCard
             title="Adherence Grid"
             subtitle="12-Week Compliance"
@@ -1491,12 +1574,9 @@ export default function DashboardPage() {
               <EmptyState label="Log adherence during check-in to see compliance grid" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Competition Countdown */}
-          {isVizOn("prep_timeline") && (
-          <SortableCard id="prep_timeline" label="Prep" editMode={editMode} orderIndex={orderOf("prep_timeline")} onHide={() => hideCard("prep_timeline")}>
+            if (isVizOn("prep_timeline")) bodies.prep_timeline = (
           <ChartCard title="Competition Countdown" subtitle="Prep Timeline">
             {weeksOut !== undefined ? (
               <div className="mt-3 space-y-3">
@@ -1568,12 +1648,9 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to load prep timeline" />
             )}
           </ChartCard>
-          </SortableCard>
-          )}
+            );
 
-          {/* Strength Progression (new) */}
-          {isVizOn("strength_progression") && (
-            <SortableCard id="strength_progression" label="Strength" editMode={editMode} orderIndex={orderOf("strength_progression")} onHide={() => hideCard("strength_progression")}>
+            if (isVizOn("strength_progression")) bodies.strength_progression = (
             <ChartCard
               title="Strength Progression"
               subtitle="e1RM of Main Lifts"
@@ -1581,12 +1658,9 @@ export default function DashboardPage() {
             >
               <StrengthProgressionChart series={strengthSeries} useLbs={useLbs} />
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Body Weight Trend (new) */}
-          {isVizOn("body_weight_trend") && (
-            <SortableCard id="body_weight_trend" label="Weight" editMode={editMode} orderIndex={orderOf("body_weight_trend")} onHide={() => hideCard("body_weight_trend")}>
+            if (isVizOn("body_weight_trend")) bodies.body_weight_trend = (
             <ChartCard
               title="Body Weight Trend"
               subtitle="7-day Rolling Average"
@@ -1598,12 +1672,9 @@ export default function DashboardPage() {
                 phase={phaseRec?.recommended_phase ?? null}
               />
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Macro Adherence (new) */}
-          {isVizOn("macro_adherence") && (
-            <SortableCard id="macro_adherence" label="Macros" editMode={editMode} orderIndex={orderOf("macro_adherence")} onHide={() => hideCard("macro_adherence")}>
+            if (isVizOn("macro_adherence")) bodies.macro_adherence = (
             <ChartCard
               title="Macro Adherence"
               subtitle="30-Day Nutrition Hit Rate"
@@ -1611,12 +1682,9 @@ export default function DashboardPage() {
             >
               <MacroAdherenceChart data={adherence} />
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Weekly Volume vs Landmarks (new) */}
-          {isVizOn("weekly_volume") && (
-            <SortableCard id="weekly_volume" label="Volume" editMode={editMode} orderIndex={orderOf("weekly_volume")} onHide={() => hideCard("weekly_volume")}>
+            if (isVizOn("weekly_volume")) bodies.weekly_volume = (
             <ChartCard
               title="Weekly Volume"
               subtitle="Sets vs MEV/MAV/MRV"
@@ -1624,12 +1692,9 @@ export default function DashboardPage() {
             >
               <WeeklyVolumeChart rows={weeklyVolume} />
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Recovery Trend (new) */}
-          {isVizOn("recovery_trend") && (
-            <SortableCard id="recovery_trend" label="Recovery Trend" editMode={editMode} orderIndex={orderOf("recovery_trend")} onHide={() => hideCard("recovery_trend")}>
+            if (isVizOn("recovery_trend")) bodies.recovery_trend = (
             <ChartCard
               title="Recovery Trend"
               subtitle="ARI Composite · 30 Days"
@@ -1637,12 +1702,9 @@ export default function DashboardPage() {
             >
               <RecoveryTrendChart data={recoveryTrend} />
             </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Mesocycle Progress (new) — ring + phase label + deload countdown */}
-          {isVizOn("mesocycle_progress") && program && (
-            <SortableCard id="mesocycle_progress" label="Meso" editMode={editMode} orderIndex={orderOf("mesocycle_progress")} onHide={() => hideCard("mesocycle_progress")}>
+            if (isVizOn("mesocycle_progress") && program) bodies.mesocycle_progress = (
               <ChartCard
                 title="Mesocycle Progress"
                 subtitle={`Week ${program.current_week} of ${program.mesocycle_weeks}`}
@@ -1689,12 +1751,9 @@ export default function DashboardPage() {
                   );
                 })()}
               </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Energy Availability (new) — RED-S gauge */}
-          {isVizOn("energy_availability") && todayMacros && (
-            <SortableCard id="energy_availability" label="EA" editMode={editMode} orderIndex={orderOf("energy_availability")} onHide={() => hideCard("energy_availability")}>
+            if (isVizOn("energy_availability") && todayMacros) bodies.energy_availability = (
               <ChartCard
                 title="Energy Availability"
                 subtitle="kcal / kg FFM / day"
@@ -1742,12 +1801,9 @@ export default function DashboardPage() {
                   );
                 })()}
               </ChartCard>
-            </SortableCard>
-          )}
+            );
 
-          {/* Weekly Training Time (new) */}
-          {isVizOn("training_time") && (
-            <SortableCard id="training_time" label="Time" editMode={editMode} orderIndex={orderOf("training_time")} onHide={() => hideCard("training_time")}>
+            if (isVizOn("training_time")) bodies.training_time = (
               <ChartCard
                 title="Weekly Training Time"
                 subtitle="This week's gym budget"
@@ -1805,9 +1861,228 @@ export default function DashboardPage() {
                   <EmptyState label="Complete a session to populate weekly time" />
                 )}
               </ChartCard>
-            </SortableCard>
-          )}
+            );
 
+            // ─── New widgets ─────────────────────────────────────────────
+
+            if (isVizOn("tomorrow_split")) bodies.tomorrow_split = (
+              <ChartCard
+                title="Tomorrow's Split"
+                subtitle="What's on deck"
+                tooltip="Your scheduled training split for tomorrow. A quick glance at what to expect when you walk into the gym."
+              >
+                {(() => {
+                  const tmw = new Date();
+                  tmw.setDate(tmw.getDate() + 1);
+                  const weekday = tmw.toLocaleDateString(undefined, { weekday: "long" });
+                  const dateLabel = tmw.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                  if (tomorrowSession) {
+                    return (
+                      <div className="mt-3">
+                        <p className="text-[10px] text-jungle-dim uppercase tracking-wider">{weekday} · {dateLabel}</p>
+                        <p className="text-2xl font-bold text-jungle-accent capitalize mt-1">
+                          {tomorrowSession.session_type.replace(/_/g, " ")} Day
+                        </p>
+                        <p className="text-[11px] text-jungle-muted mt-1">
+                          {new Set(tomorrowSession.sets.filter((s) => !s.is_warmup).map((s) => s.exercise_name)).size} exercises queued
+                        </p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="mt-3">
+                      <p className="text-[10px] text-jungle-dim uppercase tracking-wider">{weekday} · {dateLabel}</p>
+                      <p className="text-2xl font-bold text-jungle-muted mt-1">Rest Day 💤</p>
+                      <p className="text-[11px] text-jungle-dim mt-1">No session scheduled — recover hard.</p>
+                    </div>
+                  );
+                })()}
+              </ChartCard>
+            );
+
+            if (isVizOn("workout_tomorrow")) bodies.workout_tomorrow = (
+              <ChartCard
+                title="Tomorrow's Workout"
+                subtitle="Exercise preview"
+                tooltip="The exact exercises scheduled for tomorrow's session with set counts. Prep your playlist, pre-load the warmups, walk in ready."
+              >
+                {tomorrowSession ? (() => {
+                  const exerciseSets: Record<string, number> = {};
+                  for (const s of tomorrowSession.sets) {
+                    if (s.is_warmup) continue;
+                    exerciseSets[s.exercise_name] = (exerciseSets[s.exercise_name] || 0) + 1;
+                  }
+                  const entries = Object.entries(exerciseSets);
+                  const estMin = tomorrowSession.workout_window?.est_minutes;
+                  return (
+                    <div className="mt-3">
+                      <div className="space-y-1">
+                        {entries.map(([name, sets]) => (
+                          <div key={name} className="flex justify-between text-[11px] py-1 border-b border-jungle-border/30">
+                            <span className="text-jungle-muted truncate pr-2">{name}</span>
+                            <span className="text-jungle-accent whitespace-nowrap">{sets} × working</span>
+                          </div>
+                        ))}
+                      </div>
+                      {estMin && (
+                        <p className="text-[10px] text-jungle-dim mt-2 text-right">~{estMin} min</p>
+                      )}
+                    </div>
+                  );
+                })() : (
+                  <EmptyState label="Rest day tomorrow — recovery is a weapon" />
+                )}
+              </ChartCard>
+            );
+
+            if (isVizOn("sleep_quality_week")) bodies.sleep_quality_week = (
+              <ChartCard
+                title="Sleep Quality Week"
+                subtitle="7-day recovery foundation"
+                tooltip="Nightly sleep quality (1-10) and total hours for the last 7 days. Sleep is where hypertrophy actually happens — growth hormone peaks in deep sleep, and sub-6h nights blunt MPS."
+              >
+                {sleepWeek ? (
+                  <div className="mt-3">
+                    <div className="flex items-end justify-between gap-1 h-24">
+                      {sleepWeek.days.map((d) => {
+                        const qual = d.quality ?? 0;
+                        const height = qual > 0 ? (qual / 10) * 100 : 0;
+                        const color = qual >= 7 ? "#4ade80" : qual >= 5 ? "#eab308" : qual > 0 ? "#ef4444" : "transparent";
+                        return (
+                          <div key={d.date} className="flex-1 flex flex-col items-center">
+                            <div className="w-full bg-jungle-deeper rounded-sm flex items-end h-20 overflow-hidden">
+                              {qual > 0 ? (
+                                <div className="w-full rounded-sm transition-all" style={{ height: `${height}%`, backgroundColor: color }} />
+                              ) : (
+                                <div className="w-full h-full flex items-end justify-center">
+                                  <span className="text-[8px] text-jungle-dim/50 mb-1">—</span>
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-[9px] text-jungle-muted mt-1">{d.weekday[0]}</span>
+                            <span className="text-[9px] text-jungle-dim">{d.hours ? `${d.hours.toFixed(1)}h` : "—"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {sleepWeek.logged_count > 0 ? (
+                      <p className="text-[10px] text-jungle-dim mt-3 text-center">
+                        7-day avg: <span className="text-jungle-accent">{sleepWeek.avg_quality ?? "—"}/10</span> · {sleepWeek.avg_hours ?? "—"}h per night
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-jungle-dim mt-3 text-center">
+                        Log sleep during check-in to build a recovery baseline
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState label="Log sleep during check-in to see the week" />
+                )}
+              </ChartCard>
+            );
+
+            if (isVizOn("daily_quote")) bodies.daily_quote = (
+              <ChartCard
+                title="Daily Fire"
+                subtitle="Mental fuel"
+                tooltip="A fresh quote every day. Discipline, pain, repetition — the reminders that build a physique you're proud of."
+              >
+                <div className="mt-3">
+                  <p className="text-[13px] text-jungle-text italic leading-relaxed">
+                    &ldquo;{quote.text}&rdquo;
+                  </p>
+                  <p className="text-[11px] text-jungle-accent mt-3 text-right">— {quote.author}</p>
+                </div>
+              </ChartCard>
+            );
+
+            if (isVizOn("goal_photo")) bodies.goal_photo = (
+              <ChartCard
+                title="Your Goal"
+                subtitle="The physique you're building"
+                tooltip="Your north star. Upload a photo of the physique you're chasing and the verbal goal behind it. Every rep is aimed at this."
+              >
+                {editingGoal ? (
+                  <div className="mt-3 space-y-2">
+                    <input
+                      type="text"
+                      value={goalDraft}
+                      onChange={(e) => setGoalDraft(e.target.value)}
+                      placeholder="Build Phil Heath's back thickness"
+                      className="input-field text-xs w-full"
+                      maxLength={120}
+                    />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleGoalPhotoChange}
+                      className="text-[10px] text-jungle-muted"
+                    />
+                    {goalPhotoDraft && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={goalPhotoDraft} alt="preview" className="rounded-lg max-h-[160px] mx-auto object-contain" />
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={saveGoal}
+                        disabled={goalSaving}
+                        className="btn-primary text-xs px-3 py-1 disabled:opacity-50"
+                      >
+                        {goalSaving ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        onClick={() => setEditingGoal(false)}
+                        className="btn-secondary text-xs px-3 py-1"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : aspiration?.aspiration_photo_url ? (
+                  <div className="mt-3 relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={aspiration.aspiration_photo_url}
+                      alt="aspiration"
+                      className="rounded-lg max-h-[260px] w-full object-contain bg-jungle-deeper"
+                    />
+                    {aspiration.goal_text && (
+                      <p className="text-[12px] text-jungle-muted italic text-center mt-2">
+                        &ldquo;{aspiration.goal_text}&rdquo;
+                      </p>
+                    )}
+                    <button
+                      onClick={openGoalEditor}
+                      className="absolute top-2 right-2 px-2 py-1 bg-jungle-deeper/80 border border-jungle-border rounded-md text-[10px] text-jungle-dim hover:text-jungle-accent"
+                    >
+                      ✎ Edit
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-col items-center justify-center h-36 border-2 border-dashed border-jungle-border rounded-lg">
+                    <p className="text-[11px] text-jungle-dim mb-3 text-center">No goal set yet</p>
+                    <button onClick={openGoalEditor} className="btn-primary text-xs px-3 py-1">
+                      Set your goal
+                    </button>
+                  </div>
+                )}
+              </ChartCard>
+            );
+
+            return cardOrder
+              .filter((k) => bodies[k])
+              .map((k) => (
+                <SortableCard
+                  key={k}
+                  id={k}
+                  label={LABEL_OF[k] || k}
+                  editMode={editMode}
+                  onHide={() => hideCard(k)}
+                >
+                  {bodies[k]}
+                </SortableCard>
+              ));
+          })()}
         </div>
           </SortableContext>
         </DndContext>
