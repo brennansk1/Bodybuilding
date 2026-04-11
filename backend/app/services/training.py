@@ -137,7 +137,7 @@ MAX_EXERCISES_PER_SESSION = 9
 # The set-generation loop tracks a running_seconds accumulator and spills
 # excess sets forward into global_spillover when adding more would breach
 # this budget.
-SESSION_DURATION_BUDGET_MIN = 90
+SESSION_DURATION_BUDGET_MIN = 105
 SESSION_DURATION_BUDGET_SEC = SESSION_DURATION_BUDGET_MIN * 60
 
 # Per-muscle cap on working sets in a single session. Lowered from 12 → 10
@@ -1543,7 +1543,21 @@ async def generate_program_sessions(
                     # Runtime session duration budget — trim this exercise's set
                     # count if adding them would exceed SESSION_DURATION_BUDGET.
                     # -----------------------------------------------------------
-                    will_include_warmup = need_warmup and bool(prescribed_weight)
+                    # Isolation-only muscles (arms, delts, forearms) don't need
+                    # compound-style warmup sets — a few light reps before the first
+                    # working set are enough. Skipping the ramp saves ~5 min per
+                    # muscle in a multi-muscle session which is the difference
+                    # between fitting rear delts in a shoulder day or spilling
+                    # them to never-land.
+                    _ISO_ONLY_MUSCLES = {
+                        "side_delt", "rear_delt", "front_delt", "biceps",
+                        "triceps", "forearms", "calves", "abs", "traps",
+                    }
+                    _ex_is_isolation = (ex_pattern or "").lower() in (
+                        "isolation", "curl", "extension", "lateral", "fly", "raise",
+                    )
+                    _skip_warmup = db_muscle in _ISO_ONLY_MUSCLES and _ex_is_isolation
+                    will_include_warmup = need_warmup and bool(prescribed_weight) and not _skip_warmup
                     contribution = _estimate_exercise_contribution_seconds(
                         n_working_sets=n_sets,
                         working_rest_sec=working_rest,
