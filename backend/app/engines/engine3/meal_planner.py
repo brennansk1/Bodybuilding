@@ -794,6 +794,30 @@ def generate_meal_plan(
         # high-fat proteins (Whole Eggs, Sirloin) from blowing the fat budget.
         incidental_protein = 0.0
 
+        def _slot_match(pool: list[FoodItem], target_slot: str) -> list[FoodItem]:
+            """Tiered affinity match.
+
+            Tier 1: foods with the exact slot_type in meal_affinity.
+                    e.g. "lunch_dinner" match → White Rice, Sweet Potato.
+            Tier 2: foods with ONLY "any" affinity (no specific slot).
+                    e.g. Chicken Breast, Sirloin Steak (no explicit slot set).
+            Tier 3: foods with "any" PLUS a non-matching slot.
+                    e.g. Egg Whites ("breakfast", "any") — used only if no
+                    tier 1 or tier 2 food survives. A coach never plates
+                    egg whites at dinner if chicken is available.
+            """
+            tier1 = [f for f in pool if target_slot in f.meal_affinity]
+            if tier1:
+                return tier1
+            tier2 = [f for f in pool
+                     if "any" in f.meal_affinity
+                     and not any(s in f.meal_affinity for s in ("breakfast", "snack"))]
+            if tier2:
+                return tier2
+            tier3 = [f for f in pool
+                     if "any" in f.meal_affinity or target_slot in f.meal_affinity]
+            return tier3 or pool
+
         # ── 0. Pre-select protein food (determine WHICH, don't scale yet) ──
         protein_food = None
         if is_peri and daily_peri_proteins:
@@ -803,12 +827,8 @@ def generate_meal_plan(
             protein_food = breakfast_proteins[_prot_idx % len(breakfast_proteins)]
             _prot_idx += 1
         elif daily_proteins:
-            affinity_match = [f for f in daily_proteins
-                             if slot_type in f.meal_affinity or "any" in f.meal_affinity]
-            if affinity_match:
-                protein_food = affinity_match[_prot_idx % len(affinity_match)]
-            else:
-                protein_food = daily_proteins[_prot_idx % len(daily_proteins)]
+            affinity_match = _slot_match(daily_proteins, slot_type)
+            protein_food = affinity_match[_prot_idx % len(affinity_match)]
             _prot_idx += 1
 
         # Estimate protein food's fat contribution so we can budget for it
@@ -841,12 +861,8 @@ def generate_meal_plan(
                 carb_food = daily_peri_carbs[_peri_carb_idx % len(daily_peri_carbs)]
                 _peri_carb_idx += 1
             elif daily_carbs:
-                affinity_match = [f for f in daily_carbs
-                                 if slot_type in f.meal_affinity or "any" in f.meal_affinity]
-                if affinity_match:
-                    carb_food = affinity_match[_carb_idx % len(affinity_match)]
-                else:
-                    carb_food = daily_carbs[_carb_idx % len(daily_carbs)]
+                affinity_match = _slot_match(daily_carbs, slot_type)
+                carb_food = affinity_match[_carb_idx % len(affinity_match)]
                 _carb_idx += 1
 
             if carb_food:

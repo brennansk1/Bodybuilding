@@ -1024,38 +1024,61 @@ def _week_volume(
     is_deload: bool,
 ) -> dict[str, int]:
     """
-    Compute the volume map for a given week using the MESO_PHASE_MAP.
-    Target volume is derived from muscle-specific VOLUME_LANDMARKS
-    (MEV/MAV/MRV) adjusted by the phase's set_modifier.
+    Compute the volume map for a given week using gradual progressive overload.
+
+    Starts from ``base_volume`` (the division-adjusted per-muscle budget from
+    the split designer — e.g. chest at 14 sets for Men's Physique priority)
+    and adds 1-2 sets per week through the accumulation phase, ramping
+    toward MRV by week 5, then deloading to ~50% of the peak week.
+
+    This replaces the old step-function (MEV weeks 1-2 flat, then jump to MAV
+    in week 3) which produced volume CLIFFS — biceps going from 2 sets to
+    11 sets overnight — rather than the gradual ramps a real coach prescribes.
     """
     phase_info = MESO_PHASE_MAP.get(week_num, MESO_PHASE_MAP.get(6, {}))
-    landmark_key = phase_info.get("volume_landmark", "mev")
-    modifier = phase_info.get("set_modifier", 0)
+    base_modifier = phase_info.get("set_modifier", 0)
 
+    # Accumulation multiplier: scales the week's target above base_volume.
+    # Week 1 = base_volume (division-adjusted MEV from the split designer).
+    # Each subsequent week adds the increment until MRV is reached.
+    #
+    # Muscles that the split designer capped at MEV (low division importance —
+    # e.g. quads for Men's Physique) don't progress: judges don't reward the
+    # volume, so pushing them toward MRV just steals recovery from priority
+    # muscles. These stay flat at base_volume the whole accumulation phase
+    # except for the deload.
     result: dict[str, int] = {}
-    for muscle in base_volume.keys():
-        # Get landmarks for this muscle
-        # Default to (6, 12, 18) if muscle not in map
+    for muscle, base in base_volume.items():
         mev, mav, mrv = VOLUME_LANDMARKS.get(muscle, (6, 12, 18))
+        base_start = max(mev, base) if base > 0 else mev
+
+        # A muscle is "maintenance-capped" if the split designer gave it a
+        # budget within 1 set of the global MEV. For MP that's typically
+        # quads/glutes/hamstrings; for Bikini it's chest/biceps/triceps.
+        is_maintenance = base_start <= mev + 1
 
         if is_deload:
-            # Deload is 50% of the muscle's individual MEV floor
-            target = max(1, math.floor(mev * _DELOAD_VOLUME_FRACTION))
-        else:
-            if landmark_key == "mev":
-                target = mev
-            elif landmark_key == "mav":
-                target = mav
-            elif landmark_key == "mrv":
-                target = mrv
+            # Deload = 50% of the peak week's volume. For maintenance muscles
+            # this is 50% of base; for priority muscles it's 50% of what the
+            # ramp would have reached at week 5 (or MRV, whichever is lower).
+            if is_maintenance:
+                peak = base_start
             else:
-                target = mev  # fallback
+                peak = min(mrv, base_start + increment * 4)
+            target = max(1, math.floor(peak * _DELOAD_VOLUME_FRACTION))
+        elif is_maintenance:
+            # Hold at base. No progressive overload on maintenance muscles —
+            # the stimulus is already at MEV, that's the whole point.
+            target = base_start
+        else:
+            # Priority muscle: gradual ramp from base toward MRV.
+            # Base in week 1, +increment every week after, plus the
+            # phase-specific set_modifier for MAV/MRV blocks.
+            weeks_of_ramp = max(0, week_num - 1)
+            target = base_start + (weeks_of_ramp * increment) + base_modifier
+            target = min(target, mrv)
 
-            # Apply phase-specific intensity modifier (+1 set in MAV weeks etc)
-            target += modifier
-
-        # Never prescribe more than the muscle's absolute recovery limit (MRV)
-        result[muscle] = min(max(1, target), mrv)
+        result[muscle] = max(1, target)
 
     return result
 
