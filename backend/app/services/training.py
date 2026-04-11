@@ -130,7 +130,7 @@ MIN_EXERCISES_PER_SESSION = 5
 # add accessories beyond this; a pro bodybuilder session is 5-7 exercises,
 # not 10. Combined with the duration budget below, this prevents the
 # "Wednesday chest day was 2 hours" outlier.
-MAX_EXERCISES_PER_SESSION = 7
+MAX_EXERCISES_PER_SESSION = 9
 
 # Hard cap on total session wall-clock time. Olympia-grade sessions run
 # 60-90 min (Jay Cutler, Phil Heath, Hadi Choopan all quote this range).
