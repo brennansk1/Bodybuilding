@@ -319,6 +319,12 @@ export default function TrainingPage() {
   const [cardioSpeed, setCardioSpeed] = useState("3.0");
   const [cardioIncline, setCardioIncline] = useState("12");
   const [cardioStairLevel, setCardioStairLevel] = useState("6");
+  const [cardioBikeResistance, setCardioBikeResistance] = useState("10");
+  const [cardioBikeRpm, setCardioBikeRpm] = useState("80");
+  const [cardioEllipticalResistance, setCardioEllipticalResistance] = useState("8");
+  const [cardioEllipticalIncline, setCardioEllipticalIncline] = useState("6");
+  const [cardioRowerPace, setCardioRowerPace] = useState("2:15");
+  const [cardioRowerDamper, setCardioRowerDamper] = useState("5");
   const [cardioDuration, setCardioDuration] = useState("30");
   const [cardioFasted, setCardioFasted] = useState(true);
   const [cardioLogged, setCardioLogged] = useState(false);
@@ -872,6 +878,15 @@ export default function TrainingPage() {
         payload.incline_pct = parseInt(cardioIncline) || 12;
       } else if (cardioMachine === "stairmaster") {
         payload.stair_level = parseInt(cardioStairLevel) || 6;
+      } else if (cardioMachine === "stationary_bike") {
+        payload.resistance_level = parseInt(cardioBikeResistance) || 10;
+        payload.rpm = parseInt(cardioBikeRpm) || 80;
+      } else if (cardioMachine === "elliptical") {
+        payload.resistance_level = parseInt(cardioEllipticalResistance) || 8;
+        payload.incline_pct = parseInt(cardioEllipticalIncline) || 6;
+      } else if (cardioMachine === "rowing") {
+        payload.damper = parseInt(cardioRowerDamper) || 5;
+        payload.pace_500m = cardioRowerPace || "2:15";
       }
       await api.post("/engine3/cardio/log", payload);
       setCardioLogged(true);
@@ -1028,6 +1043,7 @@ export default function TrainingPage() {
                         <option value="stairmaster">StairMaster</option>
                         <option value="stationary_bike">Stationary Bike</option>
                         <option value="elliptical">Elliptical</option>
+                        <option value="rowing">Rowing Machine</option>
                       </select>
                     </div>
                     {/* Duration */}
@@ -1088,6 +1104,100 @@ export default function TrainingPage() {
                         <option value="9">Level 9 — Very hard</option>
                         <option value="10">Level 10 — Max</option>
                       </select>
+                    </div>
+                  )}
+
+                  {/* Stationary bike controls */}
+                  {cardioMachine === "stationary_bike" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Resistance</label>
+                        <select
+                          value={cardioBikeResistance}
+                          onChange={e => setCardioBikeResistance(e.target.value)}
+                          className="input-field mt-0.5 text-xs"
+                        >
+                          {[3, 5, 7, 9, 10, 12, 14, 16, 18, 20].map(level => (
+                            <option key={level} value={String(level)}>
+                              Level {level}{level === 10 ? " — Zone 2" : level >= 16 ? " — Hard" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Cadence (RPM)</label>
+                        <input
+                          type="number"
+                          value={cardioBikeRpm}
+                          onChange={e => setCardioBikeRpm(e.target.value)}
+                          placeholder="80"
+                          className="input-field mt-0.5 text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Elliptical controls */}
+                  {cardioMachine === "elliptical" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Resistance</label>
+                        <select
+                          value={cardioEllipticalResistance}
+                          onChange={e => setCardioEllipticalResistance(e.target.value)}
+                          className="input-field mt-0.5 text-xs"
+                        >
+                          {[3, 5, 7, 8, 10, 12, 14, 16, 18, 20].map(level => (
+                            <option key={level} value={String(level)}>
+                              Level {level}{level === 8 ? " — Standard" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Incline / Ramp</label>
+                        <select
+                          value={cardioEllipticalIncline}
+                          onChange={e => setCardioEllipticalIncline(e.target.value)}
+                          className="input-field mt-0.5 text-xs"
+                        >
+                          {[0, 3, 6, 9, 12, 15, 18, 20].map(inc => (
+                            <option key={inc} value={String(inc)}>
+                              {inc}%
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rowing machine controls */}
+                  {cardioMachine === "rowing" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Damper</label>
+                        <select
+                          value={cardioRowerDamper}
+                          onChange={e => setCardioRowerDamper(e.target.value)}
+                          className="input-field mt-0.5 text-xs"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(d => (
+                            <option key={d} value={String(d)}>
+                              {d}{d === 5 ? " — Standard" : d >= 8 ? " — Heavy" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Pace /500m</label>
+                        <input
+                          type="text"
+                          value={cardioRowerPace}
+                          onChange={e => setCardioRowerPace(e.target.value)}
+                          placeholder="2:15"
+                          className="input-field mt-0.5 text-xs"
+                        />
+                      </div>
                     </div>
                   )}
 

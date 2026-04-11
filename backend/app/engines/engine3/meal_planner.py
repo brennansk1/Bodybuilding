@@ -454,6 +454,7 @@ def generate_meal_plan(
     preferred_fats: list[str] | None = None,
     blacklisted_foods: list[str] | None = None,
     intra_workout_nutrition: bool = False,
+    fasted_training: bool = False,
     body_weight_kg: float = 80.0,
     session_muscles: list[str] | None = None,
 ) -> list[dict]:
@@ -504,7 +505,12 @@ def generate_meal_plan(
     except Exception:
         _train_start_mins = 10 * 60
     _train_end_mins = _train_start_mins + training_duration_min
-    _is_early_workout = _train_start_mins < 7 * 60      # before 7 AM
+    # "Early workout" now means "before 7 AM AND the athlete explicitly
+    # chose fasted training". Previously this was time-only, which forced
+    # a blank pre-WO meal on anyone who trains at dawn. Olympia-grade coaches
+    # usually prescribe a real pre-WO meal (coffee + oats + whey + banana)
+    # even for 5-6 AM lifters — fasted-only is a deliberate preference.
+    _is_early_workout = fasted_training and (_train_start_mins < 7 * 60)
     _is_late_workout = (_train_end_mins + 30) > 20 * 60  # post-WO after 8 PM
 
     # Build time slots (with intra slot if enabled)
