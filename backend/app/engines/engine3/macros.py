@@ -33,14 +33,16 @@ _PROTEIN_PER_KG = {
     "bulk":      2.0,
     "lean_bulk": 2.2,   # slightly higher to prioritize LBM in surplus
     "maintain":  2.0,
-    "cut":       2.4,
-    "peak":      2.7,
+    "cut":       2.8,   # elite cut standard — defend LBM aggressively in deficit
+    "peak":      3.0,   # peak week: max MPS signal, depleted glycogen = more gluconeogenesis
     "restoration": 2.2,
 }
 
-# Hard bounds enforced regardless of division overrides or other overrides (g/kg TBW)
+# Hard bounds enforced regardless of division overrides or other overrides (g/kg TBW).
+# Upper bound lifted from 2.7 → 3.2 to accommodate the elite cut standard
+# and peak-week protein loading that experienced competitors use.
 _PROTEIN_MIN_PER_KG = 1.6
-_PROTEIN_MAX_PER_KG = 2.7
+_PROTEIN_MAX_PER_KG = 3.2
 
 # Phase-decaying fat floor (g per kg TOTAL body weight)
 # Offseason: 1.0 g/kg — optimal for androgen synthesis and hormonal health
@@ -634,7 +636,7 @@ def compute_division_nutrition_priorities(
         "mens_open": {
             # Mass is the primary goal; heavy compound training demands glycogen.
             # High protein supports LBM retention during aggressive cuts.
-            "protein_per_kg": {"bulk": 1.8, "cut": 2.4, "maintain": 2.0, "peak": 2.4, "restoration": 2.2},
+            "protein_per_kg": {"bulk": 2.0, "cut": 2.8, "maintain": 2.0, "peak": 3.0, "restoration": 2.2},
             "carb_cycling_factor": 0.25,   # +/- 25% carbs training vs rest day
             "fat_per_kg_floor": 0.85,      # slightly elevated fat supports testosterone
             "meal_frequency_target": 5,
@@ -649,7 +651,7 @@ def compute_division_nutrition_priorities(
         "mens_physique": {
             # Year-round leanness is judged; avoid excess bulk calories.
             # Higher relative protein to stay anabolic while staying lean.
-            "protein_per_kg": {"bulk": 2.0, "cut": 2.4, "maintain": 2.2, "peak": 2.4, "restoration": 2.2},
+            "protein_per_kg": {"bulk": 2.2, "cut": 2.9, "maintain": 2.2, "peak": 3.0, "restoration": 2.2},
             "carb_cycling_factor": 0.30,   # pronounced cycling to stay conditioned
             "fat_per_kg_floor": 0.75,
             "meal_frequency_target": 5,
@@ -664,7 +666,7 @@ def compute_division_nutrition_priorities(
         "classic_physique": {
             # Similar to open but with more attention to proportion;
             # slightly less aggressive surplus to prevent exceeding weight caps.
-            "protein_per_kg": {"bulk": 1.9, "cut": 2.4, "maintain": 2.0, "peak": 2.4, "restoration": 2.2},
+            "protein_per_kg": {"bulk": 2.0, "cut": 2.8, "maintain": 2.0, "peak": 3.0, "restoration": 2.2},
             "carb_cycling_factor": 0.25,
             "fat_per_kg_floor": 0.80,
             "meal_frequency_target": 5,
@@ -678,7 +680,7 @@ def compute_division_nutrition_priorities(
         "womens_bikini": {
             # Lean physique, glute fullness, minimal upper-body mass.
             # Lower absolute protein needs; tighter calories; high carb cycling.
-            "protein_per_kg": {"bulk": 1.8, "cut": 2.2, "maintain": 2.0, "peak": 2.2, "restoration": 2.0},
+            "protein_per_kg": {"bulk": 1.9, "cut": 2.5, "maintain": 2.0, "peak": 2.6, "restoration": 2.0},
             "carb_cycling_factor": 0.35,   # aggressive cycling to stay lean + full glutes
             "fat_per_kg_floor": 0.80,      # adequate fat for hormonal health
             "meal_frequency_target": 4,    # lower meal count suits smaller total calories
@@ -693,7 +695,7 @@ def compute_division_nutrition_priorities(
         },
         "womens_figure": {
             # More developed than bikini; requires more total volume and calories.
-            "protein_per_kg": {"bulk": 1.9, "cut": 2.3, "maintain": 2.0, "peak": 2.3, "restoration": 2.1},
+            "protein_per_kg": {"bulk": 2.0, "cut": 2.6, "maintain": 2.0, "peak": 2.8, "restoration": 2.1},
             "carb_cycling_factor": 0.30,
             "fat_per_kg_floor": 0.80,
             "meal_frequency_target": 5,
@@ -706,7 +708,7 @@ def compute_division_nutrition_priorities(
         },
         "womens_physique": {
             # Full development; similar to mens open proportionally.
-            "protein_per_kg": {"bulk": 1.9, "cut": 2.4, "maintain": 2.1, "peak": 2.4, "restoration": 2.2},
+            "protein_per_kg": {"bulk": 2.0, "cut": 2.7, "maintain": 2.1, "peak": 2.9, "restoration": 2.2},
             "carb_cycling_factor": 0.25,
             "fat_per_kg_floor": 0.80,
             "meal_frequency_target": 5,
@@ -720,7 +722,7 @@ def compute_division_nutrition_priorities(
         "wellness": {
             # Lower-body-dominant division. Higher glute/hamstring volume
             # demands more carbs on leg days; upper body stays moderate.
-            "protein_per_kg": {"bulk": 1.8, "cut": 2.2, "maintain": 2.0, "peak": 2.2, "restoration": 2.0},
+            "protein_per_kg": {"bulk": 1.9, "cut": 2.5, "maintain": 2.0, "peak": 2.6, "restoration": 2.0},
             "carb_cycling_factor": 0.30,
             "fat_per_kg_floor": 0.80,
             "meal_frequency_target": 5,

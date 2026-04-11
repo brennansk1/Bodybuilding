@@ -132,6 +132,22 @@ _CLUSTERS: dict[str, list[str]] = {
     "chest_triceps":  ["chest", "triceps"],
     "legs_ham_glute": ["hamstrings", "glutes", "calves"],
     "delts_calves":   ["front_delt", "side_delt", "rear_delt", "calves"],
+    # ── Men's Physique / upper-body-priority clusters ──
+    # MP judges score V-taper + delts + arms. Legs are under board shorts.
+    # These clusters front-load upper work and confine legs to a single
+    # maintenance day (hams/calves priority + token quad work).
+    # Side delts appear on BOTH push day and dedicated shoulder day —
+    # coach standard for MP is 2-3× side delt frequency per week.
+    "mp_push":         ["chest", "front_delt", "side_delt", "triceps"],
+    "mp_pull_width":   ["back", "rear_delt", "biceps"],
+    "mp_shoulders":    ["side_delt", "front_delt", "rear_delt"],
+    "mp_arms_back":    ["biceps", "triceps", "back", "forearms"],
+    "mp_legs_minimal": ["hamstrings", "calves", "quads", "abs"],
+    # ── Glute-priority clusters (Bikini, Wellness) ──
+    # Opposite of MP: lower body is primary, upper body is ornamental.
+    "bikini_glutes":   ["glutes", "hamstrings"],
+    "bikini_quads":    ["quads", "glutes", "calves"],
+    "bikini_shape":    ["back", "side_delt", "abs"],  # light shaping
 }
 
 # Recovery hours per muscle
@@ -384,9 +400,32 @@ def _max_slots(offsets: list[int], min_gap_days: int) -> int:
 _ARCHETYPES: dict[int, list[list[str]]] = {
     3: [["push"], ["pull"], ["legs"]],
     4: [["push"], ["pull"], ["legs"], ["shoulders", "arms"]],
-    5: [["legs_quad_bias"], ["back_biceps"], ["chest_triceps"], ["legs_ham_glute"], ["delts_calves"]],
+    5: [["push"], ["pull"], ["legs"], ["shoulders", "arms"], ["chest_back"]],
     6: [["push"], ["pull"], ["legs"], ["push"], ["pull"], ["legs"]],
 }
+
+# Upper-body-priority archetypes (Men's Physique).
+# Legs are confined to a single maintenance day and the plan front-loads
+# chest / back width / capped delts / arms — the muscles judges score.
+_ARCHETYPES_MP: dict[int, list[list[str]]] = {
+    3: [["mp_push", "mp_shoulders"], ["mp_pull_width", "mp_arms_back"], ["mp_legs_minimal"]],
+    4: [["mp_push"], ["mp_pull_width"], ["mp_shoulders", "mp_arms_back"], ["mp_legs_minimal"]],
+    5: [["mp_push"], ["mp_pull_width"], ["mp_shoulders"], ["mp_arms_back"], ["mp_legs_minimal"]],
+    6: [["mp_push"], ["mp_pull_width"], ["mp_shoulders"], ["mp_arms_back"], ["mp_legs_minimal"], ["mp_shoulders"]],
+}
+
+# Glute-priority archetypes (Bikini, Wellness).
+# Opposite of MP — lower body is primary, upper body is shaping.
+_ARCHETYPES_GLUTE: dict[int, list[list[str]]] = {
+    3: [["bikini_glutes"], ["bikini_quads"], ["bikini_shape"]],
+    4: [["bikini_glutes"], ["bikini_quads"], ["bikini_glutes"], ["bikini_shape"]],
+    5: [["bikini_glutes"], ["bikini_quads"], ["bikini_shape"], ["bikini_glutes"], ["bikini_quads"]],
+    6: [["bikini_glutes"], ["bikini_quads"], ["bikini_shape"], ["bikini_glutes"], ["bikini_quads"], ["bikini_shape"]],
+}
+
+# Division → archetype family
+_UPPER_PRIORITY_DIVISIONS = {"mens_physique"}
+_GLUTE_PRIORITY_DIVISIONS = {"womens_bikini", "wellness"}
 
 
 def apply_illusion_multipliers(
@@ -485,8 +524,15 @@ def design_split(
             if head in volume_budget:
                 volume_budget[head] = math.floor(volume_budget[head] * scale_factor)
 
-    # Start from archetype
-    archetype = _ARCHETYPES.get(days_per_week, _ARCHETYPES[4])
+    # Start from division-aware archetype. MP confines legs to a single
+    # maintenance day; Bikini/Wellness front-load glutes/hams.
+    if division_key in _UPPER_PRIORITY_DIVISIONS:
+        archetype_map = _ARCHETYPES_MP
+    elif division_key in _GLUTE_PRIORITY_DIVISIONS:
+        archetype_map = _ARCHETYPES_GLUTE
+    else:
+        archetype_map = _ARCHETYPES
+    archetype = archetype_map.get(days_per_week, archetype_map[4])
 
     # Expand cluster names to muscle lists
     days: list[dict] = []
