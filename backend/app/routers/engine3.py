@@ -133,6 +133,18 @@ async def get_current_prescription(
         )
         macros = compute_macros(tdee, recommended_phase, bw.weight_kg, profile.sex, lean_mass_kg=lbm, body_fat_pct=bf_pct)
 
+        # Atomically deactivate any stale active rows (protects against the
+        # race where two concurrent requests both find no active rx).
+        from sqlalchemy import update as _update
+        await db.execute(
+            _update(NutritionPrescription)
+            .where(
+                NutritionPrescription.user_id == user.id,
+                NutritionPrescription.is_active == True,
+            )
+            .values(is_active=False)
+        )
+
         rx = NutritionPrescription(
             user_id=user.id,
             tdee=tdee,
@@ -213,9 +225,24 @@ async def get_current_prescription(
     division = getattr(rx_profile, "division", "mens_open") or "mens_open"
     phase = rx.phase or "maintain"
 
-    # Division-specific carb cycling factor overrides the default ±20%
-    div_nutrition = compute_division_nutrition_priorities(division, phase)
+    # Division-specific carb cycling factor overrides the default ±20%.
+    # Pass BF% and sex so the cycling factor widens appropriately during
+    # late-cut prep (see macros.compute_division_nutrition_priorities).
+    latest_bf = getattr(rx_profile, "manual_body_fat_pct", None)
+    sex = getattr(rx_profile, "sex", "male") or "male"
+    div_nutrition = compute_division_nutrition_priorities(division, phase, body_fat_pct=latest_bf, sex=sex)
     cycling_factor = div_nutrition["carb_cycling_factor"]
+
+    # Recompute coach warnings on the fly — they depend on current BF + phase,
+    # and we want them to appear immediately even if the prescription row
+    # was saved before the warnings feature existed.
+    from app.engines.engine3.macros import compute_macros as _cm
+    warning_payload: list[str] = []
+    try:
+        fresh_macros = _cm(rx.tdee, phase, weight_kg, sex, body_fat_pct=latest_bf)
+        warning_payload = list(fresh_macros.get("coach_warnings") or [])
+    except Exception:
+        warning_payload = []
 
     # Recompute training/rest day macros with division-specific carb swing
     train_carbs = round(base_macros["carbs_g"] * (1.0 + cycling_factor), 1)
@@ -282,6 +309,7 @@ async def get_current_prescription(
             "mps_threshold_g": div_nutrition["mps_threshold_g"],
             "notes": div_nutrition["notes"],
         },
+        "coach_warnings": warning_payload,
     }
 
 
@@ -793,14 +821,38 @@ async def get_cardio_prescription(
         weight_stall=weight_stall,
     )
 
-    # Override fasted flag based on user preference and phase
+    # Override fasted flag based on user preference, phase, and body fat
     if plan.get("cardio"):
-        # During cut/peak, fasted cardio is the coach standard if user allows it
+        # During cut/peak, fasted cardio is the coach standard if user allows it.
+        # Also allow fasted cardio during offseason/bulk if the athlete is above
+        # 16% BF — at higher body fat, fasted LISS aids fat oxidation and the
+        # athlete benefits from the additional expenditure pathway.
+        bf_pct = getattr(profile, "manual_body_fat_pct", None) or 15.0
         if phase in ("cut", "peak", "peak_week"):
             plan["cardio"]["fasted"] = fasted_pref
+        elif fasted_pref and bf_pct > 16.0:
+            plan["cardio"]["fasted"] = True
         else:
-            plan["cardio"]["fasted"] = False  # no fasted cardio in bulk/offseason
+            plan["cardio"]["fasted"] = False
         plan["cardio"]["preferred_machine"] = preferred_machine
+
+        # Filter modality options to prioritize user's preferred machine
+        if preferred_machine:
+            machine_map = {
+                "treadmill": ["liss_incline_walk", "hiit_sprint"],
+                "stairmaster": ["liss_stairmaster"],
+                "bike": ["zone2_cycling", "liss_cycling", "hiit_cycling"],
+                "rowing": ["hiit_rowing"],
+                "elliptical": ["steady_state_elliptical"],
+            }
+            preferred_modalities = machine_map.get(preferred_machine, [])
+            if preferred_modalities:
+                options = plan["cardio"].get("modality_options", [])
+                # Put preferred modalities first, keep others as fallback
+                reordered = [m for m in preferred_modalities if m in options]
+                reordered += [m for m in options if m not in reordered]
+                if reordered:
+                    plan["cardio"]["modality_options"] = reordered
 
     return plan
 
@@ -905,9 +957,57 @@ async def _build_meal_plan_for_day(
     div_nutrition = compute_division_nutrition_priorities(division, phase)
     cycling_factor = div_nutrition["carb_cycling_factor"]
     is_training = day_type == "training"
-    carbs_g = round(rx.carbs_g * (1.0 + cycling_factor if is_training else 1.0 - cycling_factor), 1)
-    fat_floor = round(div_nutrition["fat_per_kg_floor"] * 80.0, 1)
-    fat_g = max(fat_floor, rx.fat_g)
+
+    # Use actual body weight for fat floor (must come before cycling calc)
+    bw_result = await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+        .order_by(desc(BodyWeightLog.recorded_date)).limit(1)
+    )
+    bw = bw_result.scalar_one_or_none()
+    weight_for_fat = bw.weight_kg if bw else 80.0
+    fat_floor = round(div_nutrition["fat_per_kg_floor"] * weight_for_fat, 1)
+
+    # Calorie-neutral carb cycling — exact same formula as the prescription endpoint.
+    # Training day gets more carbs (funded by reducing fat).
+    # Rest day gets fewer carbs (saved calories go to fat for hormonal health).
+    from app.engines.engine3.macros import _KCAL_PER_G_CARB, _KCAL_PER_G_FAT
+    if is_training:
+        carbs_g = round(rx.carbs_g * (1.0 + cycling_factor), 1)
+        extra_kcal = (carbs_g - rx.carbs_g) * _KCAL_PER_G_CARB
+        day_fat_g = round(max(fat_floor, rx.fat_g - extra_kcal / _KCAL_PER_G_FAT), 1)
+    else:
+        carbs_g = round(rx.carbs_g * (1.0 - cycling_factor), 1)
+        saved_kcal = (rx.carbs_g - carbs_g) * _KCAL_PER_G_CARB
+        day_fat_g = round(rx.fat_g + saved_kcal / _KCAL_PER_G_FAT, 1)
+    target_cals = round(rx.protein_g * 4 + carbs_g * 4 + day_fat_g * 9)
+    fat_g = max(fat_floor, day_fat_g)
+
+    # Fetch today's session muscles for intra-workout drink HBCD scaling
+    intra_enabled = prefs.get("intra_workout_nutrition", False)
+    session_muscles: list[str] = []
+    if is_training and intra_enabled:
+        from app.models.training import TrainingSession, TrainingSet, TrainingProgram, Exercise
+        from datetime import date as _date
+        today = _date.today()
+        sess_result = await db.execute(
+            select(TrainingSession)
+            .join(TrainingProgram, TrainingSession.program_id == TrainingProgram.id)
+            .where(
+                TrainingProgram.user_id == user.id,
+                TrainingSession.session_date == today,
+                TrainingProgram.is_active == True,
+            )
+            .limit(1)
+        )
+        sess = sess_result.scalar_one_or_none()
+        if sess:
+            muscle_result = await db.execute(
+                select(Exercise.primary_muscle)
+                .join(TrainingSet, TrainingSet.exercise_id == Exercise.id)
+                .where(TrainingSet.session_id == sess.id, TrainingSet.is_warmup == False)
+                .distinct()
+            )
+            session_muscles = [row[0] for row in muscle_result.all() if row[0]]
 
     return generate_meal_plan(
         phase=phase,
@@ -916,7 +1016,7 @@ async def _build_meal_plan_for_day(
         protein_g=rx.protein_g,
         carbs_g=carbs_g,
         fat_g=fat_g,
-        target_calories=rx.target_calories,
+        target_calories=target_cals,
         training_start_time=training_start_time,
         training_duration_min=int(training_duration_min),
         is_training_day=is_training,
@@ -926,6 +1026,9 @@ async def _build_meal_plan_for_day(
         preferred_carbs=prefs.get("preferred_carbs", []),
         preferred_fats=prefs.get("preferred_fats", []),
         blacklisted_foods=prefs.get("blacklisted_foods", []),
+        intra_workout_nutrition=intra_enabled and is_training,
+        body_weight_kg=weight_for_fat,
+        session_muscles=session_muscles,
     )
 
 
@@ -965,7 +1068,11 @@ async def get_current_meal_plan(
         if tpl:
             cached[day_type] = tpl.meals_json
 
-    if "training" not in cached:
+    # When intra-workout nutrition is enabled, always regenerate training-day
+    # plans fresh (the intra drink depends on today's session muscles).
+    prefs_check = profile.preferences or {}
+    intra_on = prefs_check.get("intra_workout_nutrition", False)
+    if "training" not in cached or intra_on:
         cached["training"] = await _build_meal_plan_for_day(db, user, profile, rx, "training")
         db.add(MealPlanTemplate(
             user_id=user.id, day_type="training", phase=rx.phase, meals_json=cached["training"]
@@ -977,10 +1084,48 @@ async def get_current_meal_plan(
         ))
 
     await db.flush()
+
+    # Per-meal protein distribution validation — elite prep requires 4–6
+    # doses of ≥0.40 g/kg BW to keep MPS maximally stimulated all day.
+    from app.engines.engine3.macros import (
+        validate_protein_distribution,
+        compute_hydration_target,
+        validate_micronutrient_coverage,
+    )
+    bw_row = await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+        .order_by(desc(BodyWeightLog.recorded_date), desc(BodyWeightLog.created_at)).limit(1)
+    )
+    latest_bw = bw_row.scalar_one_or_none()
+    bw_kg = latest_bw.weight_kg if latest_bw else None
+
+    protein_training = None
+    protein_rest = None
+    hydration = None
+    micros_training = None
+    micros_rest = None
+    if bw_kg:
+        protein_training = validate_protein_distribution(cached["training"], bw_kg)
+        protein_rest = validate_protein_distribution(cached["rest"], bw_kg)
+        hydration = compute_hydration_target(bw_kg, rx.phase, training_session_today=True)
+
+    sex = getattr(profile, "sex", "male") or "male"
+    micros_training = validate_micronutrient_coverage(cached["training"], sex)
+    micros_rest = validate_micronutrient_coverage(cached["rest"], sex)
+
     return {
         "phase": rx.phase,
         "training_day": cached["training"],
         "rest_day": cached["rest"],
+        "protein_distribution": {
+            "training": protein_training,
+            "rest": protein_rest,
+        } if protein_training else None,
+        "hydration": hydration,
+        "micronutrients": {
+            "training": micros_training,
+            "rest": micros_rest,
+        },
     }
 
 
@@ -1331,8 +1476,8 @@ async def get_weekly_shopping_list(
     days_per_week = prefs.get("training_days_per_week", profile.days_per_week or 5)
 
     # Generate both day types
-    training_meals = await _build_meal_plan(db, user, profile, rx, "training")
-    rest_meals = await _build_meal_plan(db, user, profile, rx, "rest")
+    training_meals = await _build_meal_plan_for_day(db, user, profile, rx, "training")
+    rest_meals = await _build_meal_plan_for_day(db, user, profile, rx, "rest")
 
     shopping_list = generate_weekly_shopping_list(
         training_day_meals=training_meals,
@@ -1466,15 +1611,17 @@ async def transition_phase(
     if data.target_phase not in valid_phases:
         raise HTTPException(status_code=400, detail=f"Invalid phase: {data.target_phase}")
 
-    # Deactivate current prescription
-    active_result = await db.execute(
-        select(NutritionPrescription).where(
+    # Atomically deactivate current prescription (avoids race between two
+    # concurrent phase transitions leaving multiple is_active=True rows).
+    from sqlalchemy import update as _update
+    await db.execute(
+        _update(NutritionPrescription)
+        .where(
             NutritionPrescription.user_id == user.id,
             NutritionPrescription.is_active == True,
         )
+        .values(is_active=False)
     )
-    for old_rx in active_result.scalars().all():
-        old_rx.is_active = False
 
     # Get current prescription values to base the new one on
     latest_result = await db.execute(
@@ -1497,20 +1644,24 @@ async def transition_phase(
         new_rx = NutritionPrescription(
             user_id=user.id,
             phase=data.target_phase,
+            tdee=latest_rx.tdee,
             target_calories=adjusted["calories"],
             protein_g=adjusted["protein_g"],
             carbs_g=adjusted["carbs_g"],
             fat_g=adjusted["fat_g"],
+            peri_workout_carb_pct=latest_rx.peri_workout_carb_pct or 0.4,
             is_active=True,
         )
     else:
         new_rx = NutritionPrescription(
             user_id=user.id,
             phase=data.target_phase,
+            tdee=2500,
             target_calories=2500,
             protein_g=200,
             carbs_g=250,
             fat_g=80,
+            peri_workout_carb_pct=0.4,
             is_active=True,
         )
 

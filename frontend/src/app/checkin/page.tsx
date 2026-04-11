@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import MeasurementInstructions from "@/components/MeasurementInstructions";
 import { api } from "@/lib/api";
 
 interface QuickCheckinResult {
@@ -110,7 +111,11 @@ export default function CheckinPage() {
   const [quickRmssd, setQuickRmssd] = useState("");
   const [quickRestingHr, setQuickRestingHr] = useState("");
   const [quickSleep, setQuickSleep] = useState("7");
+  const [quickSleepHours, setQuickSleepHours] = useState("8");
   const [quickSoreness, setQuickSoreness] = useState("3");
+  const [quickStress, setQuickStress] = useState("4");
+  const [quickMood, setQuickMood] = useState("7");
+  const [quickEnergy, setQuickEnergy] = useState("7");
   const [quickSoreMuscles, setQuickSoreMuscles] = useState<string[]>([]);
   const [quickNotes, setQuickNotes] = useState("");
   const [quickResult, setQuickResult] = useState<QuickCheckinResult | null>(null);
@@ -308,7 +313,11 @@ export default function CheckinPage() {
         rmssd: quickRmssd ? parseFloat(quickRmssd) : undefined,
         resting_hr: quickRestingHr ? parseFloat(quickRestingHr) : undefined,
         sleep_quality: parseFloat(quickSleep),
+        sleep_hours: quickSleepHours ? parseFloat(quickSleepHours) : undefined,
         soreness_score: parseFloat(quickSoreness),
+        stress_score: quickStress ? parseFloat(quickStress) : undefined,
+        mood_score: quickMood ? parseFloat(quickMood) : undefined,
+        energy_score: quickEnergy ? parseFloat(quickEnergy) : undefined,
         sore_muscles: quickSoreMuscles,
         notes: quickNotes || undefined,
       });
@@ -621,17 +630,32 @@ export default function CheckinPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="label-field">Sleep Quality (1–10)</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={quickSleep}
-                    onChange={(e) => setQuickSleep(e.target.value)}
-                    className="w-full accent-jungle-accent mt-2"
-                  />
-                  <p className="text-center text-sm text-jungle-accent font-semibold mt-1">{quickSleep}/10</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label-field">Sleep Quality (1–10)</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={quickSleep}
+                      onChange={(e) => setQuickSleep(e.target.value)}
+                      className="w-full accent-jungle-accent mt-2"
+                    />
+                    <p className="text-center text-sm text-jungle-accent font-semibold mt-1">{quickSleep}/10</p>
+                  </div>
+                  <div>
+                    <label className="label-field">Hours Slept</label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      max="16"
+                      value={quickSleepHours}
+                      onChange={(e) => setQuickSleepHours(e.target.value)}
+                      className="input-field mt-1"
+                      placeholder="8"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -645,6 +669,45 @@ export default function CheckinPage() {
                     className="w-full accent-jungle-accent mt-2"
                   />
                   <p className="text-center text-sm text-jungle-accent font-semibold mt-1">{quickSoreness}/10</p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label-field text-xs">Stress</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={quickStress}
+                      onChange={(e) => setQuickStress(e.target.value)}
+                      className="w-full accent-jungle-accent mt-2"
+                    />
+                    <p className="text-center text-xs text-jungle-muted mt-0.5">{quickStress}/10 <span className="text-jungle-dim">(1=calm)</span></p>
+                  </div>
+                  <div>
+                    <label className="label-field text-xs">Mood</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={quickMood}
+                      onChange={(e) => setQuickMood(e.target.value)}
+                      className="w-full accent-jungle-accent mt-2"
+                    />
+                    <p className="text-center text-xs text-jungle-muted mt-0.5">{quickMood}/10</p>
+                  </div>
+                  <div>
+                    <label className="label-field text-xs">Energy</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={quickEnergy}
+                      onChange={(e) => setQuickEnergy(e.target.value)}
+                      className="w-full accent-jungle-accent mt-2"
+                    />
+                    <p className="text-center text-xs text-jungle-muted mt-0.5">{quickEnergy}/10</p>
+                  </div>
                 </div>
 
                 <div className="pt-2">
@@ -849,7 +912,9 @@ export default function CheckinPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {tapeSites.map((s) => (
                         <div key={s}>
-                          <label className="block text-xs text-jungle-muted mb-1 capitalize">{s.replace(/_/g, " ")}</label>
+                          <label className="block text-xs text-jungle-muted mb-1 capitalize">
+                            <MeasurementInstructions siteKey={s} label={s.replace(/_/g, " ")} />
+                          </label>
                           <div className="relative">
                             <input type="number" step="0.1" value={tape[s] || ""} onChange={(e) => setTape({ ...tape, [s]: e.target.value })} className={`input-field text-sm ${tape[s] && tape[s] === originalTape[s] ? 'text-jungle-muted' : 'text-blue-400 font-medium pr-8'}`} />
                             {tape[s] && originalTape[s] && tape[s] !== originalTape[s] && (
@@ -865,7 +930,9 @@ export default function CheckinPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {sfSites.map((s) => (
                         <div key={s}>
-                          <label className="block text-xs text-jungle-muted mb-1 capitalize">{s}</label>
+                          <label className="block text-xs text-jungle-muted mb-1 capitalize">
+                            <MeasurementInstructions siteKey={`skinfold_${s}`} label={s} />
+                          </label>
                           <div className="relative">
                             <input type="number" step="0.1" value={skinfolds[s] || ""} onChange={(e) => setSkinfolds({ ...skinfolds, [s]: e.target.value })} className={`input-field text-sm ${skinfolds[s] && skinfolds[s] === originalSkinfolds[s] ? 'text-jungle-muted' : 'text-blue-400 font-medium pr-8'}`} />
                             {skinfolds[s] && originalSkinfolds[s] && skinfolds[s] !== originalSkinfolds[s] && (
@@ -897,7 +964,9 @@ export default function CheckinPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {advancedTapeSites.map((s) => (
                             <div key={s.key}>
-                              <label className="block text-xs text-jungle-muted mb-1">{s.label}</label>
+                              <label className="block text-xs text-jungle-muted mb-1">
+                                <MeasurementInstructions siteKey={s.key} label={s.label} />
+                              </label>
                               <div className="relative">
                                 <input type="number" step="0.1" value={tape[s.key] || ""} onChange={(e) => setTape({ ...tape, [s.key]: e.target.value })} className={`input-field text-sm ${tape[s.key] && tape[s.key] === originalTape[s.key] ? 'text-jungle-muted' : 'text-blue-400 font-medium pr-8'}`} placeholder={s.hint} />
                                 {tape[s.key] && originalTape[s.key] && tape[s.key] !== originalTape[s.key] && (
@@ -915,7 +984,9 @@ export default function CheckinPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {advancedSfSites.map((s) => (
                             <div key={s.key}>
-                              <label className="block text-xs text-jungle-muted mb-1">{s.label}</label>
+                              <label className="block text-xs text-jungle-muted mb-1">
+                                <MeasurementInstructions siteKey={`skinfold_${s.key}`} label={s.label} />
+                              </label>
                               <div className="relative">
                                 <input type="number" step="0.1" value={skinfolds[s.key] || ""} onChange={(e) => setSkinfolds({ ...skinfolds, [s.key]: e.target.value })} className={`input-field text-sm ${skinfolds[s.key] && skinfolds[s.key] === originalSkinfolds[s.key] ? 'text-jungle-muted' : 'text-blue-400 font-medium pr-8'}`} placeholder={s.hint} />
                                 {skinfolds[s.key] && originalSkinfolds[s.key] && skinfolds[s.key] !== originalSkinfolds[s.key] && (

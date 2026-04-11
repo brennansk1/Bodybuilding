@@ -55,15 +55,20 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male" }: Mus
 
   function scoreToColor(score: number | undefined): string {
     if (score === undefined || score === null) return "#52525b"; // grey — not measured
-    // Continuous gradient: red → orange → yellow → lime → green
+    // Raised floor gradient: the 75-105% band is where real differences live,
+    // so compress anything below 75% into a single saturated red and spread
+    // the vivid palette across 75-105%. A 78% score now looks dramatically
+    // different from a 92% score.
     const clamped = Math.max(0, Math.min(score, 110));
     const stops: [number, [number, number, number]][] = [
-      [0,   [220, 38, 38]],   // red
-      [50,  [234, 88, 12]],   // orange
-      [70,  [234, 179, 8]],   // yellow
-      [85,  [132, 204, 22]],  // lime
-      [95,  [34, 197, 94]],   // green
-      [110, [16, 185, 129]],  // emerald
+      [0,   [120, 10, 10]],   // near-black red (unreachable floor)
+      [75,  [220, 38, 38]],   // red — visible floor
+      [82,  [234, 88, 12]],   // orange (significantly behind)
+      [88,  [234, 179, 8]],   // yellow (moderately behind)
+      [92,  [180, 210, 20]],  // yellow-lime (slightly behind)
+      [96,  [80, 200, 60]],   // lime-green (close to ideal)
+      [100, [34, 197, 94]],   // green (at ideal)
+      [105, [16, 185, 129]],  // emerald (above ideal)
     ];
     let lo = stops[0], hi = stops[stops.length - 1];
     for (let i = 0; i < stops.length - 1; i++) {

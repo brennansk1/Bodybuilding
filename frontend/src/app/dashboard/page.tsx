@@ -10,6 +10,11 @@ import SpiderChart from "@/components/SpiderChart";
 import MiniLineChart from "@/components/MiniLineChart";
 import MuscleHeatmap from "@/components/MuscleHeatmap";
 import AdherenceHeatmap from "@/components/AdherenceHeatmap";
+import StrengthProgressionChart from "@/components/StrengthProgressionChart";
+import BodyWeightTrendChart from "@/components/BodyWeightTrendChart";
+import MacroAdherenceChart from "@/components/MacroAdherenceChart";
+import WeeklyVolumeChart from "@/components/WeeklyVolumeChart";
+import RecoveryTrendChart from "@/components/RecoveryTrendChart";
 import OnboardingWizard, { shouldShowWizard } from "@/components/OnboardingWizard";
 
 interface PDSEntry {
@@ -194,9 +199,21 @@ export default function DashboardPage() {
   const [phaseRec, setPhaseRec] = useState<PhaseRecommendation | null>(null);
   const [ari, setAri] = useState<ARIData | null>(null);
   const [adherence, setAdherence] = useState<AdherenceEntry[]>([]);
+  // dashboard_viz toggle map: visKey -> show/hide. Undefined = show.
+  const [vizVisibility, setVizVisibility] = useState<Record<string, boolean>>({});
+  const isVizOn = (key: string) => vizVisibility[key] !== false;
+
+  // New dashboard datasets
+  interface StrengthSeries { lift: string; label: string; color: string; data: { date: string; e1rm_kg: number }[]; }
+  const [strengthSeries, setStrengthSeries] = useState<StrengthSeries[]>([]);
+  interface VolumeRow { muscle: string; sets: number; mev: number; mav: number; mrv: number; }
+  const [weeklyVolume, setWeeklyVolume] = useState<VolumeRow[]>([]);
+  interface RecoveryPoint { date: string; score: number; }
+  const [recoveryTrend, setRecoveryTrend] = useState<RecoveryPoint[]>([]);
   const [runningDiag, setRunningDiag] = useState(false);
   const [diagnostic, setDiagnostic] = useState<DiagnosticData | null>(null);
   const [classEstimate, setClassEstimate] = useState<ClassEstimate | null>(null);
+  const [dashLoading, setDashLoading] = useState(true);
 
   // Today's session preview
   const [todaySession, setTodaySession] = useState<{ session_type: string; sets: { exercise_name: string }[] } | null>(null);
@@ -264,6 +281,16 @@ export default function DashboardPage() {
     softFetch<AdherenceEntry[]>("/engine3/adherence", setAdherence);
     softFetch<WeightEntry[]>("/checkin/weight-history?days=14", setRecentWeights);
 
+    // Pull dashboard viz visibility from profile.preferences.dashboard_viz.
+    api.get<{ preferences?: { dashboard_viz?: Record<string, boolean> } }>("/onboarding/profile")
+      .then((p) => setVizVisibility(p?.preferences?.dashboard_viz || {}))
+      .catch(() => {});
+
+    // New dashboard data
+    softFetch<{ series: StrengthSeries[] }>("/engine2/strength/progression", (r) => setStrengthSeries(r.series || []));
+    softFetch<{ rows: VolumeRow[] }>("/engine2/volume/weekly", (r) => setWeeklyVolume(r.rows || []));
+    softFetch<{ data: RecoveryPoint[] }>("/checkin/recovery/trend?days=30", (r) => setRecoveryTrend(r.data || []));
+
     // Today's plan previews
     const todayStr = new Date().toISOString().split("T")[0];
     softFetch<any>(`/engine2/session/${todayStr}`, setTodaySession);
@@ -283,6 +310,7 @@ export default function DashboardPage() {
       if (failCount > 3) {
         showToast("Some dashboard data failed to load. Check your connection.", "warning");
       }
+      setDashLoading(false);
     };
     runAndFetch();
   }, [user, loading, router]);
@@ -331,17 +359,22 @@ export default function DashboardPage() {
 
   const handleQuickLog = async () => {
     const val = parseFloat(quickWeight);
-    if (isNaN(val) || val <= 0) return;
+    if (isNaN(val) || val <= 0) {
+      showToast("Enter a valid body weight", "warning");
+      return;
+    }
     setQuickLogging(true);
     const kg_val = useLbs ? val / 2.20462 : val;
     try {
       await api.post("/checkin/daily", { body_weight_kg: kg_val });
       setQuickLogged(true);
       setQuickWeight("");
+      showToast(`Logged ${val.toFixed(1)} ${unit}`, "success");
       setTimeout(() => setQuickLogged(false), 2000);
       api.get<WeightEntry[]>("/checkin/weight-history?days=14").then(setRecentWeights).catch(() => {});
-    } catch {
-      //
+    } catch (err) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Couldn't log weight";
+      showToast(msg, "error");
     } finally {
       setQuickLogging(false);
     }
@@ -476,6 +509,25 @@ export default function DashboardPage() {
         </div>
 
         {/* PDS Banner */}
+        {dashLoading && !pds ? (
+          <div className="card mb-6 animate-pulse">
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
+              <div className="text-center sm:text-left shrink-0">
+                <div className="h-3 bg-jungle-deeper rounded w-32 mb-2" />
+                <div className="h-12 bg-jungle-deeper rounded w-20 mb-2" />
+                <div className="h-3 bg-jungle-deeper rounded w-24" />
+              </div>
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 w-full">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="text-center">
+                    <div className="h-2 bg-jungle-deeper rounded w-16 mx-auto mb-2" />
+                    <div className="h-5 bg-jungle-deeper rounded w-10 mx-auto" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
         {pds ? (
           <div className="card mb-6 bg-jungle-gradient">
             <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
@@ -555,6 +607,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
 
           {/* Proportion Spider — % of Ideal */}
+          {isVizOn("spider") && (
           <ChartCard
             title="Proportion Spider"
             subtitle="% of Ideal per Site"
@@ -573,13 +626,26 @@ export default function DashboardPage() {
               <EmptyState label="Complete a check-in to see proportion analysis" />
             )}
           </ChartCard>
+          )}
 
           {/* Muscle Gap Priorities */}
+          {isVizOn("muscle_gaps") && (
           <ChartCard
             title="Muscle Gaps"
             subtitle="Lean Size vs. Ideal"
             tooltip="Raw centimetre gaps between your current lean circumference and your Volumetric Ghost Model ideal (3D Hanavan physics scaled to your IFBB weight cap). Larger gaps = higher training priority."
           >
+            {dashLoading && !muscleGaps ? (
+              <div className="mt-2 space-y-2 animate-pulse">
+                {[1,2,3,4,5,6].map(i => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="h-3 bg-jungle-deeper rounded w-16" />
+                    <div className="flex-1 h-4 bg-jungle-deeper rounded-full" />
+                    <div className="h-3 bg-jungle-deeper rounded w-8" />
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {muscleGaps ? (
               <div className="mt-2 space-y-2">
                 {Object.entries(muscleGaps.sites)
@@ -633,8 +699,10 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to see gap priorities" />
             )}
           </ChartCard>
+          )}
 
           {/* PDS Glide Path */}
+          {isVizOn("pds_trajectory") && (
           <ChartCard
             title="PDS Trajectory"
             subtitle="PDS Glide Path Over Time"
@@ -665,8 +733,10 @@ export default function DashboardPage() {
               <EmptyState label="Trajectory builds after multiple check-ins" />
             )}
           </ChartCard>
+          )}
 
           {/* Hypertrophy Heatmap */}
+          {isVizOn("heatmap") && (
           <ChartCard
             title="Hypertrophy Heatmap"
             subtitle="Muscle Development"
@@ -686,8 +756,10 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to generate heatmap" />
             )}
           </ChartCard>
+          )}
 
           {/* Bilateral Symmetry */}
+          {isVizOn("symmetry") && (
           <ChartCard
             title="Bilateral Symmetry"
             subtitle="Left vs. Right Balance"
@@ -750,8 +822,10 @@ export default function DashboardPage() {
               <EmptyState label="Log bilateral measurements to see symmetry analysis" />
             )}
           </ChartCard>
+          )}
 
           {/* Phase Recommendation */}
+          {isVizOn("phase_rec") && (
           <ChartCard
             title="Phase Recommendation"
             subtitle="Cross-Engine Analysis"
@@ -809,9 +883,10 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to get a phase recommendation" />
             )}
           </ChartCard>
+          )}
 
           {/* Competition Class — simplified */}
-          {classEstimate && (
+          {isVizOn("comp_class") && classEstimate && (
             <ChartCard
               title="Competition Class"
               subtitle="Division & Weight Limits"
@@ -846,7 +921,7 @@ export default function DashboardPage() {
           )}
 
           {/* Growth Projection — replaces Volumetric Ghost (engine internals aren't actionable) */}
-          {muscleGaps && (
+          {isVizOn("growth_projection") && muscleGaps && (
             <ChartCard
               title="Growth Projection"
               subtitle="Where You Are vs. Where You Need To Be"
@@ -890,7 +965,7 @@ export default function DashboardPage() {
           )}
 
           {/* Detail Metrics — simplified, only shown when data exists */}
-          {diagnostic?.advanced_measurements && (
+          {isVizOn("detail_metrics") && diagnostic?.advanced_measurements && (
             <ChartCard
               title="Detail Metrics"
               subtitle="Lat Spread & Quad VMO"
@@ -933,6 +1008,7 @@ export default function DashboardPage() {
           )}
 
           {/* Autonomic Fuel Gauge */}
+          {isVizOn("ari") && (
           <ChartCard
             title="Autonomic Fuel Gauge"
             subtitle="Recovery Status · ARI"
@@ -996,8 +1072,10 @@ export default function DashboardPage() {
               <EmptyState label="Submit HRV data during check-in to see readiness" />
             )}
           </ChartCard>
+          )}
 
           {/* Adherence Grid */}
+          {isVizOn("adherence") && (
           <ChartCard
             title="Adherence Grid"
             subtitle="12-Week Compliance"
@@ -1011,8 +1089,10 @@ export default function DashboardPage() {
               <EmptyState label="Log adherence during check-in to see compliance grid" />
             )}
           </ChartCard>
+          )}
 
           {/* Competition Countdown */}
+          {isVizOn("prep_timeline") && (
           <ChartCard title="Competition Countdown" subtitle="Prep Timeline">
             {weeksOut !== undefined ? (
               <div className="mt-3 space-y-3">
@@ -1084,6 +1164,66 @@ export default function DashboardPage() {
               <EmptyState label="Run diagnostics to load prep timeline" />
             )}
           </ChartCard>
+          )}
+
+          {/* Strength Progression (new) */}
+          {isVizOn("strength_progression") && (
+            <ChartCard
+              title="Strength Progression"
+              subtitle="e1RM of Main Lifts"
+              tooltip="Estimated 1-rep max over time for the big compounds (squat, bench, deadlift, OHP). Pulled from StrengthLog entries or derived via the Epley formula from completed sets."
+            >
+              <StrengthProgressionChart series={strengthSeries} useLbs={useLbs} />
+            </ChartCard>
+          )}
+
+          {/* Body Weight Trend (new) */}
+          {isVizOn("body_weight_trend") && (
+            <ChartCard
+              title="Body Weight Trend"
+              subtitle="7-day Rolling Average"
+              tooltip="Daily body weight with a 7-day rolling average overlay. Background tint reflects your current training phase."
+            >
+              <BodyWeightTrendChart
+                data={recentWeights}
+                useLbs={useLbs}
+                phase={phaseRec?.recommended_phase ?? null}
+              />
+            </ChartCard>
+          )}
+
+          {/* Macro Adherence (new) */}
+          {isVizOn("macro_adherence") && (
+            <ChartCard
+              title="Macro Adherence"
+              subtitle="30-Day Nutrition Hit Rate"
+              tooltip="Daily nutrition adherence over the last 30 days. Each bar is the average of protein/carbs/fat hit rate for that day. The gold line is your 30-day average."
+            >
+              <MacroAdherenceChart data={adherence} />
+            </ChartCard>
+          )}
+
+          {/* Weekly Volume vs Landmarks (new) */}
+          {isVizOn("weekly_volume") && (
+            <ChartCard
+              title="Weekly Volume"
+              subtitle="Sets vs MEV/MAV/MRV"
+              tooltip="Working sets per muscle for the current week, plotted against Renaissance Periodization volume landmarks. Red = under MEV, gold = in productive zone, green = high productive, orange = over MRV."
+            >
+              <WeeklyVolumeChart rows={weeklyVolume} />
+            </ChartCard>
+          )}
+
+          {/* Recovery Trend (new) */}
+          {isVizOn("recovery_trend") && (
+            <ChartCard
+              title="Recovery Trend"
+              subtitle="ARI Composite · 30 Days"
+              tooltip="Daily Autonomic Readiness Index (HRV + sleep + soreness) over the last 30 days. Green zone = ready to train hard, yellow = caution, red = under-recovered."
+            >
+              <RecoveryTrendChart data={recoveryTrend} />
+            </ChartCard>
+          )}
 
           {/* Quick Log Weight */}
           <div className={`card transition-all duration-300 ${quickLogged ? "animate-pulse" : ""}`}>

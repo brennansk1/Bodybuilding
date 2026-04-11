@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import { showError, showSuccess } from "@/components/Toast";
 import { api } from "@/lib/api";
+import { validateRequired, validateRanges, extractErrorMessage } from "@/lib/validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +22,8 @@ interface Profile {
   ankle_circumference_cm: number | null;
   manual_body_fat_pct: number | null;
   training_start_time: string | null;
+  training_end_time: string | null;
+  training_time_anchor: string | null;
   training_duration_min: number | null;
   cycle_tracking_enabled: boolean;
   cycle_start_date: string | null;
@@ -138,6 +142,8 @@ export default function SettingsPage() {
   const [daysPerWeek, setDaysPerWeek] = useState("4");
   const [split, setSplit] = useState("ppl");
   const [trainingStartTime, setTrainingStartTime] = useState("10:00");
+  const [trainingEndTime, setTrainingEndTime] = useState("11:15");
+  const [trainingTimeAnchor, setTrainingTimeAnchor] = useState<"start" | "end">("start");
   const [trainingDuration, setTrainingDuration] = useState("75");
   const [cardioMachine, setCardioMachine] = useState("treadmill");
   const [fastedCardio, setFastedCardio] = useState(true);
@@ -154,6 +160,22 @@ export default function SettingsPage() {
   const [preferredCarbs, setPreferredCarbs] = useState<string[]>([]);
   const [preferredFats, setPreferredFats] = useState<string[]>([]);
   const [blacklistedFoods, setBlacklistedFoods] = useState<string[]>([]);
+
+  // ── Dashboard visualizations ────────────────────────────────────────────────
+  const [dashViz, setDashViz] = useState<Record<string, boolean>>({});
+  const [dashVizSaving, setDashVizSaving] = useState(false);
+
+  // ── Telegram bot ────────────────────────────────────────────────────────────
+  interface TelegramStatus {
+    enabled: boolean;
+    linked: boolean;
+    bot_username: string | null;
+    notify: Record<string, boolean>;
+  }
+  const [telegramStatus, setTelegramStatus] = useState<TelegramStatus | null>(null);
+  const [telegramCode, setTelegramCode] = useState<string | null>(null);
+  const [telegramDeepLink, setTelegramDeepLink] = useState<string | null>(null);
+  const [telegramLoading, setTelegramLoading] = useState(false);
 
   // ── Notifications ───────────────────────────────────────────────────────────
   const [notifyCheckin, setNotifyCheckin] = useState(false);
@@ -196,6 +218,8 @@ export default function SettingsPage() {
         setDaysPerWeek(prefs.training_days_per_week?.toString() ?? "4");
         setSplit(prefs.preferred_split ?? "auto");
         setTrainingStartTime(p.training_start_time ?? "10:00");
+        setTrainingEndTime(p.training_end_time ?? "11:15");
+        setTrainingTimeAnchor((p.training_time_anchor as "start" | "end") ?? "start");
         setTrainingDuration(p.training_duration_min?.toString() ?? "75");
         setCardioMachine(prefs.cardio_machine ?? "treadmill");
         setFastedCardio(prefs.fasted_cardio ?? true);
@@ -211,6 +235,9 @@ export default function SettingsPage() {
         setPreferredCarbs(prefs.preferred_carbs ?? []);
         setPreferredFats(prefs.preferred_fats ?? []);
         setBlacklistedFoods(prefs.blacklisted_foods ?? []);
+        // Dashboard visualizations — preferences.dashboard_viz
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setDashViz(((prefs as any).dashboard_viz as Record<string, boolean>) ?? {});
       }).catch(() => {});
 
       if (typeof window !== "undefined") {
@@ -220,13 +247,142 @@ export default function SettingsPage() {
         if ("Notification" in window) setNotifPermission(Notification.permission);
         else setNotifPermission("unavailable");
       }
+
+      // Telegram link status
+      api.get<TelegramStatus>("/telegram/status").then(setTelegramStatus).catch(() => {});
     }
   }, [user, loading, router]);
 
   if (loading || !user) return null;
 
+  // ── Telegram helpers ────────────────────────────────────────────────────────
+  const generateTelegramCode = async () => {
+    setTelegramLoading(true);
+    try {
+      const res = await api.post<{
+        code: string;
+        deep_link: string;
+        bot_username: string;
+      }>("/telegram/link/generate", {});
+      setTelegramCode(res.code);
+      setTelegramDeepLink(res.deep_link);
+    } catch (err) {
+      showError(extractErrorMessage(err, "Couldn't generate a link code. Telegram may not be configured on this server."));
+    } finally {
+      setTelegramLoading(false);
+    }
+  };
+
+  const unlinkTelegram = async () => {
+    setTelegramLoading(true);
+    try {
+      await api.post("/telegram/unlink", {});
+      setTelegramCode(null);
+      setTelegramDeepLink(null);
+      const fresh = await api.get<TelegramStatus>("/telegram/status");
+      setTelegramStatus(fresh);
+      showSuccess("Telegram disconnected");
+    } catch (err) {
+      showError(extractErrorMessage(err, "Couldn't unlink Telegram"));
+    } finally {
+      setTelegramLoading(false);
+    }
+  };
+
+  const toggleTelegramNotify = async (key: string, value: boolean) => {
+    if (!telegramStatus) return;
+    const next = { ...telegramStatus.notify, [key]: value };
+    setTelegramStatus({ ...telegramStatus, notify: next });
+    try {
+      await api.patch("/telegram/notifications", { [key]: value });
+    } catch (err) {
+      showError(extractErrorMessage(err, "Couldn't save Telegram preferences"));
+      setTelegramStatus(telegramStatus);
+    }
+  };
+
+  const TELEGRAM_NOTIFY_OPTIONS: { key: string; label: string }[] = [
+    { key: "workout_reminder", label: "Workout start reminder" },
+    { key: "tomorrow_workout", label: "Tomorrow's workout preview" },
+    { key: "meal_reminder", label: "Meal time reminders" },
+    { key: "weekly_checkin", label: "Weekly check-in reminder" },
+    { key: "missed_checkin", label: "Missed check-in nudge" },
+  ];
+
+  // ── Dashboard viz toggle helper ─────────────────────────────────────────────
+  const toggleDashViz = async (key: string, value: boolean) => {
+    const next = { ...dashViz, [key]: value };
+    setDashViz(next);
+    setDashVizSaving(true);
+    try {
+      await api.patch("/onboarding/profile", { preferences: { dashboard_viz: next } });
+    } catch (err) {
+      showError(extractErrorMessage(err, "Couldn't save dashboard settings"));
+      setDashViz(dashViz); // revert
+    } finally {
+      setDashVizSaving(false);
+    }
+  };
+
+  const DASH_VIZ_OPTIONS: { key: string; label: string; desc: string }[] = [
+    { key: "spider", label: "Proportion Spider", desc: "% of Ideal per muscle site" },
+    { key: "muscle_gaps", label: "Muscle Gaps", desc: "Lean size vs. division ideal" },
+    { key: "pds_trajectory", label: "PDS Trajectory", desc: "Glide path over time" },
+    { key: "heatmap", label: "Hypertrophy Heatmap", desc: "Body map colored by gap" },
+    { key: "symmetry", label: "Bilateral Symmetry", desc: "Left vs. right balance" },
+    { key: "phase_rec", label: "Phase Recommendation", desc: "Current phase + urgency" },
+    { key: "comp_class", label: "Competition Class", desc: "Division + weight cap" },
+    { key: "growth_projection", label: "Growth Projection", desc: "Per-site % of ideal" },
+    { key: "detail_metrics", label: "Detail Metrics", desc: "Lat spread, VMO" },
+    { key: "ari", label: "Autonomic Fuel Gauge", desc: "ARI recovery readiness" },
+    { key: "adherence", label: "Adherence Grid", desc: "12-week compliance" },
+    { key: "prep_timeline", label: "Prep Timeline", desc: "Competition countdown" },
+    { key: "strength_progression", label: "Strength Progression", desc: "e1RM of top lifts (new)" },
+    { key: "body_weight_trend", label: "Body Weight Trend", desc: "Rolling avg + phase (new)" },
+    { key: "macro_adherence", label: "Macro Adherence", desc: "30-day P/C/F target hit (new)" },
+    { key: "weekly_volume", label: "Weekly Volume vs Landmarks", desc: "Sets vs MEV/MAV/MRV (new)" },
+    { key: "recovery_trend", label: "Recovery Trend", desc: "ARI composite over time (new)" },
+  ];
+
   // ── Save ────────────────────────────────────────────────────────────────────
   const saveProfile = async () => {
+    // Validate required + ranges before hitting the API.
+    const requiredErr = validateRequired(
+      {
+        sex,
+        age: age,
+        height_cm: heightCm,
+        division,
+      },
+      {
+        sex: "Sex",
+        age: "Age",
+        height_cm: "Height",
+        division: "Division",
+      }
+    );
+    if (requiredErr) {
+      showError(requiredErr);
+      return;
+    }
+    const rangeErr = validateRanges(
+      {
+        age: age ? parseInt(age) : null,
+        height_cm: heightCm ? parseFloat(heightCm) : null,
+        manual_body_fat_pct: manualBF ? parseFloat(manualBF) : null,
+        training_duration_min: trainingDuration ? parseInt(trainingDuration) : null,
+      },
+      {
+        age: { min: 14, max: 100, label: "Age" },
+        height_cm: { min: 120, max: 230, label: "Height (cm)" },
+        manual_body_fat_pct: { min: 3, max: 60, label: "Body fat %" },
+        training_duration_min: { min: 20, max: 240, label: "Session duration" },
+      }
+    );
+    if (rangeErr) {
+      showError(rangeErr);
+      return;
+    }
     setSaving(true);
     try {
       await api.patch("/onboarding/profile", {
@@ -241,6 +397,8 @@ export default function SettingsPage() {
         ankle_circumference_cm: ankle ? parseFloat(ankle) : null,
         manual_body_fat_pct: manualBF ? parseFloat(manualBF) : null,
         training_start_time: trainingStartTime || null,
+        training_end_time: trainingEndTime || null,
+        training_time_anchor: trainingTimeAnchor,
         training_duration_min: trainingDuration ? parseInt(trainingDuration) : null,
         cycle_tracking_enabled: cycleEnabled,
         cycle_start_date: cycleStartDate || null,
@@ -266,36 +424,95 @@ export default function SettingsPage() {
         },
       });
       setSaved(true);
+      showSuccess("Profile saved");
       setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      showError(extractErrorMessage(err, "Couldn't save profile"));
+      setSaving(false);
+      return;
     } finally {
       setSaving(false);
     }
 
-    // Decouple: only run engines that are actually affected by the changes
-    // Nutrition-relevant fields trigger meal plan regen only
-    // Structural fields trigger full engine pipeline
-    const nutritionFields = new Set([
-      "meal_count", "dietary_restrictions", "preferred_proteins",
-      "preferred_carbs", "preferred_fats", "blacklisted_foods",
-      "cheat_meals_per_week", "intra_workout_nutrition",
-    ]);
-    const structuralChanged = true; // TODO: track which fields actually changed vs initial
-    const nutritionChanged = true;  // For now, always regen to be safe
+    // Decouple: only run engines whose inputs actually changed.
+    //  - Structural (training) fields → trigger Engine 1 + Engine 2 regen
+    //  - Nutrition fields            → trigger Engine 3 meal plan regen
+    //  - Identity-only fields (display_name, cycle tracking) → no regen
+    const originalPrefs = profile?.preferences || {};
+    const structuralKeysChanged =
+      profile?.sex !== sex ||
+      profile?.age !== (age ? parseInt(age) : null) ||
+      profile?.height_cm !== (heightCm ? parseFloat(heightCm) : null) ||
+      profile?.division !== division ||
+      profile?.manual_body_fat_pct !== (manualBF ? parseFloat(manualBF) : null) ||
+      profile?.wrist_circumference_cm !== (wrist ? parseFloat(wrist) : null) ||
+      profile?.ankle_circumference_cm !== (ankle ? parseFloat(ankle) : null) ||
+      (originalPrefs.training_days_per_week ?? 4) !== parseInt(daysPerWeek) ||
+      (originalPrefs.preferred_split ?? "auto") !== split ||
+      JSON.stringify(profile?.available_equipment ?? []) !== JSON.stringify(equipment) ||
+      JSON.stringify(profile?.disliked_exercises ?? []) !== JSON.stringify(
+        dislikedRaw ? dislikedRaw.split(",").map(s => s.trim()).filter(Boolean) : []
+      ) ||
+      JSON.stringify(profile?.injury_history ?? []) !== JSON.stringify(
+        injuryRaw ? injuryRaw.split(",").map(s => s.trim()).filter(Boolean) : []
+      );
+
+    const nutritionChanged =
+      (originalPrefs.meal_count ?? 5) !== parseInt(mealCount) ||
+      JSON.stringify(originalPrefs.dietary_restrictions ?? []) !== JSON.stringify(dietaryRestrictions) ||
+      JSON.stringify(originalPrefs.preferred_proteins ?? []) !== JSON.stringify(preferredProteins) ||
+      JSON.stringify(originalPrefs.preferred_carbs ?? []) !== JSON.stringify(preferredCarbs) ||
+      JSON.stringify(originalPrefs.preferred_fats ?? []) !== JSON.stringify(preferredFats) ||
+      JSON.stringify(originalPrefs.blacklisted_foods ?? []) !== JSON.stringify(blacklistedFoods) ||
+      (originalPrefs.cheat_meals_per_week ?? 0) !== parseInt(cheatMeals || "0") ||
+      (originalPrefs.intra_workout_nutrition ?? false) !== intraWorkout ||
+      (originalPrefs.initial_phase ?? "") !== (currentPhase || "") ||
+      structuralKeysChanged;   // body composition changes affect macros
+
+    const structuralChanged = structuralKeysChanged;
+
+    // Nothing meaningful changed → skip the engine round-trip entirely.
+    if (!structuralChanged && !nutritionChanged) {
+      return;
+    }
 
     setSyncing(true);
+    const engineErrors: string[] = [];
     try {
       if (structuralChanged) {
-        await api.post("/engine1/run").catch(() => {});
-        await api.post("/engine2/program/generate").catch(() => {});
+        try {
+          await api.post("/engine1/run", {});
+        } catch (err) {
+          engineErrors.push(`Engine 1: ${extractErrorMessage(err, "run failed")}`);
+        }
+        try {
+          await api.post("/engine2/program/generate", {});
+        } catch (err) {
+          engineErrors.push(`Engine 2: ${extractErrorMessage(err, "program generation failed")}`);
+        }
       }
       if (nutritionChanged) {
-        // Invalidate cache then let next page load regenerate fresh plans
-        await api.post("/engine3/meal-plan/invalidate").catch(() => {});
-        await api.post("/engine3/meal-plan/generate").catch(() => {});
+        try {
+          await api.post("/engine3/meal-plan/invalidate", {});
+          await api.post("/engine3/meal-plan/generate", {});
+        } catch (err) {
+          engineErrors.push(`Engine 3: ${extractErrorMessage(err, "meal plan generation failed")}`);
+        }
+      }
+      if (engineErrors.length === 0) {
+        showSuccess(
+          structuralChanged && nutritionChanged
+            ? "Saved & resynced training + nutrition"
+            : structuralChanged
+              ? "Saved & training program updated"
+              : "Saved & meal plan updated"
+        );
+      } else {
+        showError(engineErrors.join("; "));
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch { /* ignore */ } finally {
+    } finally {
       setSyncing(false);
     }
   };
@@ -659,17 +876,61 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="label-field">Training Start Time</label>
-                    <input
-                      type="time"
-                      value={trainingStartTime}
-                      onChange={(e) => setTrainingStartTime(e.target.value)}
-                      className="input-field mt-1"
-                    />
-                    <p className="text-[10px] text-jungle-dim mt-1">Used for meal timing windows</p>
+                <div>
+                  <label className="label-field">Anchor workout timing by</label>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setTrainingTimeAnchor("start")}
+                      className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
+                        trainingTimeAnchor === "start"
+                          ? "border-jungle-accent bg-jungle-accent/15 text-jungle-accent"
+                          : "border-jungle-border bg-jungle-deeper text-jungle-muted hover:border-jungle-accent/50"
+                      }`}
+                    >
+                      Start Time
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTrainingTimeAnchor("end")}
+                      className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
+                        trainingTimeAnchor === "end"
+                          ? "border-jungle-accent bg-jungle-accent/15 text-jungle-accent"
+                          : "border-jungle-border bg-jungle-deeper text-jungle-muted hover:border-jungle-accent/50"
+                      }`}
+                    >
+                      End Time
+                    </button>
                   </div>
+                  <p className="text-[10px] text-jungle-dim mt-1">
+                    Pick which side of the workout you schedule around — the other is estimated from set + rest durations.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {trainingTimeAnchor === "start" ? (
+                    <div>
+                      <label className="label-field">Training Start Time</label>
+                      <input
+                        type="time"
+                        value={trainingStartTime}
+                        onChange={(e) => setTrainingStartTime(e.target.value)}
+                        className="input-field mt-1"
+                      />
+                      <p className="text-[10px] text-jungle-dim mt-1">End time is computed from sets + rests.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="label-field">Training End Time</label>
+                      <input
+                        type="time"
+                        value={trainingEndTime}
+                        onChange={(e) => setTrainingEndTime(e.target.value)}
+                        className="input-field mt-1"
+                      />
+                      <p className="text-[10px] text-jungle-dim mt-1">Start time is computed from sets + rests.</p>
+                    </div>
+                  )}
                   <div>
                     <label className="label-field">Session Duration (min)</label>
                     <input
@@ -680,7 +941,7 @@ export default function SettingsPage() {
                       placeholder="75"
                       min={30} max={240}
                     />
-                    <p className="text-[10px] text-jungle-dim mt-1">Affects peri-workout carb window</p>
+                    <p className="text-[10px] text-jungle-dim mt-1">Default estimate (overridden by live calc).</p>
                   </div>
                 </div>
               </div>
@@ -1028,6 +1289,99 @@ export default function SettingsPage() {
                 </button>
               </div>
 
+              {/* Telegram Bot */}
+              <div className="card space-y-3">
+                <div className="flex items-center justify-between">
+                  <SectionHeader>Telegram Bot</SectionHeader>
+                  {telegramStatus?.linked && (
+                    <span className="text-[10px] px-2 py-0.5 rounded font-semibold bg-green-500/20 text-green-400">
+                      Linked
+                    </span>
+                  )}
+                  {telegramStatus && !telegramStatus.enabled && (
+                    <span className="text-[10px] px-2 py-0.5 rounded font-semibold bg-jungle-border/40 text-jungle-muted">
+                      Disabled on server
+                    </span>
+                  )}
+                </div>
+                {telegramStatus && !telegramStatus.enabled ? (
+                  <p className="text-xs text-jungle-dim">
+                    The bot isn&apos;t configured on this deployment. Ask the admin to set
+                    <code className="mx-1 px-1 bg-jungle-deeper rounded text-jungle-accent">TELEGRAM_BOT_TOKEN</code>
+                    in the backend environment.
+                  </p>
+                ) : telegramStatus?.linked ? (
+                  <>
+                    <p className="text-xs text-jungle-dim">
+                      Your Coronado account is linked to Telegram. Adjust which reminders
+                      you receive below, or disconnect the chat.
+                    </p>
+                    <div className="space-y-2">
+                      {TELEGRAM_NOTIFY_OPTIONS.map((opt) => (
+                        <div
+                          key={opt.key}
+                          className="flex items-center justify-between py-1.5 border-b border-jungle-border/30 last:border-b-0"
+                        >
+                          <span className="text-sm text-jungle-text">{opt.label}</span>
+                          <Toggle
+                            label=""
+                            checked={telegramStatus.notify[opt.key] !== false}
+                            onChange={(v) => toggleTelegramNotify(opt.key, v)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={unlinkTelegram}
+                      disabled={telegramLoading}
+                      className="w-full py-2 text-sm text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                    >
+                      {telegramLoading ? "Disconnecting..." : "Disconnect Telegram"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-jungle-dim">
+                      Link your Coronado account to Telegram to get workout previews,
+                      meal reminders, and check-in nudges directly in chat. Generate a
+                      one-time code and send it to the bot.
+                    </p>
+                    {telegramCode ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between rounded-lg bg-jungle-deeper px-3 py-3">
+                          <div>
+                            <p className="text-[10px] text-jungle-dim uppercase tracking-wide">Link code</p>
+                            <p className="text-2xl font-mono font-bold text-jungle-accent tracking-widest">{telegramCode}</p>
+                          </div>
+                          <span className="text-[10px] text-jungle-dim">Expires in 15 min</span>
+                        </div>
+                        {telegramDeepLink && (
+                          <a
+                            href={telegramDeepLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-primary block text-center"
+                          >
+                            Open in Telegram
+                          </a>
+                        )}
+                        <p className="text-[10px] text-jungle-dim text-center">
+                          Or message @{telegramStatus?.bot_username || "the bot"} with: <code>/start {telegramCode}</code>
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={generateTelegramCode}
+                        disabled={telegramLoading}
+                        className="btn-primary w-full disabled:opacity-50"
+                      >
+                        {telegramLoading ? "Generating..." : "Generate Link Code"}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
               {/* Reminders */}
               <div className="card space-y-4">
                 <div className="flex items-center justify-between">
@@ -1073,6 +1427,38 @@ export default function SettingsPage() {
                     {enablingNotif ? "Requesting..." : "Enable Notifications"}
                   </button>
                 )}
+              </div>
+
+              {/* Dashboard Visualizations */}
+              <div className="card space-y-3">
+                <div className="flex items-center justify-between">
+                  <SectionHeader>Dashboard Visualizations</SectionHeader>
+                  {dashVizSaving && (
+                    <span className="text-[10px] text-jungle-accent">Saving...</span>
+                  )}
+                </div>
+                <p className="text-xs text-jungle-dim">
+                  Toggle cards on or off. Changes save immediately. Some newer
+                  visualizations require additional data (strength logs, recent check-ins).
+                </p>
+                <div className="space-y-2">
+                  {DASH_VIZ_OPTIONS.map((opt) => (
+                    <div
+                      key={opt.key}
+                      className="flex items-center justify-between py-1.5 border-b border-jungle-border/30 last:border-b-0"
+                    >
+                      <div className="min-w-0 flex-1 pr-3">
+                        <p className="text-sm text-jungle-text font-medium">{opt.label}</p>
+                        <p className="text-[10px] text-jungle-dim">{opt.desc}</p>
+                      </div>
+                      <Toggle
+                        label=""
+                        checked={dashViz[opt.key] !== false}
+                        onChange={(v) => toggleDashViz(opt.key, v)}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Export */}

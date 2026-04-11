@@ -579,4 +579,13 @@ async def get_phase_recommendation(
     muscle_gaps = hqi_log.site_scores if hqi_log else {}
     pds_score = pds_log.pds_score if pds_log else 50.0
 
-    return _recommend_phase(muscle_gaps, pds_score, bf_pct, profile.sex, profile.preferences, competition_date=profile.competition_date)
+    # Get actual body weight for accurate cut duration projections
+    from app.models.measurement import BodyWeightLog
+    bw_result = await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+        .order_by(desc(BodyWeightLog.recorded_date)).limit(1)
+    )
+    bw = bw_result.scalar_one_or_none()
+    weight_kg = bw.weight_kg if bw else 85.0
+
+    return _recommend_phase(muscle_gaps, pds_score, bf_pct, profile.sex, profile.preferences, competition_date=profile.competition_date, body_weight_kg=weight_kg)

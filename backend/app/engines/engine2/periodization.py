@@ -197,7 +197,7 @@ _BASE_VOLUME_LANDMARKS: dict[str, tuple[int, int, int]] = {
     "abs":          (6,  12, 20),    # always train abs — core stability for compounds
     "traps":        (0,  12, 20),
     "forearms":     (0,   8, 14),
-    "front_delt":   (0,   6, 12),     # MEV=0 — pressing covers it
+    "front_delt":   (3,   8, 14),     # dedicated front delt work — incline press doesn't fully cover clavicular head (Schoenfeld 2020)
     "side_delt":    (8,  18, 24),     # tolerates high volume
     "rear_delt":    (6,  14, 22),
 }
@@ -733,6 +733,7 @@ def _generate_dup_mesocycle(
             "meso_phase_name": phase_info.get("name", ""),
             "meso_phase_description": phase_info.get("description", ""),
             "rir": phase_info.get("rir", 2),
+            "rir_isolation": phase_info.get("rir_isolation", phase_info.get("rir", 2)),
             "fst7_mode": phase_info.get("fst7_mode", "moderate"),
             "volume": week_volume,
             "days": days,

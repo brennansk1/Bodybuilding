@@ -23,6 +23,10 @@ async def get_current_user(
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
+        # Reject refresh tokens or share tokens presented as access tokens.
+        token_type = payload.get("type", "access")
+        if token_type != "access":
+            raise credentials_exception
     except JWTError:
         raise credentials_exception
 

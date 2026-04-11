@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from app.config import settings
 from app.database import engine, Base, async_session
 from app.models import *  # noqa: F401, F403 — register all models with Base
-from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin
+from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin, telegram
 
 logger = logging.getLogger(__name__)
 
@@ -167,12 +167,15 @@ app.include_router(viz.router, prefix="/api/v1")
 app.include_router(export.router, prefix="/api/v1")
 app.include_router(upload.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(telegram.router, prefix="/api/v1")
 
 import os
+from pathlib import Path as _Path
 from fastapi.staticfiles import StaticFiles
 
-os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+_UPLOAD_DIR = (_Path(__file__).resolve().parent.parent / "uploads").resolve()
+_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_UPLOAD_DIR)), name="uploads")
 
 
 @app.get("/api/v1/health")

@@ -29,43 +29,141 @@ class FoodItem:
     exclude_tags: tuple = ()  # dietary tags that exclude this food
     # e.g. ("vegetarian",) means excluded if user is vegetarian
     meal_affinity: tuple = ("any",)  # "breakfast", "lunch_dinner", "snack", "any"
+    # Micronutrients per 100g — optional. Used by the nutrition engine to
+    # compute RDI coverage and flag deficiencies in the athlete's meal plan.
+    # None = unknown (excluded from coverage maths). Missing micros are
+    # looked up via the PER_100G_MICROS map keyed by food name as a fallback.
+    fiber_g: float | None = None
+    iron_mg: float | None = None
+    zinc_mg: float | None = None
+    magnesium_mg: float | None = None
+    potassium_mg: float | None = None
+    calcium_mg: float | None = None
+    vitamin_d_iu: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# Reference micronutrient table (per 100g, raw)
+# ---------------------------------------------------------------------------
+# Used as a fallback when a FoodItem doesn't set its own micro fields.
+# Values are from USDA FoodData Central where available; others are
+# conservative estimates. Not exhaustive — only the nutrients that are
+# commonly deficient in bodybuilding diets are tracked.
+PER_100G_MICROS: dict[str, dict[str, float]] = {
+    "Chicken Breast":        {"iron_mg": 0.7, "zinc_mg": 0.9, "potassium_mg": 256, "magnesium_mg": 27},
+    "Turkey Breast":         {"iron_mg": 1.0, "zinc_mg": 1.8, "potassium_mg": 293, "magnesium_mg": 30},
+    "Ground Turkey (93/7)":  {"iron_mg": 1.3, "zinc_mg": 2.4, "potassium_mg": 234, "magnesium_mg": 25},
+    "Lean Ground Beef (96/4)": {"iron_mg": 2.6, "zinc_mg": 5.0, "potassium_mg": 310, "magnesium_mg": 22},
+    "Lean Ground Beef (93/7)": {"iron_mg": 2.5, "zinc_mg": 5.3, "potassium_mg": 305, "magnesium_mg": 21},
+    "Sirloin Steak":         {"iron_mg": 2.3, "zinc_mg": 4.5, "potassium_mg": 320, "magnesium_mg": 24},
+    "Flank Steak":           {"iron_mg": 2.5, "zinc_mg": 4.8, "potassium_mg": 320, "magnesium_mg": 24},
+    "Eye of Round":          {"iron_mg": 2.3, "zinc_mg": 4.2, "potassium_mg": 320, "magnesium_mg": 23},
+    "Salmon":                {"iron_mg": 0.8, "zinc_mg": 0.6, "potassium_mg": 363, "magnesium_mg": 29, "vitamin_d_iu": 526},
+    "Canned Tuna (in water)": {"iron_mg": 1.0, "zinc_mg": 0.6, "potassium_mg": 237, "magnesium_mg": 27, "vitamin_d_iu": 80},
+    "Tilapia":               {"iron_mg": 0.6, "zinc_mg": 0.4, "potassium_mg": 302, "magnesium_mg": 27},
+    "Cod":                   {"iron_mg": 0.4, "zinc_mg": 0.5, "potassium_mg": 413, "magnesium_mg": 32, "vitamin_d_iu": 45},
+    "Shrimp":                {"iron_mg": 0.5, "zinc_mg": 1.6, "potassium_mg": 259, "magnesium_mg": 39, "calcium_mg": 70},
+    "Whole Eggs":            {"iron_mg": 1.8, "zinc_mg": 1.3, "potassium_mg": 138, "magnesium_mg": 12, "calcium_mg": 56, "vitamin_d_iu": 87},
+    "Egg Whites":            {"iron_mg": 0.1, "zinc_mg": 0.0, "potassium_mg": 163, "magnesium_mg": 11, "calcium_mg": 7},
+    "Greek Yogurt (nonfat)": {"iron_mg": 0.1, "zinc_mg": 0.5, "potassium_mg": 141, "magnesium_mg": 11, "calcium_mg": 110, "vitamin_d_iu": 0},
+    "Cottage Cheese (low-fat)": {"iron_mg": 0.2, "zinc_mg": 0.5, "potassium_mg": 104, "magnesium_mg": 9, "calcium_mg": 83},
+    # Carbs
+    "White Rice":            {"fiber_g": 0.4, "iron_mg": 0.2, "zinc_mg": 0.5, "potassium_mg": 35,  "magnesium_mg": 12},
+    "Jasmine Rice":          {"fiber_g": 0.4, "iron_mg": 0.2, "zinc_mg": 0.5, "potassium_mg": 35,  "magnesium_mg": 12},
+    "Brown Rice":            {"fiber_g": 1.8, "iron_mg": 0.4, "zinc_mg": 0.6, "potassium_mg": 79,  "magnesium_mg": 43},
+    "Oats (rolled)":         {"fiber_g": 10.6, "iron_mg": 4.7, "zinc_mg": 4.0, "potassium_mg": 429, "magnesium_mg": 177},
+    "Cream of Rice":         {"fiber_g": 0.2, "iron_mg": 0.1, "zinc_mg": 0.3, "potassium_mg": 30,  "magnesium_mg": 10},
+    "Sweet Potato":          {"fiber_g": 3.0, "iron_mg": 0.6, "zinc_mg": 0.3, "potassium_mg": 337, "magnesium_mg": 25, "calcium_mg": 30},
+    "Red Potato (boiled)":   {"fiber_g": 1.8, "iron_mg": 0.3, "zinc_mg": 0.3, "potassium_mg": 379, "magnesium_mg": 22},
+    "Quinoa":                {"fiber_g": 2.8, "iron_mg": 1.5, "zinc_mg": 1.1, "potassium_mg": 172, "magnesium_mg": 64},
+    "Ezekiel Bread":         {"fiber_g": 3.5, "iron_mg": 1.8, "zinc_mg": 0.8, "potassium_mg": 100, "magnesium_mg": 30, "calcium_mg": 15},
+    "Banana":                {"fiber_g": 2.6, "iron_mg": 0.3, "zinc_mg": 0.2, "potassium_mg": 358, "magnesium_mg": 27},
+    # Fats
+    "Extra Virgin Olive Oil": {"iron_mg": 0.6, "vitamin_d_iu": 0},
+    "Avocado":               {"fiber_g": 6.7, "iron_mg": 0.6, "zinc_mg": 0.6, "potassium_mg": 485, "magnesium_mg": 29},
+    "Almonds":               {"fiber_g": 12.5, "iron_mg": 3.7, "zinc_mg": 3.1, "potassium_mg": 733, "magnesium_mg": 270, "calcium_mg": 264},
+    "Peanut Butter":         {"fiber_g": 6.0, "iron_mg": 1.9, "zinc_mg": 2.5, "potassium_mg": 649, "magnesium_mg": 154, "calcium_mg": 43},
+    "Walnuts":               {"fiber_g": 6.7, "iron_mg": 2.9, "zinc_mg": 3.1, "potassium_mg": 441, "magnesium_mg": 158, "calcium_mg": 98},
+    "Chia Seeds":            {"fiber_g": 34.0, "iron_mg": 7.7, "zinc_mg": 4.6, "potassium_mg": 407, "magnesium_mg": 335, "calcium_mg": 631},
+    "Flax Seeds":            {"fiber_g": 27.3, "iron_mg": 5.7, "zinc_mg": 4.3, "potassium_mg": 813, "magnesium_mg": 392, "calcium_mg": 255},
+    # Vegetables (rough defaults)
+    "Broccoli":              {"fiber_g": 2.6, "iron_mg": 0.7, "zinc_mg": 0.4, "potassium_mg": 316, "magnesium_mg": 21, "calcium_mg": 47},
+    "Spinach":               {"fiber_g": 2.2, "iron_mg": 2.7, "zinc_mg": 0.5, "potassium_mg": 558, "magnesium_mg": 79, "calcium_mg": 99},
+    "Kale":                  {"fiber_g": 4.1, "iron_mg": 1.5, "zinc_mg": 0.4, "potassium_mg": 491, "magnesium_mg": 47, "calcium_mg": 150},
+}
+
+
+# ---------------------------------------------------------------------------
+# RDI targets used for coverage reporting
+# ---------------------------------------------------------------------------
+# Daily values for a bodybuilding population (slightly above general population
+# RDIs for iron/zinc/Mg due to heavy training sweat/stress losses).
+RDI_TARGETS: dict[str, dict[str, float]] = {
+    "male": {
+        "fiber_g": 35.0,
+        "iron_mg": 12.0,
+        "zinc_mg": 13.0,
+        "magnesium_mg": 420.0,
+        "potassium_mg": 3800.0,
+        "calcium_mg": 1100.0,
+        "vitamin_d_iu": 2000.0,
+    },
+    "female": {
+        "fiber_g": 28.0,
+        "iron_mg": 20.0,    # female athletes need higher iron (menstrual losses)
+        "zinc_mg": 10.0,
+        "magnesium_mg": 360.0,
+        "potassium_mg": 3500.0,
+        "calcium_mg": 1100.0,
+        "vitamin_d_iu": 2000.0,
+    },
+}
+
+
+def get_food_micros(food_name: str) -> dict[str, float]:
+    """Return micronutrient dict for a food name, merging any inline fields
+    on the FoodItem with the fallback PER_100G_MICROS table."""
+    return PER_100G_MICROS.get(food_name, {})
 
 
 # ─── Protein Sources ─────────────────────────────────────────────────────────
 
 PROTEINS = [
     # Lean poultry
-    FoodItem("Chicken Breast", "protein", 31.0, 0.0, 3.6, 165, 170, 100, 300,
+    # min_serving lowered to 60g for all meat/fish — allows the meal planner to
+    # scale protein DOWN when incidental protein from carb/fat sources is high.
+    # 60g (2oz) is a small but realistic portion for a bodybuilding meal.
+    FoodItem("Chicken Breast", "protein", 31.0, 0.0, 3.6, 165, 170, 60, 300,
              peri_workout=True, phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Turkey Breast", "protein", 29.0, 0.0, 1.0, 135, 170, 100, 300,
+    FoodItem("Turkey Breast", "protein", 29.0, 0.0, 1.0, 135, 170, 60, 300,
              peri_workout=True, phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Ground Turkey (93/7)", "protein", 27.0, 0.0, 7.0, 170, 150, 100, 250,
+    FoodItem("Ground Turkey (93/7)", "protein", 27.0, 0.0, 7.0, 170, 150, 60, 250,
              phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
 
     # Beef
-    FoodItem("Lean Ground Beef (96/4)", "protein", 26.0, 0.0, 4.0, 152, 150, 100, 250,
+    FoodItem("Lean Ground Beef (96/4)", "protein", 26.0, 0.0, 4.0, 152, 150, 60, 250,
              phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Lean Ground Beef (93/7)", "protein", 26.0, 0.0, 7.0, 170, 150, 100, 250,
+    FoodItem("Lean Ground Beef (93/7)", "protein", 26.0, 0.0, 7.0, 170, 150, 60, 250,
              phase_tags=("bulk", "maintain"), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Sirloin Steak", "protein", 27.0, 0.0, 8.0, 183, 170, 120, 250,
+    FoodItem("Sirloin Steak", "protein", 27.0, 0.0, 8.0, 183, 170, 60, 250,
              phase_tags=("bulk", "maintain"), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Flank Steak", "protein", 27.0, 0.0, 5.0, 158, 170, 120, 250,
+    FoodItem("Flank Steak", "protein", 27.0, 0.0, 5.0, 158, 170, 60, 250,
              phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Eye of Round", "protein", 28.0, 0.0, 4.0, 150, 170, 120, 250,
+    FoodItem("Eye of Round", "protein", 28.0, 0.0, 4.0, 150, 170, 60, 250,
              phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
 
     # Pork
-    FoodItem("Pork Tenderloin", "protein", 26.0, 0.0, 3.5, 143, 150, 100, 250,
+    FoodItem("Pork Tenderloin", "protein", 26.0, 0.0, 3.5, 143, 150, 60, 250,
              phase_tags=("all",), exclude_tags=("vegetarian", "vegan", "no_pork", "halal", "kosher")),
 
     # Fish & Seafood
-    FoodItem("Tilapia", "protein", 26.0, 0.0, 2.0, 128, 170, 100, 250,
+    FoodItem("Tilapia", "protein", 26.0, 0.0, 2.0, 128, 170, 60, 250,
              peri_workout=True, phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Cod", "protein", 23.0, 0.0, 1.0, 105, 170, 100, 250,
+    FoodItem("Cod", "protein", 23.0, 0.0, 1.0, 105, 170, 60, 250,
              peri_workout=True, phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Halibut", "protein", 23.0, 0.0, 1.5, 111, 170, 100, 250,
+    FoodItem("Halibut", "protein", 23.0, 0.0, 1.5, 111, 170, 60, 250,
              peri_workout=True, phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
-    FoodItem("Salmon", "protein", 20.0, 0.0, 13.0, 208, 170, 100, 250,
+    FoodItem("Salmon", "protein", 20.0, 0.0, 13.0, 208, 170, 60, 250,
              phase_tags=("bulk", "maintain"), exclude_tags=("vegetarian", "vegan")),
     FoodItem("Canned Tuna (in water)", "protein", 26.0, 0.0, 1.0, 116, 130, 80, 200,
              phase_tags=("all",), exclude_tags=("vegetarian", "vegan")),
@@ -113,7 +211,7 @@ CARBS = [
     FoodItem("Quinoa (cooked)", "carb", 4.4, 21.0, 1.9, 120, 180, 100, 300,
              phase_tags=("all",), exclude_tags=(),
              meal_affinity=("lunch_dinner",)),
-    FoodItem("Cream of Rice (dry)", "carb", 7.0, 79.0, 0.5, 358, 50, 30, 100,
+    FoodItem("Cream of Rice (dry)", "carb", 7.0, 79.0, 0.5, 358, 50, 30, 150,
              peri_workout=True, phase_tags=("all",), exclude_tags=(),
              meal_affinity=("breakfast", "snack")),
     FoodItem("Ezekiel Bread", "carb", 8.0, 36.0, 1.0, 200, 60, 30, 120,
@@ -127,10 +225,10 @@ CARBS = [
     FoodItem("Jasmine Rice (cooked)", "carb", 2.7, 28.0, 0.3, 130, 200, 100, 400,
              peri_workout=True, phase_tags=("all",), exclude_tags=(),
              meal_affinity=("lunch_dinner", "any")),
-    FoodItem("Rice Cakes", "carb", 8.0, 82.0, 2.8, 387, 30, 15, 60,
+    FoodItem("Rice Cakes", "carb", 8.0, 82.0, 2.8, 387, 30, 15, 100,
              peri_workout=True, phase_tags=("all",), exclude_tags=(),
              meal_affinity=("snack", "any")),
-    FoodItem("Russet Potato (baked)", "carb", 2.5, 21.0, 0.1, 97, 250, 150, 400,
+    FoodItem("Russet Potato (baked)", "carb", 2.5, 21.0, 0.1, 97, 250, 150, 500,
              peri_workout=True, phase_tags=("all",), exclude_tags=(),
              meal_affinity=("lunch_dinner",)),
     FoodItem("Red Potato (boiled)", "carb", 1.9, 20.0, 0.1, 87, 250, 150, 400,

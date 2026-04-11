@@ -82,8 +82,13 @@ class HRVLog(Base):
     rmssd: Mapped[float] = mapped_column(Float, nullable=False)
     resting_hr: Mapped[float | None] = mapped_column(Float, nullable=True)
     sleep_quality: Mapped[float | None] = mapped_column(Float, nullable=True)  # 1-10
+    sleep_hours: Mapped[float | None] = mapped_column(Float, nullable=True)    # actual duration
     soreness_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 1-10
     sore_muscles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Subjective wellness — stress/mood/energy (1-10 each)
+    stress_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mood_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    energy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     recorded_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -102,6 +107,8 @@ class ARILog(Base):
     hrv_component: Mapped[float] = mapped_column(Float, nullable=False)
     sleep_component: Mapped[float] = mapped_column(Float, nullable=False)
     soreness_component: Mapped[float] = mapped_column(Float, nullable=False)
+    hr_component: Mapped[float | None] = mapped_column(Float, nullable=True)    # resting HR deviation
+    stress_component: Mapped[float | None] = mapped_column(Float, nullable=True)  # subjective wellness
     recorded_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -167,9 +174,15 @@ class TrainingSet(Base):
     actual_reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     actual_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    prescribed_rpe: Mapped[float | None] = mapped_column(Float, nullable=True)  # target RPE for autoregulation
+    prescribed_rir: Mapped[int | None] = mapped_column(Integer, nullable=True)  # target reps in reserve
     is_warmup: Mapped[bool] = mapped_column(default=False)
     rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_fst7: Mapped[bool] = mapped_column(default=False)
+    # Intensification technique tags — null means straight sets.
+    # Supported: "drop_set", "rest_pause", "myo_reps", "cluster", "lengthened_partial".
+    set_technique: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    tempo: Mapped[str | None] = mapped_column(String(15), nullable=True)  # e.g. "3-1-1-0" (ecc-pause-con-pause)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["TrainingSession"] = relationship(back_populates="sets")

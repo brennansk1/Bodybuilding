@@ -16,8 +16,13 @@ class DailyCheckin(BaseModel):
     rmssd: float | None = Field(default=None, gt=0)
     resting_hr: float | None = Field(default=None, gt=20, lt=200)
     sleep_quality: float | None = Field(default=None, ge=1, le=10)
+    sleep_hours: float | None = Field(default=None, ge=0, le=16)   # actual sleep duration
     soreness_score: float | None = Field(default=None, ge=1, le=10)
     sore_muscles: list[str] | None = Field(default_factory=list)
+    # Subjective wellness — critical signals an Olympia coach asks about daily.
+    stress_score: float | None = Field(default=None, ge=1, le=10)   # 1 = calm, 10 = crushed
+    mood_score: float | None = Field(default=None, ge=1, le=10)     # 1 = terrible, 10 = great
+    energy_score: float | None = Field(default=None, ge=1, le=10)   # 1 = exhausted, 10 = buzzing
     nutrition_adherence_pct: float | None = Field(default=None, ge=0, le=100)
     training_adherence_pct: float | None = Field(default=None, ge=0, le=100)
     notes: str | None = None
