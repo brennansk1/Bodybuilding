@@ -1122,7 +1122,7 @@ async def _build_meal_plan_for_day(
         preferred_proteins=prefs.get("preferred_proteins", []),
         preferred_carbs=prefs.get("preferred_carbs", []),
         preferred_fats=prefs.get("preferred_fats", []),
-        blacklisted_foods=prefs.get("blacklisted_foods", []),
+        preferred_vegetables=prefs.get("preferred_vegetables", []),
         intra_workout_nutrition=intra_enabled and is_training,
         fasted_training=fasted_training,
         body_weight_kg=weight_for_fat,
