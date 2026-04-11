@@ -269,13 +269,21 @@ _REAR_DELT_KEYWORDS = {"rear", "face", "reverse", "bent", "fly", "flye", "pull a
 _SIDE_DELT_KEYWORDS = {"lateral", "side raise", "upright"}
 
 # Compound movement overflow coefficients: movement_pattern → {secondary_muscle: fraction}
+#
+# These fractions count toward the secondary muscle's weekly volume budget.
+# Previous values (0.5 for triceps / biceps) were too generous — they gave
+# arms so much "credit" from chest/back compounds that direct isolation work
+# collapsed to 2 sets / week. Research on compound-movement overflow suggests
+# 20-30% credit; the direct isolation stimulus is still needed for full
+# hypertrophy. Especially critical for Men's Physique where arm development
+# is a judged priority.
 _OVERFLOW: dict[str, dict[str, float]] = {
-    "push":     {"triceps": 0.5, "shoulders": 0.3},
-    "pull":     {"biceps": 0.5, "traps": 0.2},
-    "squat":    {"glutes": 0.4, "hamstrings": 0.2},
-    "hinge":    {"glutes": 0.5, "back": 0.2},
-    "carry":    {"traps": 0.4, "forearms": 0.3},
-    "compound": {"biceps": 0.25, "triceps": 0.25},
+    "push":     {"triceps": 0.25, "shoulders": 0.2},
+    "pull":     {"biceps": 0.25, "traps": 0.15},
+    "squat":    {"glutes": 0.3, "hamstrings": 0.15},
+    "hinge":    {"glutes": 0.4, "back": 0.15},
+    "carry":    {"traps": 0.3, "forearms": 0.2},
+    "compound": {"biceps": 0.15, "triceps": 0.15},
 }
 
 # Default weekly volume (sets) per muscle group when no Engine 1 data
@@ -1400,9 +1408,17 @@ async def generate_program_sessions(
                     if not can_train_muscle(db_muscle, hours_since, min_recovery):
                         continue
 
-                # Reduce sets by overflow received from earlier compounds
+                # Reduce sets by overflow received from earlier compounds.
+                # The floor is the larger of MEV (to guarantee direct isolation
+                # stimulus hits the minimum effective dose) or 4 sets — whichever
+                # is greater. Previously the floor was 2 which let chest-day
+                # triceps collapse to "2 sets of overhead extensions" once
+                # overflow consumed most of the budget.
+                from app.engines.engine2.periodization import VOLUME_LANDMARKS as _VL
+                _muscle_mev = _VL.get(db_muscle, (4, 12, 18))[0]
                 overflow_sets = math.floor(overflow_received.get(db_muscle, 0))
-                total_sets = max(2, base_sets - overflow_sets)
+                _direct_floor = max(4, math.ceil(_muscle_mev / 2))
+                total_sets = max(_direct_floor, base_sets - overflow_sets)
 
                 # Inject systemic spillover rolled over from previous sessions
                 if db_muscle in global_spillover and global_spillover[db_muscle] > 0:
