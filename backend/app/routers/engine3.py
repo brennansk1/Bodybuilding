@@ -1211,6 +1211,17 @@ async def get_current_meal_plan(
     micros_training = validate_micronutrient_coverage(cached["training"], sex)
     micros_rest = validate_micronutrient_coverage(cached["rest"], sex)
 
+    from app.engines.engine3.meal_planner import compute_filtered_picks
+    _prefs_for_filter = profile.preferences or {}
+    filtered_picks = compute_filtered_picks(
+        phase=rx.phase,
+        dietary_restrictions=_prefs_for_filter.get("dietary_restrictions"),
+        preferred_proteins=_prefs_for_filter.get("preferred_proteins"),
+        preferred_carbs=_prefs_for_filter.get("preferred_carbs"),
+        preferred_fats=_prefs_for_filter.get("preferred_fats"),
+        preferred_vegetables=_prefs_for_filter.get("preferred_vegetables"),
+    )
+
     return {
         "phase": rx.phase,
         "training_day": cached["training"],
@@ -1224,6 +1235,7 @@ async def get_current_meal_plan(
             "training": micros_training,
             "rest": micros_rest,
         },
+        "filtered_picks": filtered_picks,
     }
 
 
@@ -1266,11 +1278,22 @@ async def generate_meal_plan_endpoint(
         ))
 
     await db.flush()
+
+    from app.engines.engine3.meal_planner import compute_filtered_picks
+    _prefs_for_filter = profile.preferences or {}
     return {
         "phase": rx.phase,
         "training_day": plans["training"],
         "rest_day": plans["rest"],
         "regenerated": True,
+        "filtered_picks": compute_filtered_picks(
+            phase=rx.phase,
+            dietary_restrictions=_prefs_for_filter.get("dietary_restrictions"),
+            preferred_proteins=_prefs_for_filter.get("preferred_proteins"),
+            preferred_carbs=_prefs_for_filter.get("preferred_carbs"),
+            preferred_fats=_prefs_for_filter.get("preferred_fats"),
+            preferred_vegetables=_prefs_for_filter.get("preferred_vegetables"),
+        ),
     }
 
 
