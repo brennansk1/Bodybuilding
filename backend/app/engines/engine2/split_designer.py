@@ -134,15 +134,18 @@ _CLUSTERS: dict[str, list[str]] = {
     "delts_calves":   ["front_delt", "side_delt", "rear_delt", "calves"],
     # ── Men's Physique / upper-body-priority clusters ──
     # MP judges score V-taper + delts + arms. Legs are under board shorts.
-    # These clusters front-load upper work and confine legs to a single
-    # maintenance day (hams/calves priority + token quad work).
-    # Side delts appear on BOTH push day and dedicated shoulder day —
-    # coach standard for MP is 2-3× side delt frequency per week.
-    "mp_push":         ["chest", "front_delt", "side_delt", "triceps"],
+    # Clusters are kept to ≤3 muscles per day so a 60-min session can hit
+    # each muscle with ≥MEV working sets. Spreading 4 muscles across 60 min
+    # forces the planner to trim the last muscle below MEV (e.g. triceps
+    # got 2 sets on a chest+fdelt+sdelt+tri day).
+    # Side delts appear on BOTH push day and shoulder day to hit the 2×
+    # frequency pro coaches prescribe for V-taper athletes. Front delts
+    # are hit once directly (shoulders day) and indirectly via pressing.
+    "mp_push":         ["chest", "side_delt", "triceps"],
     "mp_pull_width":   ["back", "rear_delt", "biceps"],
-    "mp_shoulders":    ["side_delt", "front_delt", "rear_delt"],
-    "mp_arms_back":    ["biceps", "triceps", "back", "forearms"],
-    "mp_legs_minimal": ["hamstrings", "calves", "quads", "abs"],
+    "mp_shoulders":    ["front_delt", "side_delt", "abs"],
+    "mp_arms_back":    ["biceps", "triceps", "forearms"],
+    "mp_legs_minimal": ["hamstrings", "calves", "quads"],
     # ── Glute-priority clusters (Bikini, Wellness) ──
     # Opposite of MP: lower body is primary, upper body is ornamental.
     "bikini_glutes":   ["glutes", "hamstrings"],
