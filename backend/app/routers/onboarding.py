@@ -344,6 +344,18 @@ async def update_profile(
         # under `dashboard_settings`.
         current = dict(profile.preferences or {})
         incoming = data["preferences"]
+        # Detect changes to meal-planner-relevant preferences so we can
+        # invalidate cached meal plans — otherwise the user edits Settings
+        # and the nutrition page keeps serving the stale template.
+        _food_pref_keys = {
+            "preferred_proteins", "preferred_carbs", "preferred_fats",
+            "preferred_vegetables", "dietary_restrictions", "meal_count",
+            "fasted_training", "intra_workout_nutrition",
+        }
+        invalidate_meal_plan = any(
+            k in _food_pref_keys and current.get(k) != v
+            for k, v in incoming.items()
+        )
         for k, v in incoming.items():
             if isinstance(v, dict) and isinstance(current.get(k), dict):
                 merged = dict(current[k])
@@ -353,6 +365,15 @@ async def update_profile(
                 current[k] = v
         profile.preferences = current
         logger.debug("Preferences updated for user %s", user.id)
+
+        if invalidate_meal_plan:
+            from app.models.nutrition import MealPlanTemplate
+            tpl_result = await db.execute(
+                select(MealPlanTemplate).where(MealPlanTemplate.user_id == user.id)
+            )
+            for tpl in tpl_result.scalars().all():
+                await db.delete(tpl)
+            logger.info("Meal plan cache cleared for user %s after food preference change", user.id)
 
     await db.flush()
     return {"message": "Profile updated"}

@@ -1247,6 +1247,17 @@ async def generate_meal_plan_endpoint(
     if not rx:
         raise HTTPException(status_code=404, detail="No active nutrition prescription")
 
+    # Delete ALL existing templates for this user first — otherwise
+    # regeneration just layers a new template on top of the old ones and
+    # GET /meal-plan/current can still surface the stale version when the
+    # desc(created_at) ordering ties or a cached read races.
+    old_tpl_result = await db.execute(
+        select(MealPlanTemplate).where(MealPlanTemplate.user_id == user.id)
+    )
+    for old_tpl in old_tpl_result.scalars().all():
+        await db.delete(old_tpl)
+    await db.flush()
+
     plans: dict[str, list] = {}
     for day_type in ("training", "rest"):
         plans[day_type] = await _build_meal_plan_for_day(db, user, profile, rx, day_type)
