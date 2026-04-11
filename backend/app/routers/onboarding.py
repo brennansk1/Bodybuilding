@@ -193,8 +193,8 @@ async def set_preferences(
         prefs["preferred_carbs"] = data.preferred_carbs
     if data.preferred_fats:
         prefs["preferred_fats"] = data.preferred_fats
-    if data.blacklisted_foods:
-        prefs["blacklisted_foods"] = data.blacklisted_foods
+    if data.preferred_vegetables:
+        prefs["preferred_vegetables"] = data.preferred_vegetables
     profile.preferences = prefs
     profile.training_start_time = data.training_start_time
     profile.training_duration_min = data.training_duration_min

@@ -427,19 +427,25 @@ def _prioritize_preferred(foods: list[FoodItem], preferred_names: list[str]) -> 
     return [f for f, _ in preferred] + rest
 
 
-def _exclude_blacklisted(foods: list[FoodItem], blacklisted: list[str]) -> list[FoodItem]:
-    """Remove blacklisted foods, but always keep at least a few options.
+def _strict_filter(foods: list[FoodItem], preferred_names: list[str]) -> list[FoodItem]:
+    """Restrict the food pool to ONLY the user's selected items.
 
-    Uses substring matching so "Quinoa" blocks "Quinoa (cooked)", etc.
+    Uses substring matching so "White Rice" matches "White Rice (cooked)", etc.
+    If no matches are found (edge case — user picked foods blocked by dietary
+    restrictions in this phase), fall back to the full phase-ranked pool so the
+    planner still has something to work with.
+
+    Preserves phase-rank order within the filtered set: a user's top pick that
+    also happens to be the phase-optimal choice stays at the top of the pool.
     """
-    if not blacklisted:
+    if not preferred_names:
         return foods
-    lower_bl = [n.lower() for n in blacklisted]
+    lower_prefs = [n.lower() for n in preferred_names]
     filtered = [
         f for f in foods
-        if not any(bl in f.name.lower() for bl in lower_bl)
+        if any(pref in f.name.lower() for pref in lower_prefs)
     ]
-    return filtered if len(filtered) >= 2 else foods
+    return filtered if filtered else foods
 
 
 def generate_meal_plan(
@@ -460,7 +466,7 @@ def generate_meal_plan(
     preferred_proteins: list[str] | None = None,
     preferred_carbs: list[str] | None = None,
     preferred_fats: list[str] | None = None,
-    blacklisted_foods: list[str] | None = None,
+    preferred_vegetables: list[str] | None = None,
     intra_workout_nutrition: bool = False,
     fasted_training: bool = False,
     body_weight_kg: float = 80.0,
@@ -483,17 +489,24 @@ def generate_meal_plan(
     fats = get_available_foods(phase, restrictions, "fat")
     vegetables = get_available_foods(phase, restrictions, "vegetable")
 
-    # Apply user blacklist and preference ordering.
-    # Coach principle: an elite prep rotates 2-3 proteins / 2-3 carbs / 1-2 fats,
-    # never 8+. We clip user preferences to that coach-recommended maximum so that
-    # picking 10 proteins in Settings doesn't inject extra variety into the plan.
-    bl = blacklisted_foods or []
+    # Apply user preference filtering + ordering.
+    #
+    # When the user selects ANY staples for a macro, the planner restricts
+    # that food pool to ONLY those picks — a real coach prep sheet uses
+    # exactly 2-3 proteins, 2-3 carbs, 1-2 fats, 2 vegetables rotated across
+    # every meal, nothing else. We clip to the coach-recommended maximum
+    # (3/3/2/2) in case the UI somehow let extras through, then strict-filter.
+    #
+    # When the user has not yet picked staples, we fall through to the
+    # phase-ranked default pool so a fresh account still gets a usable plan.
     clipped_proteins = (preferred_proteins or [])[:3]
     clipped_carbs = (preferred_carbs or [])[:3]
     clipped_fats = (preferred_fats or [])[:2]
-    proteins = _prioritize_preferred(_exclude_blacklisted(proteins, bl), clipped_proteins)
-    carbs_all = _prioritize_preferred(_exclude_blacklisted(carbs_all, bl), clipped_carbs)
-    fats = _prioritize_preferred(_exclude_blacklisted(fats, bl), clipped_fats)
+    clipped_veggies = (preferred_vegetables or [])[:3]
+    proteins = _prioritize_preferred(_strict_filter(proteins, clipped_proteins), clipped_proteins)
+    carbs_all = _prioritize_preferred(_strict_filter(carbs_all, clipped_carbs), clipped_carbs)
+    fats = _prioritize_preferred(_strict_filter(fats, clipped_fats), clipped_fats)
+    vegetables = _prioritize_preferred(_strict_filter(vegetables, clipped_veggies), clipped_veggies)
 
     # Peri-workout specific pools
     peri_proteins = [p for p in proteins if p.peri_workout] or proteins[:3]
@@ -735,8 +748,25 @@ def generate_meal_plan(
             est_qty = (m_protein / protein_food.protein) * 100
             est_prot_fat = est_qty * protein_food.fat / 100
 
-        # ── 1. Carb source ──
-        if m_carbs > 5:
+        # ── 1. Vegetable (non-peri, non-refeed, non-breakfast) ──
+        # Vegetables are plated FIRST so their carbs are subtracted from the
+        # meal's carb budget before the dedicated carb source is scaled.
+        # Coach principle: every lunch/dinner/snack gets a veg; breakfast
+        # stays clean (oats/eggs/yogurt are not typically plated with
+        # broccoli). This is also where we track `incidental_veg_carbs` so
+        # the carb source shrinks to make room.
+        incidental_veg_carbs = 0.0
+        if not is_peri and not is_refeed and daily_vegs and slot_type != "breakfast":
+            veg_food = daily_vegs[_veg_idx % len(daily_vegs)]
+            _veg_idx += 1
+            item = _scale_food(veg_food, veg_food.typical_serving_g)
+            meal.ingredients.append(item)
+            incidental_protein += item.protein_g
+            incidental_veg_carbs = item.carbs_g
+
+        # ── 2. Carb source — scaled to remaining budget after veg ──
+        carb_budget = max(0.0, m_carbs - incidental_veg_carbs)
+        if carb_budget > 5:
             carb_food = None
             if is_peri and daily_peri_carbs:
                 carb_food = daily_peri_carbs[_peri_carb_idx % len(daily_peri_carbs)]
@@ -751,25 +781,17 @@ def generate_meal_plan(
                 _carb_idx += 1
 
             if carb_food:
-                item = _scale_food_to_carbs(carb_food, m_carbs)
+                item = _scale_food_to_carbs(carb_food, carb_budget)
                 meal.ingredients.append(item)
                 m_fat = max(0, m_fat - item.fat_g)
                 incidental_protein += item.protein_g
 
-        # ── 2. Fat source — subtract estimated protein fat from budget ──
+        # ── 3. Fat source — subtract estimated protein fat from budget ──
         fat_budget = max(0, m_fat - est_prot_fat)
         if not is_peri and fat_budget > 3 and daily_fats:
             fat_food = daily_fats[_fat_idx % len(daily_fats)]
             _fat_idx += 1
             item = _scale_food_to_fat(fat_food, fat_budget)
-            meal.ingredients.append(item)
-            incidental_protein += item.protein_g
-
-        # ── 3. Vegetable (non-peri, non-refeed, lunch/dinner only) ──
-        if not is_peri and not is_refeed and daily_vegs and slot_type != "breakfast":
-            veg_food = daily_vegs[_veg_idx % len(daily_vegs)]
-            _veg_idx += 1
-            item = _scale_food(veg_food, veg_food.typical_serving_g)
             meal.ingredients.append(item)
             incidental_protein += item.protein_g
 

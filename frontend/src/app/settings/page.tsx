@@ -46,7 +46,7 @@ interface Profile {
     preferred_proteins?: string[];
     preferred_carbs?: string[];
     preferred_fats?: string[];
-    blacklisted_foods?: string[];
+    preferred_vegetables?: string[];
   };
 }
 
@@ -111,45 +111,80 @@ const FAT_SOURCES = [
   "Almond Butter", "Walnuts", "Coconut Oil", "Chia Seeds", "Flax Seeds",
 ];
 
+const VEGETABLE_SOURCES = [
+  "Broccoli", "Asparagus", "Spinach", "Green Beans", "Bell Peppers",
+  "Zucchini", "Cucumber", "Kale", "Cauliflower",
+];
+
+// Foods typically eaten at breakfast. Used by the Settings UI to warn
+// the user when they haven't picked at least one breakfast-friendly
+// option — a meal plan with zero breakfast staples will fall back to
+// plating chicken + rice at 7 AM, which is unpleasant.
+const BREAKFAST_PROTEINS = new Set([
+  "Egg Whites", "Whole Eggs", "Greek Yogurt (nonfat)", "Cottage Cheese (low-fat)",
+]);
+const BREAKFAST_CARBS = new Set([
+  "Oats (rolled)", "Cream of Rice", "Ezekiel Bread", "Banana",
+]);
+
+// Foods greyed out during strict phases (prep, cut, peak week).
+// Coaches avoid high-fat proteins, fibrous slow-GI carbs, and
+// calorie-dense cooking fats once calories are tight. The buttons
+// stay clickable (the user can override) but render in a muted
+// "not recommended" state so the phase signal is visible.
+const STRICT_PHASE_NOT_RECOMMENDED: Record<"protein" | "carb" | "fat", Set<string>> = {
+  protein: new Set(["Whole Eggs", "Salmon", "Lean Ground Beef", "Flank Steak", "Sirloin Steak"]),
+  carb: new Set(["Ezekiel Bread", "Brown Rice", "Quinoa", "Banana"]),
+  fat: new Set(["Peanut Butter", "Coconut Oil", "Almond Butter"]),
+};
+const STRICT_PHASES = new Set(["cut", "peak_week", "contest"]);
+
 // Coach-recommended staple limits — elite prep rotates 2-3 proteins,
-// 2-3 carbs, 1-2 fats. Picking more does not add variety; it just
-// destabilizes the meal planner's repetition.
+// 2-3 carbs, 1-2 fats, 2 vegetables. Picking more does not add variety;
+// it just destabilizes the meal planner's repetition.
 const MAX_PREFERRED_PROTEINS = 3;
 const MAX_PREFERRED_CARBS = 3;
 const MAX_PREFERRED_FATS = 2;
+const MAX_PREFERRED_VEGETABLES = 3;
 
 // Phase-optimized default combos a coach would prescribe per division.
 // Pressing "Use recommended" on each staple list populates these.
-const RECOMMENDED_STAPLES: Record<string, { proteins: string[]; carbs: string[]; fats: string[] }> = {
+const RECOMMENDED_STAPLES: Record<string, { proteins: string[]; carbs: string[]; fats: string[]; vegetables: string[] }> = {
   mens_open: {
     proteins: ["Chicken Breast", "Lean Ground Beef", "Egg Whites"],
     carbs: ["White Rice", "Sweet Potato", "Oats (rolled)"],
     fats: ["Almonds", "Extra Virgin Olive Oil"],
+    vegetables: ["Broccoli", "Asparagus"],
   },
   classic_physique: {
     proteins: ["Chicken Breast", "Tilapia", "Egg Whites"],
     carbs: ["Jasmine Rice", "Sweet Potato", "Oats (rolled)"],
     fats: ["Almonds", "Extra Virgin Olive Oil"],
+    vegetables: ["Broccoli", "Asparagus"],
   },
   mens_physique: {
     proteins: ["Chicken Breast", "Cod", "Egg Whites"],
     carbs: ["Jasmine Rice", "Sweet Potato", "Oats (rolled)"],
     fats: ["Almonds", "Extra Virgin Olive Oil"],
+    vegetables: ["Broccoli", "Green Beans"],
   },
   womens_bikini: {
     proteins: ["Chicken Breast", "Tilapia", "Egg Whites"],
     carbs: ["Jasmine Rice", "Sweet Potato", "Oats (rolled)"],
     fats: ["Almonds", "Avocado"],
+    vegetables: ["Asparagus", "Spinach"],
   },
   womens_figure: {
     proteins: ["Chicken Breast", "Cod", "Egg Whites"],
     carbs: ["Jasmine Rice", "Sweet Potato", "Oats (rolled)"],
     fats: ["Almonds", "Extra Virgin Olive Oil"],
+    vegetables: ["Broccoli", "Asparagus"],
   },
   womens_wellness: {
     proteins: ["Chicken Breast", "Lean Ground Turkey", "Egg Whites"],
     carbs: ["White Rice", "Sweet Potato", "Oats (rolled)"],
     fats: ["Almonds", "Avocado"],
+    vegetables: ["Broccoli", "Spinach"],
   },
 };
 
@@ -207,7 +242,7 @@ export default function SettingsPage() {
   const [preferredProteins, setPreferredProteins] = useState<string[]>([]);
   const [preferredCarbs, setPreferredCarbs] = useState<string[]>([]);
   const [preferredFats, setPreferredFats] = useState<string[]>([]);
-  const [blacklistedFoods, setBlacklistedFoods] = useState<string[]>([]);
+  const [preferredVegetables, setPreferredVegetables] = useState<string[]>([]);
 
   // ── Dashboard visualizations ────────────────────────────────────────────────
 
@@ -299,7 +334,7 @@ export default function SettingsPage() {
         setPreferredProteins(prefs.preferred_proteins ?? []);
         setPreferredCarbs(prefs.preferred_carbs ?? []);
         setPreferredFats(prefs.preferred_fats ?? []);
-        setBlacklistedFoods(prefs.blacklisted_foods ?? []);
+        setPreferredVegetables(prefs.preferred_vegetables ?? []);
         // Dashboard visualizations — preferences.dashboard_viz
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         // dashboard_viz is loaded implicitly — the Edit Dashboard mode on
@@ -510,7 +545,7 @@ export default function SettingsPage() {
           preferred_proteins: preferredProteins,
           preferred_carbs: preferredCarbs,
           preferred_fats: preferredFats,
-          blacklisted_foods: blacklistedFoods,
+          preferred_vegetables: preferredVegetables,
         },
       });
       setSaved(true);
@@ -553,7 +588,7 @@ export default function SettingsPage() {
       JSON.stringify(originalPrefs.preferred_proteins ?? []) !== JSON.stringify(preferredProteins) ||
       JSON.stringify(originalPrefs.preferred_carbs ?? []) !== JSON.stringify(preferredCarbs) ||
       JSON.stringify(originalPrefs.preferred_fats ?? []) !== JSON.stringify(preferredFats) ||
-      JSON.stringify(originalPrefs.blacklisted_foods ?? []) !== JSON.stringify(blacklistedFoods) ||
+      JSON.stringify(originalPrefs.preferred_vegetables ?? []) !== JSON.stringify(preferredVegetables) ||
       (originalPrefs.cheat_meals_per_week ?? 0) !== parseInt(cheatMeals || "0") ||
       (originalPrefs.intra_workout_nutrition ?? false) !== intraWorkout ||
       (originalPrefs.fasted_training ?? false) !== fastedTraining ||
@@ -1233,6 +1268,12 @@ export default function SettingsPage() {
                 const proteinFull = preferredProteins.length >= MAX_PREFERRED_PROTEINS;
                 const carbFull = preferredCarbs.length >= MAX_PREFERRED_CARBS;
                 const fatFull = preferredFats.length >= MAX_PREFERRED_FATS;
+                const vegFull = preferredVegetables.length >= MAX_PREFERRED_VEGETABLES;
+
+                const isStrictPhase = STRICT_PHASES.has(currentPhase);
+                const hasBreakfastProtein = preferredProteins.some((p) => BREAKFAST_PROTEINS.has(p));
+                const hasBreakfastCarb = preferredCarbs.some((c) => BREAKFAST_CARBS.has(c));
+
                 const Badge = ({ count, max, full }: { count: number; max: number; full: boolean }) => (
                   <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
                     full
@@ -1242,52 +1283,100 @@ export default function SettingsPage() {
                     {count} of {max}
                   </span>
                 );
+
+                type StapleKind = "protein" | "carb" | "fat" | "vegetable";
+                const COLORS: Record<StapleKind, { sel: string; hover: string; rec: string; label: string }> = {
+                  protein:   { sel: "bg-blue-500/20 border-blue-500/50 text-blue-400",     hover: "hover:border-blue-500/30",   rec: "bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20",     label: "🍗 Proteins" },
+                  carb:      { sel: "bg-amber-500/20 border-amber-500/50 text-amber-400",  hover: "hover:border-amber-500/30",  rec: "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20",  label: "🍚 Carbs" },
+                  fat:       { sel: "bg-rose-500/20 border-rose-500/50 text-rose-400",     hover: "hover:border-rose-500/30",   rec: "bg-rose-500/10 border-rose-500/30 text-rose-400 hover:bg-rose-500/20",      label: "🥑 Fats" },
+                  vegetable: { sel: "bg-green-500/20 border-green-500/50 text-green-400",  hover: "hover:border-green-500/30",  rec: "bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20",  label: "🥦 Vegetables" },
+                };
+
+                const StapleButton = ({
+                  item,
+                  kind,
+                  selected,
+                  listFull,
+                  onToggle,
+                }: {
+                  item: string;
+                  kind: StapleKind;
+                  selected: boolean;
+                  listFull: boolean;
+                  onToggle: () => void;
+                }) => {
+                  const notRecommended =
+                    isStrictPhase &&
+                    kind !== "vegetable" &&
+                    STRICT_PHASE_NOT_RECOMMENDED[kind].has(item);
+                  const capped = listFull && !selected;
+                  return (
+                    <button
+                      onClick={onToggle}
+                      title={notRecommended ? `Not recommended during ${currentPhase.replace(/_/g, " ")}` : undefined}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors relative ${
+                        selected
+                          ? COLORS[kind].sel
+                          : capped
+                          ? "bg-jungle-deeper/40 border-jungle-border/40 text-jungle-dim/50 cursor-not-allowed"
+                          : notRecommended
+                          ? "bg-jungle-deeper/60 border-jungle-border/50 text-jungle-dim/60 italic"
+                          : `bg-jungle-deeper border-jungle-border text-jungle-muted ${COLORS[kind].hover}`
+                      }`}
+                    >
+                      {notRecommended && !selected && <span className="mr-1">⚠</span>}
+                      {item}
+                    </button>
+                  );
+                };
+
                 return (
               <div className="card space-y-5">
-                <SectionHeader description="Elite prep rotates 2-3 proteins, 2-3 carbs, and 1-2 fats across every meal — not 10. Pick your top staples.">
+                <SectionHeader description="Elite prep rotates 2-3 proteins, 2-3 carbs, 1-2 fats, and 2 vegetables across every meal — not 10. Pick your top staples. The meal planner will only pull from these choices.">
                   Your Coach&apos;s Staples
                 </SectionHeader>
 
+                {isStrictPhase && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-[11px] text-amber-400">
+                    You&apos;re in <span className="font-bold capitalize">{currentPhase.replace(/_/g, " ")}</span>. Italicized items with ⚠ are not typically recommended during strict phases — you can still pick them, but the coach-preferred staples are highlighted.
+                  </div>
+                )}
+
                 {/* Protein Sources */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="label-field mb-0">Proteins (max {MAX_PREFERRED_PROTEINS})</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="label-field mb-0">{COLORS.protein.label} (max {MAX_PREFERRED_PROTEINS})</label>
                     <Badge count={preferredProteins.length} max={MAX_PREFERRED_PROTEINS} full={proteinFull} />
                   </div>
+                  <p className="text-[10px] text-jungle-dim mb-2">
+                    💡 Include at least one breakfast-friendly protein — Egg Whites, Greek Yogurt, or Cottage Cheese — so the planner has something light to plate at 7 AM.
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {PROTEIN_SOURCES.map((item) => {
-                      const selected = preferredProteins.includes(item);
-                      const disabled = blacklistedFoods.includes(item) || (proteinFull && !selected);
-                      return (
-                        <button
-                          key={item}
-                          onClick={() => {
-                            if (blacklistedFoods.includes(item)) return;
-                            setPreferredProteins((prev) => {
-                              if (prev.includes(item)) return prev.filter((x) => x !== item);
-                              if (prev.length >= MAX_PREFERRED_PROTEINS) return prev;
-                              return [...prev, item];
-                            });
-                          }}
-                          disabled={blacklistedFoods.includes(item)}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
-                            blacklistedFoods.includes(item)
-                              ? "bg-red-500/10 border-red-500/30 text-red-400/50 line-through cursor-not-allowed"
-                              : selected
-                              ? "bg-blue-500/20 border-blue-500/50 text-blue-400"
-                              : disabled
-                              ? "bg-jungle-deeper/40 border-jungle-border/40 text-jungle-dim/50 cursor-not-allowed"
-                              : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-blue-500/30"
-                          }`}
-                        >
-                          {item}
-                        </button>
-                      );
-                    })}
+                    {PROTEIN_SOURCES.map((item) => (
+                      <StapleButton
+                        key={item}
+                        item={item}
+                        kind="protein"
+                        selected={preferredProteins.includes(item)}
+                        listFull={proteinFull}
+                        onToggle={() =>
+                          setPreferredProteins((prev) => {
+                            if (prev.includes(item)) return prev.filter((x) => x !== item);
+                            if (prev.length >= MAX_PREFERRED_PROTEINS) return prev;
+                            return [...prev, item];
+                          })
+                        }
+                      />
+                    ))}
                   </div>
+                  {!hasBreakfastProtein && preferredProteins.length > 0 && (
+                    <p className="text-[10px] text-amber-400 mt-1.5">
+                      ⚠ No breakfast-friendly protein picked. Consider adding Egg Whites or Greek Yogurt.
+                    </p>
+                  )}
                   <button
                     onClick={() => setPreferredProteins(rec.proteins.slice(0, MAX_PREFERRED_PROTEINS))}
-                    className="mt-2 text-[10px] px-2 py-1 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20"
+                    className={`mt-2 text-[10px] px-2 py-1 rounded-md border ${COLORS.protein.rec}`}
                   >
                     ✨ Use recommended: {rec.proteins.join(" + ")}
                   </button>
@@ -1295,44 +1384,39 @@ export default function SettingsPage() {
 
                 {/* Carb Sources */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="label-field mb-0">Carbs (max {MAX_PREFERRED_CARBS})</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="label-field mb-0">{COLORS.carb.label} (max {MAX_PREFERRED_CARBS})</label>
                     <Badge count={preferredCarbs.length} max={MAX_PREFERRED_CARBS} full={carbFull} />
                   </div>
+                  <p className="text-[10px] text-jungle-dim mb-2">
+                    💡 Include at least one breakfast-friendly carb — Oats, Cream of Rice, or Ezekiel Bread — so early meals don&apos;t default to plain white rice.
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {CARB_SOURCES.map((item) => {
-                      const selected = preferredCarbs.includes(item);
-                      const disabled = blacklistedFoods.includes(item) || (carbFull && !selected);
-                      return (
-                        <button
-                          key={item}
-                          onClick={() => {
-                            if (blacklistedFoods.includes(item)) return;
-                            setPreferredCarbs((prev) => {
-                              if (prev.includes(item)) return prev.filter((x) => x !== item);
-                              if (prev.length >= MAX_PREFERRED_CARBS) return prev;
-                              return [...prev, item];
-                            });
-                          }}
-                          disabled={blacklistedFoods.includes(item)}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
-                            blacklistedFoods.includes(item)
-                              ? "bg-red-500/10 border-red-500/30 text-red-400/50 line-through cursor-not-allowed"
-                              : selected
-                              ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
-                              : disabled
-                              ? "bg-jungle-deeper/40 border-jungle-border/40 text-jungle-dim/50 cursor-not-allowed"
-                              : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-amber-500/30"
-                          }`}
-                        >
-                          {item}
-                        </button>
-                      );
-                    })}
+                    {CARB_SOURCES.map((item) => (
+                      <StapleButton
+                        key={item}
+                        item={item}
+                        kind="carb"
+                        selected={preferredCarbs.includes(item)}
+                        listFull={carbFull}
+                        onToggle={() =>
+                          setPreferredCarbs((prev) => {
+                            if (prev.includes(item)) return prev.filter((x) => x !== item);
+                            if (prev.length >= MAX_PREFERRED_CARBS) return prev;
+                            return [...prev, item];
+                          })
+                        }
+                      />
+                    ))}
                   </div>
+                  {!hasBreakfastCarb && preferredCarbs.length > 0 && (
+                    <p className="text-[10px] text-amber-400 mt-1.5">
+                      ⚠ No breakfast-friendly carb picked. Consider adding Oats (rolled) or Cream of Rice.
+                    </p>
+                  )}
                   <button
                     onClick={() => setPreferredCarbs(rec.carbs.slice(0, MAX_PREFERRED_CARBS))}
-                    className="mt-2 text-[10px] px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+                    className={`mt-2 text-[10px] px-2 py-1 rounded-md border ${COLORS.carb.rec}`}
                   >
                     ✨ Use recommended: {rec.carbs.join(" + ")}
                   </button>
@@ -1341,75 +1425,68 @@ export default function SettingsPage() {
                 {/* Fat Sources */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="label-field mb-0">Fats (max {MAX_PREFERRED_FATS})</label>
+                    <label className="label-field mb-0">{COLORS.fat.label} (max {MAX_PREFERRED_FATS})</label>
                     <Badge count={preferredFats.length} max={MAX_PREFERRED_FATS} full={fatFull} />
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {FAT_SOURCES.map((item) => {
-                      const selected = preferredFats.includes(item);
-                      const disabled = blacklistedFoods.includes(item) || (fatFull && !selected);
-                      return (
-                        <button
-                          key={item}
-                          onClick={() => {
-                            if (blacklistedFoods.includes(item)) return;
-                            setPreferredFats((prev) => {
-                              if (prev.includes(item)) return prev.filter((x) => x !== item);
-                              if (prev.length >= MAX_PREFERRED_FATS) return prev;
-                              return [...prev, item];
-                            });
-                          }}
-                          disabled={blacklistedFoods.includes(item)}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
-                            blacklistedFoods.includes(item)
-                              ? "bg-red-500/10 border-red-500/30 text-red-400/50 line-through cursor-not-allowed"
-                              : selected
-                              ? "bg-rose-500/20 border-rose-500/50 text-rose-400"
-                              : disabled
-                              ? "bg-jungle-deeper/40 border-jungle-border/40 text-jungle-dim/50 cursor-not-allowed"
-                              : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-rose-500/30"
-                          }`}
-                        >
-                          {item}
-                        </button>
-                      );
-                    })}
+                    {FAT_SOURCES.map((item) => (
+                      <StapleButton
+                        key={item}
+                        item={item}
+                        kind="fat"
+                        selected={preferredFats.includes(item)}
+                        listFull={fatFull}
+                        onToggle={() =>
+                          setPreferredFats((prev) => {
+                            if (prev.includes(item)) return prev.filter((x) => x !== item);
+                            if (prev.length >= MAX_PREFERRED_FATS) return prev;
+                            return [...prev, item];
+                          })
+                        }
+                      />
+                    ))}
                   </div>
                   <button
                     onClick={() => setPreferredFats(rec.fats.slice(0, MAX_PREFERRED_FATS))}
-                    className="mt-2 text-[10px] px-2 py-1 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
+                    className={`mt-2 text-[10px] px-2 py-1 rounded-md border ${COLORS.fat.rec}`}
                   >
                     ✨ Use recommended: {rec.fats.join(" + ")}
                   </button>
                 </div>
 
-                {/* Blacklisted Foods */}
+                {/* Vegetable Sources */}
                 <div>
-                  <label className="label-field">Blacklist (never include)</label>
-                  <p className="text-[10px] text-jungle-dim mt-0.5 mb-2">
-                    Long-press or click any food above, then tap here to blacklist it
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="label-field mb-0">{COLORS.vegetable.label} (max {MAX_PREFERRED_VEGETABLES})</label>
+                    <Badge count={preferredVegetables.length} max={MAX_PREFERRED_VEGETABLES} full={vegFull} />
+                  </div>
+                  <p className="text-[10px] text-jungle-dim mb-2">
+                    Every lunch, dinner, and snack gets a vegetable plated with it. Veg carbs are subtracted from that meal&apos;s carb budget so your macros stay on target. Breakfast stays clean.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {[...PROTEIN_SOURCES, ...CARB_SOURCES, ...FAT_SOURCES]
-                      .filter((f) => !preferredProteins.includes(f) && !preferredCarbs.includes(f) && !preferredFats.includes(f))
-                      .map((item) => (
-                        <button
-                          key={item}
-                          onClick={() =>
-                            setBlacklistedFoods((prev) =>
-                              prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
-                            )
-                          }
-                          className={`px-2 py-1 rounded-lg text-[10px] font-medium border transition-colors ${
-                            blacklistedFoods.includes(item)
-                              ? "bg-red-500/20 border-red-500/50 text-red-400"
-                              : "bg-jungle-deeper border-jungle-border text-jungle-dim hover:border-red-500/30"
-                          }`}
-                        >
-                          {blacklistedFoods.includes(item) ? "✕ " : ""}{item}
-                        </button>
-                      ))}
+                    {VEGETABLE_SOURCES.map((item) => (
+                      <StapleButton
+                        key={item}
+                        item={item}
+                        kind="vegetable"
+                        selected={preferredVegetables.includes(item)}
+                        listFull={vegFull}
+                        onToggle={() =>
+                          setPreferredVegetables((prev) => {
+                            if (prev.includes(item)) return prev.filter((x) => x !== item);
+                            if (prev.length >= MAX_PREFERRED_VEGETABLES) return prev;
+                            return [...prev, item];
+                          })
+                        }
+                      />
+                    ))}
                   </div>
+                  <button
+                    onClick={() => setPreferredVegetables(rec.vegetables.slice(0, MAX_PREFERRED_VEGETABLES))}
+                    className={`mt-2 text-[10px] px-2 py-1 rounded-md border ${COLORS.vegetable.rec}`}
+                  >
+                    ✨ Use recommended: {rec.vegetables.join(" + ")}
+                  </button>
                 </div>
               </div>
                 );

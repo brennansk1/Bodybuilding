@@ -69,7 +69,7 @@ class PreferencesCreate(BaseModel):
     preferred_proteins: list[str] = Field(default_factory=list)
     preferred_carbs: list[str] = Field(default_factory=list)
     preferred_fats: list[str] = Field(default_factory=list)
-    blacklisted_foods: list[str] = Field(default_factory=list)
+    preferred_vegetables: list[str] = Field(default_factory=list)
 
 
 class OnboardingCompleteResponse(BaseModel):
