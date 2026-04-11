@@ -1,5 +1,19 @@
-# Development overrides — automatically loaded by `docker compose up`
-# For production: docker compose -f docker-compose.yml up
+# Development overrides — automatically loaded by `docker compose up`.
+#
+# Backend keeps a bind mount + --reload so code edits on the host are
+# picked up immediately — useful for in-place fixes on the deployed
+# server without a full image rebuild.
+#
+# Frontend runs in PRODUCTION mode (pre-built) because Next.js dev mode
+# JIT-compiles each page on first visit, which was taking 10-180 seconds
+# per page on the deployed server. Production mode is pre-built during
+# `docker compose build frontend` and serves pages instantly.
+#
+# To temporarily switch the frontend back to dev mode locally (hot
+# reload), create a docker-compose.local.yml (gitignored) with the
+# appropriate override and run:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                  -f docker-compose.local.yml up -d
 services:
   backend:
     build:
@@ -15,11 +29,3 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  frontend:
-    build:
-      target: development
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-    command: npx next dev --turbo -H 0.0.0.0
