@@ -126,6 +126,13 @@ _CLUSTERS: dict[str, list[str]] = {
     "shoulders":   ["front_delt", "side_delt", "rear_delt", "traps"],
     "arms":        ["biceps", "triceps", "forearms"],
     "chest_back":  ["chest", "back"],
+    # ── Balanced-division finishers (classic, open, figure, wphysique) ──
+    # These keep the day 4/5 of a 5-day split under 4 muscles each so the
+    # session duration budget can hit every muscle at its prescribed volume.
+    # "delts_focus" omits traps from the shoulder day because traps already
+    # get 2× frequency from pull-day compounds (shrugs spill over).
+    "delts_focus":    ["front_delt", "side_delt", "rear_delt"],
+    "delts_arms":     ["front_delt", "side_delt", "rear_delt", "biceps", "triceps"],
     # FST-7 Asymmetrical Specific
     "legs_quad_bias": ["quads", "calves"],
     "back_biceps":    ["back", "rear_delt", "biceps", "traps"],
@@ -399,11 +406,18 @@ def _max_slots(offsets: list[int], min_gap_days: int) -> int:
 #   3. Add accessory muscles (abs, forearms, calves) to days with headroom
 #   4. Remove hidden muscles from training days (e.g., legs for MP)
 
-# Split archetypes — starting points that get customized
+# Default balanced archetypes — used for mens_open, classic_physique,
+# womens_physique, womens_figure. Days are kept at ≤4 muscles so the
+# session duration budget (105 min) fits full volume without trimming.
+#
+# The 4-day combines delts + arms into one isolation day (5 muscles but
+# all isolation work). The 5-day separates delts and arms into their
+# own days so both get dedicated attention. The 6-day is an Arnold-style
+# PPL×2 which hits each muscle group 2× per week at full intensity.
 _ARCHETYPES: dict[int, list[list[str]]] = {
     3: [["push"], ["pull"], ["legs"]],
-    4: [["push"], ["pull"], ["legs"], ["shoulders", "arms"]],
-    5: [["push"], ["pull"], ["legs"], ["shoulders", "arms"], ["chest_back"]],
+    4: [["push"], ["pull"], ["legs"], ["delts_arms"]],
+    5: [["push"], ["pull"], ["legs"], ["delts_focus"], ["arms"]],
     6: [["push"], ["pull"], ["legs"], ["push"], ["pull"], ["legs"]],
 }
 
