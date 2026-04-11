@@ -400,23 +400,31 @@ def _mins_to_time(mins: int) -> str:
 # ─── Main generator ─────────────────────────────────────────────────────────
 
 def _prioritize_preferred(foods: list[FoodItem], preferred_names: list[str]) -> list[FoodItem]:
-    """Sort foods so user-preferred items come first.
+    """Sort foods so user-preferred items come first, preserving phase-rank order.
 
     Uses substring matching so "White Rice" matches "White Rice (cooked)", etc.
+    Deterministic: preferred foods stay in the caller's preference order; the rest
+    stay in phase-rank order. This is critical for meal-plan stability — coaches
+    repeat 2-3 staples across every meal, not a new random pick each regen.
     """
     if not preferred_names:
         return foods
     lower_prefs = [n.lower() for n in preferred_names]
 
-    def _is_preferred(f: FoodItem) -> bool:
+    def _preferred_rank(f: FoodItem) -> int | None:
         fname = f.name.lower()
-        return any(pref in fname for pref in lower_prefs)
+        for idx, pref in enumerate(lower_prefs):
+            if pref in fname:
+                return idx
+        return None
 
-    preferred = [f for f in foods if _is_preferred(f)]
-    rest = [f for f in foods if not _is_preferred(f)]
-    random.shuffle(preferred)
-    random.shuffle(rest)
-    return preferred + rest
+    ranked = [(f, _preferred_rank(f)) for f in foods]
+    preferred = sorted(
+        [(f, r) for f, r in ranked if r is not None],
+        key=lambda pair: pair[1],  # type: ignore[arg-type]
+    )
+    rest = [f for f, r in ranked if r is None]
+    return [f for f, _ in preferred] + rest
 
 
 def _exclude_blacklisted(foods: list[FoodItem], blacklisted: list[str]) -> list[FoodItem]:
@@ -475,11 +483,17 @@ def generate_meal_plan(
     fats = get_available_foods(phase, restrictions, "fat")
     vegetables = get_available_foods(phase, restrictions, "vegetable")
 
-    # Apply user blacklist and preference ordering
+    # Apply user blacklist and preference ordering.
+    # Coach principle: an elite prep rotates 2-3 proteins / 2-3 carbs / 1-2 fats,
+    # never 8+. We clip user preferences to that coach-recommended maximum so that
+    # picking 10 proteins in Settings doesn't inject extra variety into the plan.
     bl = blacklisted_foods or []
-    proteins = _prioritize_preferred(_exclude_blacklisted(proteins, bl), preferred_proteins or [])
-    carbs_all = _prioritize_preferred(_exclude_blacklisted(carbs_all, bl), preferred_carbs or [])
-    fats = _prioritize_preferred(_exclude_blacklisted(fats, bl), preferred_fats or [])
+    clipped_proteins = (preferred_proteins or [])[:3]
+    clipped_carbs = (preferred_carbs or [])[:3]
+    clipped_fats = (preferred_fats or [])[:2]
+    proteins = _prioritize_preferred(_exclude_blacklisted(proteins, bl), clipped_proteins)
+    carbs_all = _prioritize_preferred(_exclude_blacklisted(carbs_all, bl), clipped_carbs)
+    fats = _prioritize_preferred(_exclude_blacklisted(fats, bl), clipped_fats)
 
     # Peri-workout specific pools
     peri_proteins = [p for p in proteins if p.peri_workout] or proteins[:3]

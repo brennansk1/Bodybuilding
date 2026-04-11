@@ -174,7 +174,15 @@ export default function NutritionPage() {
   const [showCheatForm, setShowCheatForm] = useState(false);
   const [cheatDesc, setCheatDesc] = useState("");
   const [cheatCals, setCheatCals] = useState("");
-  const [cheatLogged, setCheatLogged] = useState(false);
+  const [cheatLogging, setCheatLogging] = useState(false);
+  interface CheatStats {
+    allowed: number;
+    used_this_week: number;
+    remaining: number;
+    week_start: string;
+    recent: { date: string; description: string; calories: number }[];
+  }
+  const [cheatStats, setCheatStats] = useState<CheatStats | null>(null);
   const [shoppingOpen, setShoppingOpen] = useState(false);
   const [shoppingLoading, setShoppingLoading] = useState(false);
   const [shoppingList, setShoppingList] = useState<Record<string, unknown[]> | null>(null);
@@ -184,6 +192,7 @@ export default function NutritionPage() {
     if (!user) return;
 
     setFetching(true);
+    api.get<CheatStats>("/engine3/cheat-meal/stats").then(setCheatStats).catch(() => {});
     Promise.all([
       api.get<Prescription>("/engine3/prescription/current").catch(() => null),
       api.get<DailyTotals>(`/engine3/daily-totals/${today}`).catch(() => null),
@@ -199,6 +208,27 @@ export default function NutritionPage() {
       if (tot) setDailyTotals(tot);
     }).finally(() => setFetching(false));
   }, [user, loading, router]);
+
+  const logCheatMeal = async () => {
+    if (!cheatDesc.trim()) return;
+    setCheatLogging(true);
+    try {
+      const stats = await api.post<CheatStats>("/engine3/cheat-meal", {
+        description: cheatDesc.trim(),
+        calories: parseInt(cheatCals || "0") || 0,
+      });
+      setCheatStats(stats);
+      setCheatDesc("");
+      setCheatCals("");
+      setShowCheatForm(false);
+      const verb = stats.used_this_week > stats.allowed ? "logged (over allowance)" : "logged";
+      showToast(`Cheat meal ${verb}`, stats.used_this_week > stats.allowed ? "warning" : "success");
+    } catch {
+      showToast("Couldn't log cheat meal", "error");
+    } finally {
+      setCheatLogging(false);
+    }
+  };
 
   const regenerateMealPlan = async () => {
     if (!window.confirm("Regenerate meal plan? Your current plan will be replaced.")) return;
@@ -572,38 +602,79 @@ export default function NutritionPage() {
             <div className="card">
               <button onClick={() => setShowCheatForm(!showCheatForm)}
                 className="w-full flex items-center justify-between text-left">
-                <div>
-                  <h3 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider">Cheat Meal</h3>
-                  <p className="text-[10px] text-jungle-dim mt-0.5">Log off-plan meals for accurate tracking</p>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider">Cheat Meal</h3>
+                    {cheatStats && (() => {
+                      const { used_this_week, allowed } = cheatStats;
+                      const over = used_this_week > allowed;
+                      const at = used_this_week === allowed && allowed > 0;
+                      const color = allowed === 0
+                        ? "bg-jungle-deeper text-jungle-dim border-jungle-border"
+                        : over
+                        ? "bg-red-500/20 text-red-400 border-red-500/50"
+                        : at
+                        ? "bg-amber-500/20 text-amber-400 border-amber-500/50"
+                        : "bg-green-500/20 text-green-400 border-green-500/50";
+                      return (
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${color}`}>
+                          {used_this_week} / {allowed} this week
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <p className="text-[10px] text-jungle-dim mt-0.5">
+                    {cheatStats?.allowed === 0
+                      ? "No cheat meals budgeted this week — strict phase"
+                      : "Log off-plan meals for accurate tracking"}
+                  </p>
                 </div>
                 <svg className={`w-4 h-4 text-jungle-dim transition-transform ${showCheatForm ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-              {showCheatForm && !cheatLogged && (
+              {showCheatForm && (
                 <div className="mt-3 pt-3 border-t border-jungle-border/40 space-y-2">
-                  <div>
-                    <label className="text-[9px] text-jungle-dim uppercase">What did you eat?</label>
-                    <input type="text" value={cheatDesc} onChange={e => setCheatDesc(e.target.value)}
-                      className="input-field mt-0.5 text-xs" placeholder="e.g. Pizza, burger and fries, ice cream..." />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-jungle-dim uppercase">Estimated calories</label>
-                    <input type="number" value={cheatCals} onChange={e => setCheatCals(e.target.value)}
-                      className="input-field mt-0.5 text-xs" placeholder="e.g. 1200" />
-                  </div>
-                  <button
-                    onClick={() => { setCheatLogged(true); showToast("Cheat meal logged", "info"); }}
-                    disabled={!cheatDesc}
-                    className="btn-primary w-full text-xs py-2 disabled:opacity-50">
-                    Log Cheat Meal
-                  </button>
+                  {cheatStats?.allowed === 0 ? (
+                    <p className="text-[11px] text-jungle-muted">
+                      Your current phase has no cheat meal allowance. Adjust in Settings → Nutrition if you&apos;re in maintenance or off-season.
+                    </p>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">What did you eat?</label>
+                        <input type="text" value={cheatDesc} onChange={e => setCheatDesc(e.target.value)}
+                          className="input-field mt-0.5 text-xs" placeholder="e.g. Pizza, burger and fries, ice cream..." />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-jungle-dim uppercase">Estimated calories</label>
+                        <input type="number" value={cheatCals} onChange={e => setCheatCals(e.target.value)}
+                          className="input-field mt-0.5 text-xs" placeholder="e.g. 1200" />
+                      </div>
+                      <button
+                        onClick={logCheatMeal}
+                        disabled={!cheatDesc || cheatLogging}
+                        className="btn-primary w-full text-xs py-2 disabled:opacity-50">
+                        {cheatLogging ? "Logging…" : "Log Cheat Meal"}
+                      </button>
+                      {cheatStats && cheatStats.used_this_week >= cheatStats.allowed && cheatStats.allowed > 0 && (
+                        <p className="text-[10px] text-amber-400">
+                          You&apos;ve already hit your weekly cheat allowance. Logging another puts you over.
+                        </p>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
-              {cheatLogged && (
-                <div className="mt-3 pt-3 border-t border-jungle-border/40 text-center">
-                  <p className="text-xs text-jungle-accent">{cheatDesc} — ~{cheatCals || "?"} kcal logged</p>
-                  <p className="text-[9px] text-jungle-dim mt-1">Factored into today&apos;s adherence calculation</p>
+              {cheatStats && cheatStats.recent.length > 0 && !showCheatForm && (
+                <div className="mt-3 pt-3 border-t border-jungle-border/40 space-y-1">
+                  <p className="text-[9px] text-jungle-dim uppercase">Recent</p>
+                  {cheatStats.recent.slice(0, 3).map((entry, i) => (
+                    <div key={i} className="flex justify-between text-[10px]">
+                      <span className="text-jungle-muted truncate pr-2">{entry.date} · {entry.description}</span>
+                      <span className="text-jungle-dim">~{entry.calories} kcal</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

@@ -8,22 +8,16 @@ interface SortableCardProps {
   id: string;
   label: string;
   editMode: boolean;
+  /** Legacy prop — DOM order now comes from `cardOrder` iteration. Accepted but unused. */
   orderIndex?: number;
   onHide?: () => void;
   children: ReactNode;
 }
 
-/**
- * Wrapper for a dashboard card. Always applies a CSS grid `order` so the
- * visual sequence follows `cardOrder` state. In edit mode it also wires up
- * dnd-kit's useSortable hook for drag-and-drop, an overlay, a drag handle,
- * and a hide button.
- */
 export default function SortableCard({
   id,
   label,
   editMode,
-  orderIndex,
   onHide,
   children,
 }: SortableCardProps) {
@@ -33,7 +27,6 @@ export default function SortableCard({
   });
 
   const style: React.CSSProperties = {
-    order: orderIndex,
     transform: editMode ? CSS.Transform.toString(transform) : undefined,
     transition: editMode ? transition : undefined,
     opacity: isDragging ? 0.5 : 1,
@@ -41,7 +34,12 @@ export default function SortableCard({
   };
 
   return (
-    <div ref={setNodeRef} style={style} data-card-id={id}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      data-card-id={id}
+      className="break-inside-avoid mb-4 sm:mb-6"
+    >
       {editMode && (
         <>
           <div className="absolute inset-0 z-10 border-2 border-dashed border-jungle-accent/40 rounded-2xl pointer-events-none" />
