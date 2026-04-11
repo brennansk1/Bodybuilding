@@ -143,8 +143,8 @@ _CLUSTERS: dict[str, list[str]] = {
     # are hit once directly (shoulders day) and indirectly via pressing.
     "mp_push":         ["chest", "side_delt", "triceps"],
     "mp_pull_width":   ["back", "rear_delt", "biceps"],
-    "mp_shoulders":    ["front_delt", "side_delt", "abs"],
-    "mp_arms_back":    ["biceps", "triceps", "forearms"],
+    "mp_shoulders":    ["front_delt", "side_delt", "rear_delt", "abs"],
+    "mp_arms_back":    ["biceps", "triceps", "back", "forearms"],
     "mp_legs_minimal": ["hamstrings", "calves", "quads"],
     # ── Glute-priority clusters (Bikini, Wellness) ──
     # Opposite of MP: lower body is primary, upper body is ornamental.
