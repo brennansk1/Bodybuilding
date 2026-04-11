@@ -573,13 +573,17 @@ def generate_meal_plan(
     # Peri-workout specific pools
     peri_proteins = [p for p in proteins if p.peri_workout] or proteins[:3]
     peri_carbs = [c for c in carbs_all if c.peri_workout] or carbs_all[:3]
-    # Sustained carbs: exclude peri-workout carbs UNLESS they have breakfast/snack
-    # affinity. Cream of Rice is peri_workout=True but also meal_affinity includes
-    # "breakfast" — it must stay available for rest-day breakfast slots.
-    sustained_carbs = [c for c in carbs_all
-                       if not c.peri_workout
-                       or "breakfast" in c.meal_affinity
-                       or "snack" in c.meal_affinity] or carbs_all
+    # Sustained carbs: non-peri carbs PLUS peri carbs that also have a non-peri
+    # slot affinity (breakfast/snack/lunch_dinner). White Rice is peri_workout=True
+    # but its meal_affinity includes "lunch_dinner" — it belongs at dinner, not
+    # just in the pre/post slots. Cream of Rice is peri + "breakfast". Excluding
+    # those meant a user who picked only White Rice + Cream of Rice + Oats would
+    # get Oats plated at dinner because the other two got filtered out.
+    sustained_carbs = [
+        c for c in carbs_all
+        if not c.peri_workout
+        or any(a in c.meal_affinity for a in ("breakfast", "snack", "lunch_dinner"))
+    ] or carbs_all
 
     # Refeed override
     if is_refeed:
