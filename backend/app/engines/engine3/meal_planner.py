@@ -427,6 +427,40 @@ def _prioritize_preferred(foods: list[FoodItem], preferred_names: list[str]) -> 
     return [f for f, _ in preferred] + rest
 
 
+def compute_filtered_picks(
+    phase: str,
+    dietary_restrictions: list[str] | None,
+    preferred_proteins: list[str] | None,
+    preferred_carbs: list[str] | None,
+    preferred_fats: list[str] | None,
+    preferred_vegetables: list[str] | None,
+) -> dict[str, list[str]]:
+    """Return user picks that got dropped by phase/dietary filtering.
+
+    Used by the router so the nutrition page can show "Sirloin Steak isn't
+    available during cut — pick a leaner option" instead of silently
+    swapping the food. Pure function, no DB, safe to call on every request.
+    """
+    restrictions = dietary_restrictions or []
+    proteins = get_available_foods(phase, restrictions, "protein")
+    carbs = get_available_foods(phase, restrictions, "carb")
+    fats = get_available_foods(phase, restrictions, "fat")
+    vegs = get_available_foods(phase, restrictions, "vegetable")
+
+    def _dropped(picks: list[str] | None, pool: list[FoodItem]) -> list[str]:
+        if not picks:
+            return []
+        pool_names = [f.name.lower() for f in pool]
+        return [p for p in picks if not any(p.lower() in name for name in pool_names)]
+
+    return {
+        "proteins": _dropped(preferred_proteins, proteins),
+        "carbs": _dropped(preferred_carbs, carbs),
+        "fats": _dropped(preferred_fats, fats),
+        "vegetables": _dropped(preferred_vegetables, vegs),
+    }
+
+
 def _strict_filter(foods: list[FoodItem], preferred_names: list[str]) -> list[FoodItem]:
     """Restrict the food pool to ONLY the user's selected items.
 
@@ -503,6 +537,34 @@ def generate_meal_plan(
     clipped_carbs = (preferred_carbs or [])[:3]
     clipped_fats = (preferred_fats or [])[:2]
     clipped_veggies = (preferred_vegetables or [])[:3]
+
+    # Track which user picks were dropped by the phase filter (e.g. Sirloin
+    # during cut) so the caller can surface a warning in the UI. We compute
+    # this by diffing the user's clipped list against the filtered pool's
+    # names, using the same substring matching _strict_filter uses.
+    def _picks_in_pool(picks: list[str], pool: list[FoodItem]) -> tuple[list[str], list[str]]:
+        survivors: list[str] = []
+        dropped: list[str] = []
+        pool_names = [f.name.lower() for f in pool]
+        for pick in picks:
+            lp = pick.lower()
+            if any(lp in name for name in pool_names):
+                survivors.append(pick)
+            else:
+                dropped.append(pick)
+        return survivors, dropped
+
+    _kept_proteins, _dropped_proteins = _picks_in_pool(clipped_proteins, proteins)
+    _kept_carbs, _dropped_carbs = _picks_in_pool(clipped_carbs, carbs_all)
+    _kept_fats, _dropped_fats = _picks_in_pool(clipped_fats, fats)
+    _kept_veggies, _dropped_veggies = _picks_in_pool(clipped_veggies, vegetables)
+    _filtered_picks = {
+        "proteins": _dropped_proteins,
+        "carbs": _dropped_carbs,
+        "fats": _dropped_fats,
+        "vegetables": _dropped_veggies,
+    }
+
     proteins = _prioritize_preferred(_strict_filter(proteins, clipped_proteins), clipped_proteins)
     carbs_all = _prioritize_preferred(_strict_filter(carbs_all, clipped_carbs), clipped_carbs)
     fats = _prioritize_preferred(_strict_filter(fats, clipped_fats), clipped_fats)
@@ -574,21 +636,28 @@ def generate_meal_plan(
     # ── Coach-realistic staple selection ──────────────────────────────────
     #
     # A real bodybuilding prep diet uses a SMALL set of foods repeated across
-    # meals. A typical day: 2-3 protein sources (e.g. chicken breast at most
-    # meals, egg whites at breakfast, white fish post-workout), 2-3 carb
-    # sources (white rice, oats, sweet potato), 1-2 fat sources (olive oil,
-    # almonds), and 1-2 vegetables (broccoli, asparagus).
+    # meals. A typical day: 2-3 protein sources, 2-3 carb sources, 1-2 fat
+    # sources, and 1-2 vegetables rotated across every meal.
     #
-    # The staple pool sizes below mirror real competitor prep sheets.
-    # Phase tightening: peak/cut use fewer staples for GI predictability.
+    # When the user has explicitly picked staples in Settings, we rotate
+    # exactly those (capped to what survived the phase filter). When they
+    # haven't picked anything yet, we fall back to phase-based defaults
+    # that mirror real competitor prep sheets — tighter for peak/cut,
+    # looser for bulk/maintain.
     is_strict_phase = phase in ("peak", "cut")
 
     slot_types_in_plan = list({st for _, _, _, st in slots if st != "any"})
 
-    protein_staple_count = 2 if is_strict_phase else 3
-    carb_staple_count = 2 if is_strict_phase else 3
-    fat_staple_count = 1 if is_strict_phase else 2
-    veg_staple_count = 1 if is_strict_phase else 2
+    def _staple_count(user_picks: list[str], pool: list[FoodItem], default: int) -> int:
+        """Rotate all of the user's surviving picks, or fall back to default."""
+        if user_picks and pool:
+            return max(1, min(len(pool), len(user_picks)))
+        return default
+
+    protein_staple_count = _staple_count(_kept_proteins, proteins, 2 if is_strict_phase else 3)
+    carb_staple_count = _staple_count(_kept_carbs, sustained_carbs, 2 if is_strict_phase else 3)
+    fat_staple_count = _staple_count(_kept_fats, fats, 1 if is_strict_phase else 2)
+    veg_staple_count = _staple_count(_kept_veggies, vegetables, 1 if is_strict_phase else 2)
 
     # Ensure breakfast proteins are included in the daily staple pool.
     # Training days: lean proteins ONLY (egg whites, yogurt) — Whole Eggs add

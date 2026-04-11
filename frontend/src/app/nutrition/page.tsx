@@ -93,6 +93,12 @@ interface MealPlan {
     training: MicroCoverage | null;
     rest: MicroCoverage | null;
   } | null;
+  filtered_picks?: {
+    proteins: string[];
+    carbs: string[];
+    fats: string[];
+    vegetables: string[];
+  } | null;
 }
 
 interface DailyTotals {
@@ -450,6 +456,28 @@ export default function NutritionPage() {
                   {regenerating ? "Generating..." : "Regenerate"}
                 </button>
               </div>
+
+              {mealPlan?.filtered_picks && (() => {
+                const fp = mealPlan.filtered_picks;
+                const all = [
+                  ...fp.proteins.map((n) => ({ name: n, kind: "protein" })),
+                  ...fp.carbs.map((n) => ({ name: n, kind: "carb" })),
+                  ...fp.fats.map((n) => ({ name: n, kind: "fat" })),
+                  ...fp.vegetables.map((n) => ({ name: n, kind: "vegetable" })),
+                ];
+                if (all.length === 0) return null;
+                return (
+                  <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
+                    <p className="text-[11px] text-amber-400 font-semibold mb-1">
+                      ⚠ {all.length} pick{all.length > 1 ? "s" : ""} not available in {mealPlan.phase.replace(/_/g, " ")}
+                    </p>
+                    <p className="text-[10px] text-jungle-muted leading-snug">
+                      These staples were filtered out because coaches drop them during this phase:{" "}
+                      <span className="text-amber-400">{all.map((e) => e.name).join(", ")}</span>. Pick leaner alternatives in Settings → Your Coach&apos;s Staples, or transition phases.
+                    </p>
+                  </div>
+                );
+              })()}
 
               {mealPlanLoading ? (
                 <p className="text-jungle-dim text-xs text-center py-4">Loading meal plan...</p>
