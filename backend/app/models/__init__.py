@@ -1,4 +1,4 @@
-from app.models.user import User  # noqa: F401
+from app.models.user import User, HealthKitApiKey  # noqa: F401
 from app.models.profile import UserProfile  # noqa: F401
 from app.models.measurement import BodyWeightLog, TapeMeasurement, SkinfoldMeasurement  # noqa: F401
 from app.models.diagnostic import LCSALog, PDSLog, HQILog  # noqa: F401
@@ -13,3 +13,4 @@ from app.models.nutrition import (  # noqa: F401
 )
 from app.models.posing import PosingLog  # noqa: F401
 from app.models.sleep import SleepLog  # noqa: F401
+from app.models.notification import NotificationLog  # noqa: F401

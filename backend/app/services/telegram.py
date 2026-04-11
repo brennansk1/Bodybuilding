@@ -4,9 +4,16 @@ and building the fixed-response UX. We do NOT use any LLM here: every
 outgoing message is either a templated response to a known command, or a
 scheduled reminder triggered by the app's existing cron jobs.
 
-Single shared bot architecture: one TELEGRAM_BOT_TOKEN env var is configured
-for the whole deployment; users link their account to the bot by requesting
-a link code from the app UI and sending it to the bot via /start <code>.
+Per-user bot architecture: each athlete creates their own Telegram bot via
+BotFather and pastes the token into Settings. The backend stores the token
+on their UserProfile, calls Telegram's ``setWebhook`` with a unique
+``secret_token`` per user, and the incoming webhook discriminates users by
+matching the Telegram ``X-Telegram-Bot-Api-Secret-Token`` header.
+
+A legacy single-bot fallback is still supported: if the ``TELEGRAM_BOT_TOKEN``
+env var is set, users WITHOUT their own bot can link via the old
+``/start <link_code>`` flow. Users WITH their own bot always route via their
+own token — the fallback is never used for them.
 """
 
 from __future__ import annotations
@@ -24,25 +31,35 @@ _API_BASE = "https://api.telegram.org"
 
 
 def is_enabled() -> bool:
+    """True if at least one bot is available (shared or per-user via token arg)."""
+    return True  # per-user bots don't need global config — always "enabled"
+
+
+def shared_bot_enabled() -> bool:
+    """True if the legacy global TELEGRAM_BOT_TOKEN is configured."""
     return bool(settings.TELEGRAM_BOT_TOKEN)
 
 
-def _url(method: str) -> str:
-    return f"{_API_BASE}/bot{settings.TELEGRAM_BOT_TOKEN}/{method}"
+def _url(method: str, bot_token: str) -> str:
+    return f"{_API_BASE}/bot{bot_token}/{method}"
 
 
 async def send_message(
     chat_id: int | str,
     text: str,
+    *,
+    bot_token: str | None = None,
     reply_markup: dict[str, Any] | None = None,
     parse_mode: str = "HTML",
 ) -> bool:
     """
-    Send a plain HTML message to a Telegram chat. Returns True on 200 OK.
-    Silently no-ops (returning False) if the bot isn't configured.
+    Send an HTML message via the provided bot token. When ``bot_token`` is None
+    the shared fallback (``settings.TELEGRAM_BOT_TOKEN``) is used, if available.
+    Returns True on 200 OK; silently no-ops (False) when no token is available.
     """
-    if not is_enabled():
-        logger.debug("Telegram bot not configured; skipping send")
+    token = bot_token or settings.TELEGRAM_BOT_TOKEN
+    if not token:
+        logger.debug("Telegram send_message skipped: no bot token")
         return False
 
     payload: dict[str, Any] = {
@@ -56,7 +73,7 @@ async def send_message(
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(_url("sendMessage"), json=payload)
+            resp = await client.post(_url("sendMessage", token), json=payload)
             if resp.status_code != 200:
                 logger.warning("Telegram sendMessage failed: %s %s", resp.status_code, resp.text)
                 return False
@@ -66,12 +83,72 @@ async def send_message(
         return False
 
 
+async def get_me(bot_token: str) -> dict | None:
+    """Validate a bot token by calling Telegram's getMe. Returns the bot info
+    dict on success, None on failure. Used to validate user-pasted tokens."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(_url("getMe", bot_token))
+            if resp.status_code != 200:
+                return None
+            body = resp.json()
+            return body.get("result") if body.get("ok") else None
+    except Exception as exc:
+        logger.warning("Telegram getMe failed: %s", exc)
+        return None
+
+
+async def register_webhook(
+    bot_token: str,
+    webhook_url: str,
+    secret_token: str,
+) -> bool:
+    """
+    Call Telegram's setWebhook on the given bot token. Every incoming
+    update will include the ``secret_token`` in an ``X-Telegram-Bot-Api-Secret-Token``
+    header so the backend can route to the right user.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                _url("setWebhook", bot_token),
+                json={
+                    "url": webhook_url,
+                    "secret_token": secret_token,
+                    "allowed_updates": ["message", "callback_query"],
+                    "drop_pending_updates": True,
+                },
+            )
+            return resp.status_code == 200
+    except Exception as exc:
+        logger.warning("Telegram setWebhook failed: %s", exc)
+        return False
+
+
+async def delete_webhook(bot_token: str) -> bool:
+    """Clear a bot's webhook when the user unlinks."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                _url("deleteWebhook", bot_token),
+                json={"drop_pending_updates": True},
+            )
+            return resp.status_code == 200
+    except Exception as exc:
+        logger.warning("Telegram deleteWebhook failed: %s", exc)
+        return False
+
+
+# Legacy alias kept for back-compat
 async def set_webhook(url: str) -> bool:
-    """Admin helper — register the incoming-message webhook URL."""
-    if not is_enabled():
+    """Deprecated: uses the shared fallback bot. Prefer register_webhook()."""
+    if not shared_bot_enabled():
         return False
     async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(_url("setWebhook"), json={"url": url})
+        resp = await client.post(
+            _url("setWebhook", settings.TELEGRAM_BOT_TOKEN),
+            json={"url": url},
+        )
         return resp.status_code == 200
 
 
@@ -194,11 +271,13 @@ def format_meal_plan_summary(meals: list[dict[str, Any]]) -> str:
 
 
 NOTIFICATION_KEYS: list[tuple[str, str]] = [
-    ("workout_reminder", "Workout start reminder"),
-    ("tomorrow_workout", "Tomorrow's workout preview (evening)"),
-    ("meal_reminder", "Meal time reminders"),
-    ("weekly_checkin", "Weekly check-in reminder"),
-    ("missed_checkin", "Missed check-in nudge"),
+    ("workout_tomorrow", "Tomorrow's workout preview (9 PM)"),
+    ("workout_today",    "Today's workout + readiness (7 AM)"),
+    ("meal_reminder",    "Meal time reminders"),
+    ("weekly_checkin",   "Weekly check-in reminder (Sun 9 AM)"),
+    ("missed_checkin",   "Missed check-in nudge (8 PM)"),
+    ("ari_red_zone",     "Low readiness alert (immediate)"),
+    ("refeed_triggered", "Refeed / diet break triggered (immediate)"),
 ]
 
 

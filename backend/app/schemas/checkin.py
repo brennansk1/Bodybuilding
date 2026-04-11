@@ -10,6 +10,31 @@ def _cm(lo: float, hi: float):
 def _sf():
     return Field(default=None, ge=1.0, le=80.0)
 
+class HealthKitPayload(BaseModel):
+    """
+    iPhone Shortcut → backend payload. Shortcuts can read HealthKit quantities
+    (BodyMass, HeartRateVariabilitySDNN, RestingHeartRate, SleepAnalysis) and
+    POST them here via X-API-Key auth. Subjective wellness fields (stress,
+    mood, energy) are optional — the Shortcut can prompt the user or omit.
+    """
+    recorded_date: date | None = None
+    body_weight_kg: float | None = Field(default=None, gt=30, lt=250)
+    # HealthKit only exposes SDNN, not rMSSD. Backend will convert rMSSD ≈ SDNN × 0.8.
+    hrv_sdnn_ms: float | None = Field(default=None, gt=0)
+    # Alternative field name in case the user's Shortcut already converts to rMSSD.
+    hrv_rmssd_ms: float | None = Field(default=None, gt=0)
+    resting_hr: float | None = Field(default=None, gt=20, lt=200)
+    sleep_hours: float | None = Field(default=None, ge=0, le=16)
+    sleep_quality_1_10: float | None = Field(default=None, ge=1, le=10)
+    # Optional subjective wellness
+    stress_1_10: float | None = Field(default=None, ge=1, le=10)
+    mood_1_10: float | None = Field(default=None, ge=1, le=10)
+    energy_1_10: float | None = Field(default=None, ge=1, le=10)
+    # Informational, not yet persisted (future activity tier)
+    step_count: int | None = None
+    notes: str | None = None
+
+
 class DailyCheckin(BaseModel):
     recorded_date: date | None = Field(default=None, description="Date for backfill; defaults to today if omitted")
     body_weight_kg: float | None = Field(default=None, gt=30, lt=250)

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Optional webhook secret — if set, incoming webhook POSTs must include
     # it in the X-Telegram-Bot-Api-Secret-Token header (set via setWebhook).
     TELEGRAM_WEBHOOK_SECRET: str = ""
+    # Public HTTPS base URL of the backend — used when registering per-user
+    # Telegram webhooks. Must be reachable from Telegram's servers.
+    PUBLIC_BASE_URL: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

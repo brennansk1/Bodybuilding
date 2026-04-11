@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -123,6 +124,104 @@ async def get_me(user: User = Depends(get_current_user), db: AsyncSession = Depe
         onboarding_complete=user.onboarding_complete,
         display_name=display_name,
     )
+
+
+# ---------------------------------------------------------------------------
+# HealthKit / iPhone Shortcut API keys
+# ---------------------------------------------------------------------------
+
+import secrets as _secrets
+
+from app.dependencies import hash_api_key
+from app.models.user import HealthKitApiKey
+
+
+class ApiKeyCreate(BaseModel):
+    label: str = "iPhone Shortcut"
+
+
+@router.post("/api-keys")
+async def create_api_key(
+    data: ApiKeyCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new HealthKit API key. The plaintext key is shown ONCE in the
+    response and never stored — the backend keeps only a SHA-256 hash.
+    """
+    raw = "hk_" + _secrets.token_urlsafe(32)
+    prefix = raw[:10]
+    key_obj = HealthKitApiKey(
+        user_id=user.id,
+        api_key_hash=hash_api_key(raw),
+        key_prefix=prefix,
+        label=data.label[:255] if data.label else "iPhone Shortcut",
+    )
+    db.add(key_obj)
+    await db.commit()
+    return {
+        "id": str(key_obj.id),
+        "api_key": raw,
+        "key_prefix": prefix,
+        "label": key_obj.label,
+        "created_at": key_obj.created_at.isoformat() if key_obj.created_at else None,
+        "warning": (
+            "Store this key now — we only ever show it once. "
+            "If you lose it, generate a new one and revoke the old."
+        ),
+    }
+
+
+@router.get("/api-keys")
+async def list_api_keys(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(HealthKitApiKey)
+        .where(HealthKitApiKey.user_id == user.id, HealthKitApiKey.revoked_at.is_(None))
+        .order_by(desc(HealthKitApiKey.created_at))
+    )
+    keys = result.scalars().all()
+    return [
+        {
+            "id": str(k.id),
+            "key_prefix": k.key_prefix,
+            "label": k.label,
+            "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+            "created_at": k.created_at.isoformat() if k.created_at else None,
+        }
+        for k in keys
+    ]
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_api_key(
+    key_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import uuid as _uuid
+    from datetime import datetime as _dt, timezone as _tz
+    try:
+        uuid_val = _uuid.UUID(key_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid key id")
+
+    result = await db.execute(
+        select(HealthKitApiKey).where(
+            HealthKitApiKey.id == uuid_val,
+            HealthKitApiKey.user_id == user.id,
+        )
+    )
+    key_obj = result.scalar_one_or_none()
+    if not key_obj:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    key_obj.revoked_at = _dt.now(_tz.utc)
+    await db.commit()
+    return {"revoked": True, "id": str(key_obj.id)}
 
 
 @router.post("/share-token")

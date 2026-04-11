@@ -143,7 +143,11 @@ _RECOVERY_HOURS: dict[str, float] = {
 }
 
 # Max working sets per session
-_MAX_SETS_PER_SESSION = 25
+# Aligned with training.py's 90-min runtime budget. At the moderate DUP
+# profile (150 s compound rest / 75 s isolation rest), a 90-min session
+# fits ~20 working sets comfortably. 22 is our design-time template ceiling;
+# the runtime budget in training.py is authoritative and will trim further.
+_MAX_SETS_PER_SESSION = 22
 
 # HQI site → training muscles
 _HQI_TO_MUSCLES: dict[str, list[str]] = {

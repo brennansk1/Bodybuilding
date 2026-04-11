@@ -117,9 +117,16 @@ async def lifespan(app: FastAPI):
     cron_task = asyncio.create_task(cron_loop(interval_seconds=21600))
     logger.info("Background cron started (6h interval)")
 
+    # Start telegram notification dispatcher (every 15 min) — separate loop
+    # so time-windowed notifications (7 AM, 9 PM, etc.) have sub-hour resolution.
+    from app.services.notification_dispatcher import notification_loop
+    notif_task = asyncio.create_task(notification_loop(interval_seconds=900))
+    logger.info("Notification dispatcher started (15m interval)")
+
     yield
 
     cron_task.cancel()
+    notif_task.cancel()
     await engine.dispose()
 
 

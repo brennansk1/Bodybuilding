@@ -338,9 +338,19 @@ async def update_profile(
             continue
 
     if "preferences" in data and isinstance(data["preferences"], dict):
-        # Force a copy so SQLAlchemy detects change in JSONB column
+        # Force a copy so SQLAlchemy detects change in JSONB column.
+        # Deep-merge one level so callers can PATCH a nested key like
+        # `dashboard_settings.heatmap_floor` without wiping sibling fields
+        # under `dashboard_settings`.
         current = dict(profile.preferences or {})
-        current.update(data["preferences"])
+        incoming = data["preferences"]
+        for k, v in incoming.items():
+            if isinstance(v, dict) and isinstance(current.get(k), dict):
+                merged = dict(current[k])
+                merged.update(v)
+                current[k] = merged
+            else:
+                current[k] = v
         profile.preferences = current
         logger.debug("Preferences updated for user %s", user.id)
 

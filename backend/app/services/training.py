@@ -126,6 +126,32 @@ _MUSCLE_ORDER = [
 # out with accessories from the day's remaining candidate pool.
 MIN_EXERCISES_PER_SESSION = 5
 
+# Soft cap on total distinct exercises per session. The top-up pass won't
+# add accessories beyond this; a pro bodybuilder session is 5-7 exercises,
+# not 10. Combined with the duration budget below, this prevents the
+# "Wednesday chest day was 2 hours" outlier.
+MAX_EXERCISES_PER_SESSION = 7
+
+# Hard cap on total session wall-clock time. Olympia-grade sessions run
+# 60-90 min (Jay Cutler, Phil Heath, Hadi Choopan all quote this range).
+# The set-generation loop tracks a running_seconds accumulator and spills
+# excess sets forward into global_spillover when adding more would breach
+# this budget.
+SESSION_DURATION_BUDGET_MIN = 90
+SESSION_DURATION_BUDGET_SEC = SESSION_DURATION_BUDGET_MIN * 60
+
+# Per-muscle cap on working sets in a single session. Lowered from 12 → 10
+# because 12 × 4 muscles = 48 sets was the root cause of 2-hour sessions.
+# Sets beyond this get pushed to next day's spillover pool.
+MAX_SETS_PER_MUSCLE_PER_SESSION = 10
+
+# General warm-up time budget (global, not per-exercise). 6 min of light
+# cardio + dynamic mobility — was 8 min in the legacy model.
+GENERAL_WARMUP_SECONDS = 6 * 60
+
+# Per-exercise transition overhead (plate loading, finding the bench).
+EXERCISE_TRANSITION_SECONDS = 75
+
 # ---------------------------------------------------------------------------
 # RIR ↔ RPE conversion
 # ---------------------------------------------------------------------------
@@ -268,12 +294,14 @@ DEFAULT_VOLUME: dict[str, int] = {
     "forearms":   4,
 }
 
-# Warm-up scheme: percentages of working weight × reps for each step
+# Warm-up scheme: percentages of working weight × reps for each step.
+# Trimmed from 4 ramps to 3 (dropped the 85% single) — a pro bodybuilder's
+# warm-up doesn't need a near-max single before the working set. Saves ~3 min
+# per muscle (4 ramps × 4 muscles → ~12 min back in the session budget).
 _WARMUP_SCHEME = [
-    (0.40, 10),   # 40% × 10 reps
-    (0.60, 5),    # 60% × 5 reps
-    (0.75, 3),    # 75% × 3 reps
-    (0.85, 1),    # 85% × 1 rep
+    (0.50, 10),   # 50% × 10 reps — general warm-up
+    (0.70, 5),    # 70% × 5 reps  — neural groove
+    (0.85, 3),    # 85% × 3 reps  — load exposure
 ]
 
 # Muscles where bilateral asymmetry >5% triggers unilateral preference
@@ -675,40 +703,67 @@ _FST7_INTENSITY: dict[str, dict] = {
 }
 
 
+_WORKING_SET_TUT_SECONDS = 45    # average time-under-tension per working set
+_WARMUP_SET_TUT_SECONDS = 25     # warmup reps are faster
+_WARMUP_REST_SECONDS = 60        # fixed rest between warmup sets
+
+
 def estimate_session_duration_minutes(session_sets: list) -> int:
     """
     Estimate how long a session will take given a list of TrainingSet rows.
 
-    Model:
-      - Each working set: ~45 s under tension + rest_seconds between sets.
-      - Each warm-up set: ~25 s work + 60 s rest.
-      - Per distinct exercise: + 90 s for setup/transition (load plates, find bench).
-      - Fixed 8 min general warm-up at the start.
+    Model (shared with the runtime budget in the set-generation loop):
+      - General warm-up block: 6 min fixed
+      - Per working set: TUT (~45 s) + rest_seconds
+      - Per warm-up set: TUT (~25 s) + 60 s rest
+      - Per distinct exercise: + 75 s transition (plate loading, find bench)
+      - Last set of the session: subtract one rest window (you leave after)
 
     Returns a whole number of minutes. Returns 0 when session has no sets.
     """
     if not session_sets:
         return 0
 
-    total_seconds = 8 * 60  # general warm-up
+    total_seconds = GENERAL_WARMUP_SECONDS
     distinct_exercises: set = set()
+    last_working_rest = 0
     for ts in session_sets:
         ex_id = getattr(ts, "exercise_id", None)
         if ex_id is not None:
             distinct_exercises.add(ex_id)
         rest = getattr(ts, "rest_seconds", None) or 90
         if getattr(ts, "is_warmup", False):
-            total_seconds += 25 + min(rest, 60)
+            total_seconds += _WARMUP_SET_TUT_SECONDS + _WARMUP_REST_SECONDS
         else:
-            total_seconds += 45 + rest
+            total_seconds += _WORKING_SET_TUT_SECONDS + rest
+            last_working_rest = rest
 
-    # Subtract the last set's rest — you don't rest after the last set.
-    # Use average rest as a rough correction.
-    total_seconds -= 90
+    # You don't actually rest after the FINAL working set of the session —
+    # subtract that one rest window.
+    total_seconds -= last_working_rest
 
-    total_seconds += 90 * len(distinct_exercises)
+    total_seconds += EXERCISE_TRANSITION_SECONDS * len(distinct_exercises)
 
     return max(0, round(total_seconds / 60))
+
+
+def _estimate_exercise_contribution_seconds(
+    n_working_sets: int,
+    working_rest_sec: int,
+    include_warmup: bool,
+    warmup_set_count: int = 3,
+) -> int:
+    """
+    Used by the set-generation loop to forecast how much wall-clock a new
+    exercise will add before actually writing sets. Mirrors the shared
+    model above so the runtime accumulator stays in sync with
+    estimate_session_duration_minutes.
+    """
+    secs = EXERCISE_TRANSITION_SECONDS
+    if include_warmup and n_working_sets > 0:
+        secs += warmup_set_count * (_WARMUP_SET_TUT_SECONDS + _WARMUP_REST_SECONDS)
+    secs += n_working_sets * (_WORKING_SET_TUT_SECONDS + working_rest_sec)
+    return secs
 
 
 def compute_workout_window(
@@ -754,11 +809,14 @@ def _compute_rest_seconds(
     """
     Rest-time lookup: movement_pattern × load_type × DUP intensity.
 
-    Heavy compound:   180–300s
-    Moderate compound: 120–180s
-    Heavy isolation:   90–120s
-    Moderate isolation: 60–90s
-    Warmup:           60s
+    Olympia-grade prep rest windows (trimmed for the 90-min session budget):
+      Heavy compound:   210 s (3:30) — was 240 s
+      Moderate compound: 150 s (2:30) — was 180 s
+      Light compound:    120 s (2:00)
+      Heavy isolation:   90 s (1:30)
+      Moderate isolation: 75 s (1:15) — was 90 s
+      Light isolation:   60 s (1:00)
+      Warmup:            60 s
     """
     if is_warmup:
         return 60
@@ -768,17 +826,17 @@ def _compute_rest_seconds(
 
     if is_compound:
         if dup_profile == "heavy":
-            return 240  # 4 min — heavy compounds need full ATP recovery
+            return 210  # 3:30 — heavy compounds, still enough for ATP recovery
         if dup_profile == "light":
-            return 120  # 2 min — lighter loads recover faster
-        return 180  # 3 min — moderate default
+            return 120  # 2 min
+        return 150  # 2:30 — moderate default
     else:
         # Isolation
         if dup_profile == "heavy":
-            return 105  # ~1:45
+            return 90   # 1:30
         if dup_profile == "light":
             return 60   # 1 min
-        return 90  # 1:30 — moderate default
+        return 75      # 1:15 — moderate default (trimmed from 90)
 
 
 def _is_isolation_candidate(ex_name: str, equipment: str | None, movement_pattern: str | None) -> bool:
@@ -1321,6 +1379,11 @@ async def generate_program_sessions(
             # One intensification technique per muscle per session (MRV week only).
             intensified_muscles: set = set()
 
+            # Runtime session duration budget — every time we add sets, advance
+            # this clock by the exercise's estimated contribution. When we're
+            # close to SESSION_DURATION_BUDGET_SEC, trim sets or skip to spillover.
+            running_seconds = GENERAL_WARMUP_SECONDS
+
             set_number = 1
             for db_muscle in ordered:
                 info = db_muscle_info[db_muscle]
@@ -1347,14 +1410,14 @@ async def generate_program_sessions(
                     global_spillover[db_muscle] = 0
 
                 # -------------------------------------------------------------------
-                # Rule 1 C: Hard Session Cap & Dynamic Spillover Routing
-                # If total volume for this single muscle exceeds ~12 sets in ONE day,
-                # forcefully cap it to 12. Take the remainder and carry it forward.
+                # Rule 1 C: Per-Muscle Session Cap & Dynamic Spillover Routing
+                # Cap at MAX_SETS_PER_MUSCLE_PER_SESSION (10). Anything above
+                # that gets pushed forward to the next training day's budget.
                 # -------------------------------------------------------------------
-                if total_sets > 12:
-                    excess = total_sets - 12
+                if total_sets > MAX_SETS_PER_MUSCLE_PER_SESSION:
+                    excess = total_sets - MAX_SETS_PER_MUSCLE_PER_SESSION
                     global_spillover[db_muscle] = global_spillover.get(db_muscle, 0) + excess
-                    total_sets = 12
+                    total_sets = MAX_SETS_PER_MUSCLE_PER_SESSION
 
                 # --- Fix GEN-02: Delt sub-group lookup with fallback ----------
                 # When db_muscle is a delt sub-group, pass the sub-role for
@@ -1460,8 +1523,54 @@ async def generate_program_sessions(
                     ex_load_type = getattr(ex, "load_type", "") or ""
                     working_rest = _compute_rest_seconds(ex_pattern, ex_load_type, day_dup_profile)
 
+                    # -----------------------------------------------------------
+                    # Runtime session duration budget — trim this exercise's set
+                    # count if adding them would exceed SESSION_DURATION_BUDGET.
+                    # -----------------------------------------------------------
+                    will_include_warmup = need_warmup and bool(prescribed_weight)
+                    contribution = _estimate_exercise_contribution_seconds(
+                        n_working_sets=n_sets,
+                        working_rest_sec=working_rest,
+                        include_warmup=will_include_warmup,
+                        warmup_set_count=len(_WARMUP_SCHEME),
+                    )
+                    budget_remaining = SESSION_DURATION_BUDGET_SEC - running_seconds
+                    if contribution > budget_remaining:
+                        # Reduce n_sets until it fits, with a floor of 2 sets.
+                        # Solve: overhead + n × (TUT + rest) <= budget_remaining
+                        per_set_sec = _WORKING_SET_TUT_SECONDS + working_rest
+                        overhead = EXERCISE_TRANSITION_SECONDS + (
+                            (len(_WARMUP_SCHEME) * (_WARMUP_SET_TUT_SECONDS + _WARMUP_REST_SECONDS))
+                            if will_include_warmup else 0
+                        )
+                        max_fit = max(0, (budget_remaining - overhead) // per_set_sec)
+                        if max_fit < 2:
+                            # Can't even fit a minimum-viable 2 sets — skip this
+                            # exercise entirely and push its volume to spillover
+                            # so the next session picks it up.
+                            global_spillover[db_muscle] = global_spillover.get(db_muscle, 0) + n_sets
+                            continue  # skip to next assignment
+                        # Trim + push the excess forward
+                        spilled = n_sets - int(max_fit)
+                        if spilled > 0:
+                            global_spillover[db_muscle] = global_spillover.get(db_muscle, 0) + spilled
+                        n_sets = int(max_fit)
+                        contribution = _estimate_exercise_contribution_seconds(
+                            n_working_sets=n_sets,
+                            working_rest_sec=working_rest,
+                            include_warmup=will_include_warmup,
+                            warmup_set_count=len(_WARMUP_SCHEME),
+                        )
+
+                    # Soft cap on distinct exercises — don't exceed the target
+                    if len(session_exercise_ids) >= MAX_EXERCISES_PER_SESSION and ex.id not in session_exercise_ids:
+                        global_spillover[db_muscle] = global_spillover.get(db_muscle, 0) + n_sets
+                        continue
+
+                    running_seconds += contribution
+
                     # Warm-up sets for the first exercise per muscle group
-                    if need_warmup and prescribed_weight:
+                    if will_include_warmup:
                         for wu in _compute_warmup_sets(prescribed_weight):
                             ts_wu = TrainingSet(
                                 session_id=session.id,
@@ -1557,6 +1666,15 @@ async def generate_program_sessions(
 
                 while len(session_exercise_ids) < MIN_EXERCISES_PER_SESSION:
                     added_one = False
+                    # Respect the session duration budget during top-up. If we're
+                    # already at budget, stop adding accessories — a 5-exercise
+                    # minimum is a soft preference, not a hard rule that should
+                    # blow past 90 minutes.
+                    if running_seconds >= SESSION_DURATION_BUDGET_SEC:
+                        break
+                    # Also hard-stop at MAX_EXERCISES_PER_SESSION (7).
+                    if len(session_exercise_ids) >= MAX_EXERCISES_PER_SESSION:
+                        break
                     for pad_muscle in padded_muscles:
                         if len(session_exercise_ids) >= MIN_EXERCISES_PER_SESSION:
                             break
@@ -1569,6 +1687,16 @@ async def generate_program_sessions(
                             cand_pattern = (getattr(cand, "movement_pattern", "") or "").lower()
                             cand_load = getattr(cand, "load_type", "") or ""
                             cand_rest = _compute_rest_seconds(cand_pattern, cand_load, session_dup_profile)
+
+                            # Duration budget check for this accessory
+                            cand_contribution = _estimate_exercise_contribution_seconds(
+                                n_working_sets=accessory_sets_each,
+                                working_rest_sec=cand_rest,
+                                include_warmup=False,
+                                warmup_set_count=0,
+                            )
+                            if running_seconds + cand_contribution > SESSION_DURATION_BUDGET_SEC:
+                                continue  # this accessory doesn't fit — try next candidate
 
                             cand_weight = None
                             if cand.name.lower() in baselines:
@@ -1603,6 +1731,7 @@ async def generate_program_sessions(
                                 set_number += 1
 
                             session_exercise_ids.add(cand.id)
+                            running_seconds += cand_contribution
                             this_mesocycle_exercise_ids.append(str(cand.id))
                             session_exercise_dicts.append({
                                 "movement_pattern": cand_pattern or "isolation",

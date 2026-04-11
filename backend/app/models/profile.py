@@ -37,6 +37,9 @@ class UserProfile(Base):
     program_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     cycle_tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Per-user Telegram bot token from BotFather. Never exposed in GET responses.
+    # TODO: encrypt at rest (app-level Fernet or pgcrypto) before production.
+    telegram_bot_token: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

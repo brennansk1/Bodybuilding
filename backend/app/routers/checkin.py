@@ -1,6 +1,9 @@
+import logging
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +15,8 @@ from app.models.profile import UserProfile
 from app.models.measurement import BodyWeightLog, TapeMeasurement, SkinfoldMeasurement
 from app.models.training import HRVLog, ARILog
 from app.models.nutrition import AdherenceLog, WeeklyCheckin, NutritionPrescription
-from app.schemas.checkin import DailyCheckin, WeeklyCheckinRequest
+from app.dependencies import get_user_via_api_key
+from app.schemas.checkin import DailyCheckin, HealthKitPayload, WeeklyCheckinRequest
 from app.engines.engine1.body_fat import jackson_pollock_7
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
@@ -185,6 +189,14 @@ async def submit_daily(
             autoreg_msg = f"Autoregulated {len(affected)} exercise(s), reduced local volume by {dropped} sets."
             await db.flush()
 
+    # Immediate ARI red-zone Telegram alert (fires at most once per day)
+    if ari_zone == "red" and _profile:
+        try:
+            from app.services.notification_dispatcher import dispatch_ari_red_zone
+            await dispatch_ari_red_zone(db, _profile, ari_score, ari_recommendation)
+        except Exception as exc:
+            logger.warning("ARI red-zone notification failed: %s", exc)
+
     return {
         "message": "Daily check-in saved",
         "weight_kg": weight_kg,
@@ -201,6 +213,61 @@ async def submit_daily(
         "menstrual_phase": cycle_info,
         "autoregulation": autoreg_msg,
     }
+
+
+# ---------------------------------------------------------------------------
+# HealthKit / iPhone Shortcut ingest
+# ---------------------------------------------------------------------------
+
+@router.post("/daily/healthkit")
+async def submit_daily_healthkit(
+    payload: HealthKitPayload,
+    user: User = Depends(get_user_via_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    iPhone Shortcut → backend ingest for morning HealthKit data.
+
+    Authenticated via long-lived ``X-API-Key`` header (Shortcuts can't do
+    OAuth/JWT flows). Maps Apple HealthKit quantities into the regular
+    DailyCheckin shape and delegates to submit_daily() so all downstream
+    analysis (ARI breakdown, red-zone alert, soreness autoregulation)
+    runs identically whether the check-in came from the web UI or a Shortcut.
+
+    HKQuantityTypeIdentifierHeartRateVariabilitySDNN → rMSSD via the 0.8
+    approximation (see notes field). If the caller provides hrv_rmssd_ms
+    directly, that's used instead.
+    """
+    # Convert HealthKit SDNN to rMSSD if the caller didn't already do it.
+    rmssd = payload.hrv_rmssd_ms
+    note_parts = []
+    if rmssd is None and payload.hrv_sdnn_ms is not None:
+        rmssd = round(payload.hrv_sdnn_ms * 0.8, 1)
+        note_parts.append(
+            f"HealthKit SDNN {payload.hrv_sdnn_ms:.0f} → rMSSD ≈ {rmssd:.0f} (×0.8)"
+        )
+    if payload.step_count is not None:
+        note_parts.append(f"Steps: {payload.step_count}")
+    if payload.notes:
+        note_parts.append(payload.notes)
+
+    daily = DailyCheckin(
+        recorded_date=payload.recorded_date,
+        body_weight_kg=payload.body_weight_kg,
+        rmssd=rmssd,
+        resting_hr=payload.resting_hr,
+        sleep_quality=payload.sleep_quality_1_10,
+        sleep_hours=payload.sleep_hours,
+        soreness_score=None,   # HealthKit has no soreness; leave null to trigger fallback
+        sore_muscles=[],
+        stress_score=payload.stress_1_10,
+        mood_score=payload.mood_1_10,
+        energy_score=payload.energy_1_10,
+        nutrition_adherence_pct=None,
+        training_adherence_pct=None,
+        notes="; ".join(note_parts) if note_parts else None,
+    )
+    return await submit_daily(daily, user=user, db=db)
 
 
 @router.post("/weekly")
