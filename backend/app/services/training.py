@@ -101,9 +101,15 @@ _DIVISION_EXERCISE_BANS: dict[str, set[str]] = {
         # Traps: no shrugs or trap builders (thick traps compress V-taper)
         "barbell shrug", "dumbbell shrug", "shrug", "farmer",
         "cage press", "rack pull",
-        # Shoulders: no barbell pressing (spinal loading + trap activation)
+        # Shoulders: no barbell overhead pressing (spinal loading + trap
+        # activation). Added "standing barbell overhead" / "barbell overhead
+        # press" explicitly — the old "standing barbell press" substring
+        # missed "Standing Barbell Overhead Press" because "overhead" sat
+        # between the ban tokens.
         "military press", "standing barbell press", "behind-the-head",
-        "overhead barbell press", "behind neck", "snatch-grip",
+        "overhead barbell press", "barbell overhead press",
+        "standing barbell overhead", "seated barbell overhead",
+        "behind neck", "snatch-grip",
         "barbell shoulder press", "seated barbell",
         "bradford", "push-press", "clean and press",
         # Quads: no heavy barbell squats (spinal compression, waist thickening)
@@ -703,11 +709,18 @@ _COMPOUND_NAME_TOKENS: tuple[str, ...] = (
 )
 
 # FST-7 intensity by mode (from mesocycle week data)
+#
+# Coach-aligned mapping: NO FST-7 during MEV weeks (1), light single-muscle
+# finisher in week 2, moderate in weeks 3-4 (MAV), aggressive in week 5 (MRV),
+# and the deload drops it entirely. This matches how Hany Rambod actually
+# deploys FST-7 — not as a week-1 default but as an intensification layer
+# stacked on top of established base volume.
 _FST7_INTENSITY: dict[str, dict] = {
-    "moderate":  {"rest_seconds": 45, "rir": 2, "reps": (10, 12)},  # Weeks 1-2
-    "aggressive":{"rest_seconds": 35, "rir": 1, "reps": (8, 12)},   # Weeks 3-4
+    "none":      {},  # Weeks 1, 6 — no FST-7
+    "light":     {"rest_seconds": 60, "rir": 3, "reps": (10, 12), "single_muscle_only": True},  # Week 2
+    "moderate":  {"rest_seconds": 45, "rir": 2, "reps": (10, 12)},  # Week 3
+    "aggressive":{"rest_seconds": 35, "rir": 1, "reps": (8, 12)},   # Weeks 4
     "extreme":   {"rest_seconds": 30, "rir": 0, "reps": (8, 12)},   # Week 5
-    "none":      {},  # Deload — no FST-7
 }
 
 

@@ -341,6 +341,27 @@ def compute_macros(
     remaining_kcal = target_calories - protein_kcal - fat_kcal
     carbs_g = round(max(remaining_kcal / _KCAL_PER_G_CARB, 0.0), 1)
 
+    # Carb training-performance floor.
+    # A 5×/week lifting athlete needs ≥2.0 g/kg carbs to fuel intra-workout
+    # glycogen and recovery. When the raw deficit would drop carbs below
+    # this floor (common in aggressive cuts), we protect carbs by pulling
+    # the shortfall from fat down to a lower hormonal floor (0.5 g/kg).
+    # Below 0.5 g/kg fat, hormones start breaking down faster than the
+    # training benefit of extra carbs is worth, so we leave the final
+    # shortfall as a carb undershoot (very aggressive deficit case).
+    _CARB_TRAINING_FLOOR = 2.0  # g/kg TBW
+    _FAT_HORMONE_FLOOR = 0.5 if sex == "male" else 0.6
+    carb_floor_g = _CARB_TRAINING_FLOOR * weight_kg
+    fat_floor_hard_g = _FAT_HORMONE_FLOOR * weight_kg
+    if carbs_g < carb_floor_g and fat_g > fat_floor_hard_g:
+        # Move fat → carbs at their kcal exchange rate
+        shortfall_kcal = (carb_floor_g - carbs_g) * _KCAL_PER_G_CARB
+        available_fat_kcal = (fat_g - fat_floor_hard_g) * _KCAL_PER_G_FAT
+        transfer_kcal = min(shortfall_kcal, available_fat_kcal)
+        fat_g = round(fat_g - transfer_kcal / _KCAL_PER_G_FAT, 1)
+        carbs_g = round(carbs_g + transfer_kcal / _KCAL_PER_G_CARB, 1)
+        fat_kcal = fat_g * _KCAL_PER_G_FAT
+
     # Coaching warnings — situational notes that surface at the right moment.
     warnings: list[str] = []
     lean_threshold_male = 10.0

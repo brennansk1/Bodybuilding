@@ -14,6 +14,7 @@ Principles:
 """
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass, field
 from typing import Any
@@ -755,6 +756,23 @@ def generate_meal_plan(
     per_other_carbs = other_carb_total / max(1, non_peri_count) if non_peri_count > 0 else 0
     per_meal_fat = fat_g / max(1, non_peri_count)
 
+    # Rest-day low-carb consolidation:
+    # When the per-meal carb target is below ~25g (~70g of cooked rice, below
+    # the min_serving_g of most carb sources), spreading it across every meal
+    # forces the planner to plate the minimum serving at each slot and OVERSHOOT
+    # the daily total. Fix: concentrate carbs on the FIRST N non-peri meals
+    # where each meal can carry a portion >= 25g. Later meals plate no carb
+    # source (protein + veg + fat only). This matches real coach practice for
+    # rest days: front-load carbs at breakfast/lunch, skip them at dinner.
+    _CARB_MIN_PER_MEAL_G = 25.0
+    carb_skip_slots: set[int] = set()
+    if not is_training_day and per_other_carbs > 0 and per_other_carbs < _CARB_MIN_PER_MEAL_G:
+        carb_meals_needed = max(1, min(non_peri_count, math.ceil(other_carb_total / _CARB_MIN_PER_MEAL_G)))
+        per_other_carbs = other_carb_total / carb_meals_needed
+        # Mark the later slots to skip carbs — front-load toward earlier meals.
+        # slot index counts only non-peri positions in build order.
+        carb_skip_slots = set(range(carb_meals_needed, non_peri_count))
+
     # Round-robin indices for staple rotation (reuse within the small pool)
     _prot_idx = 0
     _carb_idx = 0
@@ -779,6 +797,7 @@ def generate_meal_plan(
         # No breakfast proteins in available pool (all blacklisted/filtered) — fall back
         breakfast_proteins = daily_proteins
 
+    _non_peri_slot_idx = 0
     for idx, (mins, label, is_peri, slot_type) in enumerate(slots):
         meal_num = idx + 1
         label_str = f"Meal {meal_num} – {label}" if label != "Meal" else f"Meal {meal_num}"
@@ -805,6 +824,11 @@ def generate_meal_plan(
             m_carbs = per_pre_carbs  # fallback for any other peri slot
         else:
             m_carbs = per_other_carbs
+            # Low-carb-rest-day: skip carb source on later meals so earlier
+            # meals get a real portion instead of all meals overshooting.
+            if _non_peri_slot_idx in carb_skip_slots:
+                m_carbs = 0.0
+            _non_peri_slot_idx += 1
         m_fat = 0.0 if is_peri else per_meal_fat
 
         # ── Early workout: pre-WO meal is fasted (just a label, no food) ──

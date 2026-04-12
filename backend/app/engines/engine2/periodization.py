@@ -103,34 +103,34 @@ MESO_PHASE_MAP: dict[int, dict] = {
     1: {
         "label": "MEV",
         "name": "Minimum Effective Volume",
-        "description": "Base compounds, 3 working sets each. 2 RIR. Moderate FST-7 fascial stretching.",
+        "description": "Base compounds, MEV working sets per muscle. 2 RIR. No FST-7 — build the base before layering intensification.",
         "volume_landmark": "mev",
         "rir": 2,
         "set_modifier": 0,   # base sets
-        "fst7_mode": "moderate",
+        "fst7_mode": "none",  # Coach standard: NO FST-7 during MEV week
     },
     2: {
-        "label": "MEV",
-        "name": "Minimum Effective Volume",
-        "description": "Base compounds, 3 working sets each. 2 RIR. Moderate FST-7 fascial stretching.",
+        "label": "MEV+",
+        "name": "Minimum Effective Volume+",
+        "description": "Add ~1 set per muscle. Still 2 RIR. Light FST-7 finisher on ONE priority muscle per session only.",
         "volume_landmark": "mev",
         "rir": 2,
         "set_modifier": 0,
-        "fst7_mode": "moderate",
+        "fst7_mode": "light",  # Single-muscle finisher only
     },
     3: {
         "label": "MAV",
         "name": "Maximum Adaptive Volume",
-        "description": "+1 working set per compound. Loads increase. 1 RIR. Aggressive FST-7 stretching, 45s rest.",
+        "description": "+1-2 working sets per muscle. Loads increase. 1 RIR. Moderate FST-7 stretching, 45s rest.",
         "volume_landmark": "mav",
         "rir": 1,
         "set_modifier": 1,
-        "fst7_mode": "aggressive",
+        "fst7_mode": "moderate",
     },
     4: {
         "label": "MAV",
         "name": "Maximum Adaptive Volume",
-        "description": "+1 working set per compound. Loads increase. 1 RIR. Aggressive FST-7 stretching, 45s rest.",
+        "description": "+1-2 working sets per muscle. Loads increase. 1 RIR. Moderate FST-7 stretching, 45s rest.",
         "volume_landmark": "mav",
         "rir": 1,
         "set_modifier": 1,
@@ -1038,45 +1038,47 @@ def _week_volume(
     phase_info = MESO_PHASE_MAP.get(week_num, MESO_PHASE_MAP.get(6, {}))
     base_modifier = phase_info.get("set_modifier", 0)
 
-    # Accumulation multiplier: scales the week's target above base_volume.
-    # Week 1 = base_volume (division-adjusted MEV from the split designer).
-    # Each subsequent week adds the increment until MRV is reached.
+    # Accumulation curve: week 1 starts at MEV (actual starting stimulus),
+    # ramps to the division-adjusted PEAK volume by week 5, deloads at week 6.
     #
-    # Muscles that the split designer capped at MEV (low division importance —
-    # e.g. quads for Men's Physique) don't progress: judges don't reward the
-    # volume, so pushing them toward MRV just steals recovery from priority
-    # muscles. These stay flat at base_volume the whole accumulation phase
-    # except for the deload.
+    # Base_volume from the split designer is the ceiling — the volume we
+    # WANT to hit at peak week, not the starting week-1 volume. Real coaches
+    # start at minimum effective dose and ramp up as recoverability is
+    # demonstrated. Starting at 24 sets of side delts in week 1 is how
+    # shoulder injuries happen.
+    #
+    # Maintenance-capped muscles (low-importance per division — e.g. quads
+    # for Men's Physique) are already at MEV and stay flat. No progressive
+    # overload there — judges don't reward that volume and it would steal
+    # recovery from priority muscles.
     result: dict[str, int] = {}
     for muscle, base in base_volume.items():
         mev, mav, mrv = VOLUME_LANDMARKS.get(muscle, (6, 12, 18))
-        base_start = max(mev, base) if base > 0 else mev
+        base_peak = max(mev, base) if base > 0 else mev
 
         # A muscle is "maintenance-capped" if the split designer gave it a
-        # budget within 1 set of the global MEV. For MP that's typically
-        # quads/glutes/hamstrings; for Bikini it's chest/biceps/triceps.
-        is_maintenance = base_start <= mev + 1
+        # budget within 1 set of the global MEV. Stays flat except deload.
+        is_maintenance = base_peak <= mev + 1
 
         if is_deload:
-            # Deload = 50% of the peak week's volume. For maintenance muscles
-            # this is 50% of base; for priority muscles it's 50% of what the
-            # ramp would have reached at week 5 (or MRV, whichever is lower).
-            if is_maintenance:
-                peak = base_start
-            else:
-                peak = min(mrv, base_start + increment * 4)
+            # Deload = 50% of the peak week's volume (not 50% of MEV — the
+            # point is to halve stimulus from accumulation peak).
+            peak = base_peak if is_maintenance else min(mrv, base_peak)
             target = max(1, math.floor(peak * _DELOAD_VOLUME_FRACTION))
         elif is_maintenance:
-            # Hold at base. No progressive overload on maintenance muscles —
-            # the stimulus is already at MEV, that's the whole point.
-            target = base_start
+            target = base_peak
         else:
-            # Priority muscle: gradual ramp from base toward MRV.
-            # Base in week 1, +increment every week after, plus the
-            # phase-specific set_modifier for MAV/MRV blocks.
-            weeks_of_ramp = max(0, week_num - 1)
-            target = base_start + (weeks_of_ramp * increment) + base_modifier
+            # Priority muscle: ramp from MEV (week 1) to peak (week 5).
+            # Linear 5-week ramp: MEV → MEV+delta → ... → base_peak
+            # Example: side_delt MEV=8, base_peak=18 → 8,11,13,16,18
+            weeks_of_ramp = max(0, week_num - 1)  # 0..4 for weeks 1..5
+            total_ramp_weeks = 4  # week 1 = MEV, week 5 = peak
+            progress = min(1.0, weeks_of_ramp / total_ramp_weeks)
+            target = round(mev + progress * (base_peak - mev))
+            # Phase-specific modifier (MAV weeks +1, MRV week +2) on top of curve
+            target += base_modifier
             target = min(target, mrv)
+            target = max(mev, target)
 
         result[muscle] = max(1, target)
 
