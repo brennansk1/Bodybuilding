@@ -798,9 +798,16 @@ def generate_meal_plan(
         # high-fat proteins (Whole Eggs, Sirloin) from blowing the fat budget.
         incidental_protein = 0.0
 
-        def _slot_match(pool: list[FoodItem], target_slot: str) -> list[FoodItem]:
+        def _slot_match(pool: list[FoodItem], target_slot: str, user_picked: bool = False) -> list[FoodItem]:
             """Tiered affinity match.
 
+            When the user has explicitly picked staples (user_picked=True),
+            return the full pool so ALL their picks rotate across meals —
+            they chose these foods and expect to see them all used, even
+            if some have breakfast-affinity and the slot is lunch_dinner.
+
+            Otherwise (no user picks, phase-ranked default pool), tier by
+            affinity:
             Tier 1: foods with the exact slot_type in meal_affinity.
                     e.g. "lunch_dinner" match → White Rice, Sweet Potato.
             Tier 2: foods with ONLY "any" affinity (no specific slot).
@@ -810,6 +817,8 @@ def generate_meal_plan(
                     tier 1 or tier 2 food survives. A coach never plates
                     egg whites at dinner if chicken is available.
             """
+            if user_picked:
+                return pool
             tier1 = [f for f in pool if target_slot in f.meal_affinity]
             if tier1:
                 return tier1
@@ -822,6 +831,9 @@ def generate_meal_plan(
                      if "any" in f.meal_affinity or target_slot in f.meal_affinity]
             return tier3 or pool
 
+        _user_carb_picks = bool(clipped_carbs)
+        _user_protein_picks = bool(clipped_proteins)
+
         # ── 0. Pre-select protein food (determine WHICH, don't scale yet) ──
         protein_food = None
         if is_peri and daily_peri_proteins:
@@ -831,7 +843,7 @@ def generate_meal_plan(
             protein_food = breakfast_proteins[_prot_idx % len(breakfast_proteins)]
             _prot_idx += 1
         elif daily_proteins:
-            affinity_match = _slot_match(daily_proteins, slot_type)
+            affinity_match = _slot_match(daily_proteins, slot_type, user_picked=_user_protein_picks)
             protein_food = affinity_match[_prot_idx % len(affinity_match)]
             _prot_idx += 1
 
@@ -865,7 +877,7 @@ def generate_meal_plan(
                 carb_food = daily_peri_carbs[_peri_carb_idx % len(daily_peri_carbs)]
                 _peri_carb_idx += 1
             elif daily_carbs:
-                affinity_match = _slot_match(daily_carbs, slot_type)
+                affinity_match = _slot_match(daily_carbs, slot_type, user_picked=_user_carb_picks)
                 carb_food = affinity_match[_carb_idx % len(affinity_match)]
                 _carb_idx += 1
 
@@ -885,10 +897,42 @@ def generate_meal_plan(
             incidental_protein += item.protein_g
 
         # ── 4. Protein source — adjusted for incidental protein ──
+        #
+        # Coach pattern: if the selected primary protein can't reach the meal's
+        # protein target at its max serving size (e.g. Egg Whites capped at 300g
+        # = 33g protein for a 60g target), add a SECONDARY protein to bridge the
+        # gap. This is exactly what pro meal plans look like: "3 egg whites +
+        # 100g chicken post-workout". Without this, the macro reconciliation
+        # pass piles the shortfall into the last meal and dinner ends up with
+        # 93g of protein — way above the 60g/meal ceiling for MPS.
         adjusted_protein = max(10.0, m_protein - incidental_protein)
         if protein_food:
-            item = _scale_food_to_protein(protein_food, adjusted_protein)
-            meal.ingredients.insert(0, item)  # display protein first
+            primary_max_p = protein_food.protein * protein_food.max_serving_g / 100
+            if primary_max_p < adjusted_protein * 0.9 and len(daily_proteins) > 1:
+                # Find a scalable secondary protein from the daily pool.
+                secondary = None
+                for alt in daily_proteins:
+                    if alt.name == protein_food.name:
+                        continue
+                    alt_max_p = alt.protein * alt.max_serving_g / 100
+                    shortfall = adjusted_protein - primary_max_p
+                    if alt_max_p >= shortfall * 0.8:
+                        secondary = alt
+                        break
+
+                if secondary:
+                    # Plate primary at max serving, secondary closes the gap
+                    primary_item = _scale_food(protein_food, protein_food.max_serving_g)
+                    meal.ingredients.insert(0, primary_item)
+                    remaining = max(5.0, adjusted_protein - primary_item.protein_g)
+                    secondary_item = _scale_food_to_protein(secondary, remaining)
+                    meal.ingredients.insert(1, secondary_item)
+                else:
+                    item = _scale_food_to_protein(protein_food, adjusted_protein)
+                    meal.ingredients.insert(0, item)
+            else:
+                item = _scale_food_to_protein(protein_food, adjusted_protein)
+                meal.ingredients.insert(0, item)  # display protein first
 
         meals.append(meal)
 
