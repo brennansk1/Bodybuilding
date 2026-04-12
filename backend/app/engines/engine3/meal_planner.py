@@ -875,9 +875,16 @@ def generate_meal_plan(
             # handles the shortfall. This is how a coach would plate it:
             # "chicken or beef at main meals, egg whites as a post-workout
             # supplement or bedtime snack".
+            # Threshold 0.55: a food is "primary-capable" if its max serving
+            # can provide at least 55% of the meal's protein target alone.
+            # Chicken (93g max) and Lean Ground Beef (65g max) both clear this
+            # for an 80g meal target (needs 44g). Egg Whites (33g max) does
+            # not clear 44g so it gets reserved for peri meals where the
+            # secondary-protein bridge handles the shortfall. 0.85 was too
+            # strict and rejected LGB at high-target meals.
             scalable = [
                 p for p in affinity_match
-                if (p.protein * p.max_serving_g / 100) >= (m_protein - incidental_protein) * 0.85
+                if (p.protein * p.max_serving_g / 100) >= (m_protein - incidental_protein) * 0.55
             ]
             if scalable:
                 affinity_match = scalable
