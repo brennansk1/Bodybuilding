@@ -572,7 +572,20 @@ def generate_meal_plan(
 
     # Peri-workout specific pools
     peri_proteins = [p for p in proteins if p.peri_workout] or proteins[:3]
-    peri_carbs = [c for c in carbs_all if c.peri_workout] or carbs_all[:3]
+    # Peri-workout carbs are officially flagged `peri_workout=True` (fast-
+    # digesting starches like white rice, cream of rice, rice cakes). We
+    # ALSO accept carbs with `breakfast` or `snack` affinity — post-workout
+    # at 7–8 AM is functionally a breakfast window, so oatmeal / ezekiel /
+    # banana are legitimate coach choices there. Concatenating (not `or`)
+    # means a user who picked Oats as one of their 3 staples gets a
+    # landing slot post-workout.
+    _peri_base = [c for c in carbs_all if c.peri_workout]
+    _peri_bonus = [
+        c for c in carbs_all
+        if not c.peri_workout
+        and ("breakfast" in c.meal_affinity or "snack" in c.meal_affinity)
+    ]
+    peri_carbs = _peri_base + _peri_bonus or carbs_all[:3]
     # Sustained carbs: non-peri carbs PLUS peri carbs that also have a non-peri
     # slot affinity (breakfast/snack/lunch_dinner). White Rice is peri_workout=True
     # but its meal_affinity includes "lunch_dinner" — it belongs at dinner, not
@@ -683,7 +696,17 @@ def generate_meal_plan(
     else:
         daily_proteins = _select_daily_staples(proteins, protein_staple_count, slot_types_in_plan)
     daily_carbs = _select_daily_staples(sustained_carbs, carb_staple_count, slot_types_in_plan)
-    daily_peri_carbs = _select_daily_staples(peri_carbs, min(2, len(peri_carbs)), ["any"])
+    # When the user has explicitly picked carbs, use ALL of them in the
+    # peri-workout pool so the rotation reaches every pick. Without this,
+    # daily_peri_carbs caps at 2 and users who picked 3 carbs (e.g. White
+    # Rice + Cream of Rice + Oats) never see the third one — because 2
+    # peri meals × 2 peri-pool-slots = 2 carbs used, never reaches the
+    # 3rd regardless of the offset.
+    daily_peri_carbs = _select_daily_staples(
+        peri_carbs,
+        len(peri_carbs) if clipped_carbs else min(2, len(peri_carbs)),
+        ["any"],
+    )
     daily_fats = _select_daily_staples(fats, fat_staple_count, slot_types_in_plan)
     daily_vegs = _select_daily_staples(vegetables, veg_staple_count, ["lunch_dinner"])
     daily_peri_proteins = _select_daily_staples(peri_proteins, min(2, len(peri_proteins)), ["any"])
@@ -844,6 +867,20 @@ def generate_meal_plan(
             _prot_idx += 1
         elif daily_proteins:
             affinity_match = _slot_match(daily_proteins, slot_type, user_picked=_user_protein_picks)
+            # For non-peri (lunch/dinner) slots, prefer proteins that can
+            # actually SCALE to the meal's protein target at their max serving.
+            # Egg Whites caps at 300g = 33g protein, well below a typical 60g
+            # per-meal target — so the rotation filters it out of lunch/dinner
+            # and leaves it for peri meals where the secondary-protein bridge
+            # handles the shortfall. This is how a coach would plate it:
+            # "chicken or beef at main meals, egg whites as a post-workout
+            # supplement or bedtime snack".
+            scalable = [
+                p for p in affinity_match
+                if (p.protein * p.max_serving_g / 100) >= (m_protein - incidental_protein) * 0.85
+            ]
+            if scalable:
+                affinity_match = scalable
             protein_food = affinity_match[_prot_idx % len(affinity_match)]
             _prot_idx += 1
 
@@ -870,10 +907,24 @@ def generate_meal_plan(
             incidental_veg_carbs = item.carbs_g
 
         # ── 2. Carb source — scaled to remaining budget after veg ──
+        #
+        # Carb rotation strategy: when the user has picked carbs, use a
+        # UNIFIED index across peri + non-peri slots so every pick gets
+        # hit over the day. Example: picks = [White Rice, Cream of Rice,
+        # Oats], 4 food slots → meal 1 White Rice, meal 3 Cream of Rice,
+        # meal 4 Oats, meal 5 White Rice (wraparound). All 3 staples used.
+        # Without unification, peri and non-peri have separate counters
+        # and 2 peri meals + 2 non-peri meals each land on index 0/1,
+        # leaving the 3rd carb pick permanently unused.
         carb_budget = max(0.0, m_carbs - incidental_veg_carbs)
         if carb_budget > 5:
             carb_food = None
-            if is_peri and daily_peri_carbs:
+            if _user_carb_picks and daily_peri_carbs:
+                # Unified rotation — use peri pool for everyone (it contains
+                # all user picks thanks to the breakfast/snack fallback).
+                carb_food = daily_peri_carbs[_peri_carb_idx % len(daily_peri_carbs)]
+                _peri_carb_idx += 1
+            elif is_peri and daily_peri_carbs:
                 carb_food = daily_peri_carbs[_peri_carb_idx % len(daily_peri_carbs)]
                 _peri_carb_idx += 1
             elif daily_carbs:
