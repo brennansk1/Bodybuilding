@@ -1037,6 +1037,7 @@ async def finish_session(
 
     await db.flush()
 
+    ended_early = sets_completed < sets_total and sets_total > 0
     return {
         "message": "Session completed",
         "progressions": progressions,
@@ -1044,6 +1045,7 @@ async def finish_session(
         "total_volume_kg": round(total_volume_kg, 1),
         "sets_completed": sets_completed,
         "sets_total": sets_total,
+        "ended_early": ended_early,
         "muscles_trained": muscles_trained,
     }
 

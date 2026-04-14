@@ -2080,18 +2080,37 @@ export default function TrainingPage() {
                 {completedCount}/{totalCount} sets {allWorkingSetsComplete && "— all done"}
               </p>
             </div>
-            {/* Finish Session button */}
-            <button
-              onClick={() => allWorkingSetsComplete ? setShowFinishModal(true) : saveSession()}
-              disabled={saving || finishing || !isToday}
-              className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 ${
-                allWorkingSetsComplete
-                  ? "bg-jungle-accent text-jungle-dark shadow-lg shadow-jungle-accent/20"
-                  : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:border-jungle-accent"
-              }`}
-            >
-              {saved ? "Saved ✓" : finishing ? "Finishing..." : saving ? "Saving..." : allWorkingSetsComplete ? "Finish Session" : "Save Progress"}
-            </button>
+            {/* Finish + Save buttons. When all sets are done, one primary
+                "Finish Session" button. When sets are still incomplete, show
+                BOTH "Save Progress" (keep going later) AND "Finish Early"
+                (wrap up the workout now, anything blank won't count). */}
+            {allWorkingSetsComplete ? (
+              <button
+                onClick={() => setShowFinishModal(true)}
+                disabled={saving || finishing || !isToday}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 bg-jungle-accent text-jungle-dark shadow-lg shadow-jungle-accent/20"
+              >
+                {saved ? "Saved ✓" : finishing ? "Finishing..." : "Finish Session"}
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={saveSession}
+                  disabled={saving || finishing || !isToday}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 bg-jungle-deeper border border-jungle-border text-jungle-muted hover:border-jungle-accent"
+                >
+                  {saved ? "Saved ✓" : saving ? "Saving..." : "Save"}
+                </button>
+                <button
+                  onClick={() => setShowFinishModal(true)}
+                  disabled={saving || finishing || !isToday || completedCount === 0}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-40 bg-jungle-accent/20 border border-jungle-accent/60 text-jungle-accent hover:bg-jungle-accent hover:text-jungle-dark"
+                  title={completedCount === 0 ? "Log at least one set before finishing" : "End the session now — unlogged sets won't count"}
+                >
+                  {finishing ? "Finishing..." : "Finish Early"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2100,15 +2119,36 @@ export default function TrainingPage() {
       {showFinishModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-jungle-card border border-jungle-border rounded-2xl p-6 max-w-sm w-full">
-            <h3 className="text-lg font-bold text-jungle-text mb-2">Finish Session?</h3>
+            <h3 className="text-lg font-bold text-jungle-text mb-2">
+              {allWorkingSetsComplete ? "Finish Session?" : "Finish Early?"}
+            </h3>
             <p className="text-sm text-jungle-muted mb-1">
-              {completedCount}/{totalCount} sets completed.
+              {completedCount}/{totalCount} sets completed
+              {!allWorkingSetsComplete && ` · ${totalCount - completedCount} will be marked skipped`}.
             </p>
-            <p className="text-xs text-jungle-dim mb-4">
-              This will mark the session as done and check for progressive overload opportunities.
-            </p>
+            {allWorkingSetsComplete ? (
+              <p className="text-xs text-jungle-dim mb-4">
+                This will mark the session as done and check for progressive overload opportunities.
+              </p>
+            ) : (
+              <div className="text-xs mb-4 space-y-2">
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-amber-400">
+                  <p className="font-semibold mb-0.5">⚠ Ending workout early</p>
+                  <p className="text-amber-400/80 text-[11px] leading-snug">
+                    Unlogged sets won&apos;t count toward weekly volume and progressive overload will
+                    base next session&apos;s prescription on the sets you DID complete.
+                  </p>
+                </div>
+                <p className="text-jungle-dim leading-snug">
+                  If you&apos;re running low on time or energy, finishing early is fine — consistency
+                  matters more than perfection. Jot a note below so your coaching feedback has context.
+                </p>
+              </div>
+            )}
             <textarea
-              placeholder="Session notes (optional)..."
+              placeholder={allWorkingSetsComplete
+                ? "Session notes (optional)..."
+                : "Why did you end early? (low energy, time, pain, etc.)"}
               value={sessionNotes}
               onChange={(e) => setSessionNotes(e.target.value)}
               className="input-field w-full text-sm mb-4 resize-none"
@@ -2124,9 +2164,13 @@ export default function TrainingPage() {
               <button
                 onClick={finishSession}
                 disabled={finishing}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-jungle-accent text-jungle-dark active:scale-95 disabled:opacity-50"
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold active:scale-95 disabled:opacity-50 ${
+                  allWorkingSetsComplete
+                    ? "bg-jungle-accent text-jungle-dark"
+                    : "bg-amber-500 text-jungle-dark"
+                }`}
               >
-                {finishing ? "Finishing..." : "Finish"}
+                {finishing ? "Finishing..." : allWorkingSetsComplete ? "Finish" : "Finish Early"}
               </button>
             </div>
           </div>
