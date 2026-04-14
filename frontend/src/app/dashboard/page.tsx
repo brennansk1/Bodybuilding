@@ -32,6 +32,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import OnboardingWizard, { shouldShowWizard } from "@/components/OnboardingWizard";
+import CoachingFeedbackCard, { type CoachingMessage } from "@/components/CoachingFeedbackCard";
 import { getQuoteForToday } from "@/lib/quotes";
 
 interface PDSEntry {
@@ -267,6 +268,9 @@ export default function DashboardPage() {
   const [symmetry, setSymmetry] = useState<SymmetryData | null>(null);
   const [phaseRec, setPhaseRec] = useState<PhaseRecommendation | null>(null);
   const [ari, setAri] = useState<ARIData | null>(null);
+  // Coaching feedback (B6/B7)
+  const [coachingFeedbackId, setCoachingFeedbackId] = useState<string | null>(null);
+  const [coachingMessages, setCoachingMessages] = useState<CoachingMessage[]>([]);
   const [adherence, setAdherence] = useState<AdherenceEntry[]>([]);
   // dashboard_viz toggle map: visKey -> show/hide. Undefined = show.
   const [vizVisibility, setVizVisibility] = useState<Record<string, boolean>>({});
@@ -472,6 +476,10 @@ export default function DashboardPage() {
 
     // Load independent data immediately
     softFetch<ARIData>("/engine2/ari", setAri);
+    softFetch<{ id: string | null; messages: CoachingMessage[] }>(
+      "/checkin/coaching-feedback",
+      (r) => { setCoachingFeedbackId(r.id); setCoachingMessages(r.messages || []); },
+    );
     softFetch<AdherenceEntry[]>("/engine3/adherence", setAdherence);
     softFetch<WeightEntry[]>("/checkin/weight-history?days=14", setRecentWeights);
 
@@ -965,6 +973,17 @@ export default function DashboardPage() {
         ) : (
           <div className="card mb-6 border-dashed border-jungle-border text-center py-8">
             <p className="text-jungle-muted">No diagnostic data yet — diagnostics will run automatically.</p>
+          </div>
+        )}
+
+        {/* Coaching feedback — top-of-fold, persistent until dismissed (B6/B7) */}
+        {coachingMessages.length > 0 && (
+          <div className="card mb-4">
+            <CoachingFeedbackCard
+              feedbackId={coachingFeedbackId}
+              messages={coachingMessages}
+              onDismiss={() => { setCoachingMessages([]); setCoachingFeedbackId(null); }}
+            />
           </div>
         )}
 

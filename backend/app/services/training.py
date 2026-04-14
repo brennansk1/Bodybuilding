@@ -1226,6 +1226,20 @@ async def generate_program_sessions(
         prev_ids = profile.preferences.get("prev_mesocycle_exercise_ids", [])
         prev_mesocycle_ids = set(prev_ids)
 
+    # B4.1: user-selected training style overrides DUP rep range when set
+    # to anything other than "auto". Maps to a flat rep-range that applies
+    # to every working set regardless of the day's DUP profile.
+    _user_rep_range_style = (
+        (profile.preferences or {}).get("rep_range_style", "auto")
+        if profile else "auto"
+    )
+    _REP_RANGE_BY_STYLE: dict[str, tuple[int, int]] = {
+        "heavy":    (4, 8),
+        "moderate": (8, 12),
+        "high_rep": (12, 20),
+    }
+    _user_rep_override = _REP_RANGE_BY_STYLE.get(_user_rep_range_style)
+
     # Per-DB-muscle HQI lookup (for gap-adjusted set caps in cascade)
     # Maps DB muscle name → HQI score (0-100)
     _MUSCLE_HQI_MAP = {
@@ -1289,6 +1303,48 @@ async def generate_program_sessions(
     )
     if "shoulders" not in volume_allocation:
         volume_allocation["shoulders"] = delt_vol
+
+    # ── Volume Landmark MRV clamp (B3.2) ──────────────────────────────────
+    # After all adjustments, cap each muscle at its MRV ceiling (experience-
+    # scaled). Excess volume is redistributed to under-served muscles that
+    # are still below their MAV_low. This prevents the split designer's
+    # aggressive priority scoring from driving a single muscle past MRV
+    # (which only accelerates fatigue without adding stimulus).
+    from app.engines.engine2.volume_landmarks import get_landmarks as _get_lm
+    _training_years = getattr(profile, "training_experience_years", None)
+    excess_pool = 0
+    for m, v in list(volume_allocation.items()):
+        if m == "shoulders":  # aggregated key — clamped per-head instead
+            continue
+        lm = _get_lm(m, _training_years)
+        if v > lm["mrv"]:
+            excess = v - lm["mrv"]
+            volume_allocation[m] = lm["mrv"]
+            excess_pool += excess
+            logger.info(
+                "Volume clamp: %s %d → %d (MRV cap; +%d to redistribute)",
+                m, v + 0, lm["mrv"], excess,
+            )
+    # Redistribute to muscles below MAV_low, proportional to their gap
+    if excess_pool > 0:
+        eligible: list[tuple[str, int]] = []  # (muscle, gap_to_mav_low)
+        for m, v in volume_allocation.items():
+            if m == "shoulders":
+                continue
+            lm = _get_lm(m, _training_years)
+            gap = lm["mav_low"] - v
+            if gap > 0:
+                eligible.append((m, gap))
+        total_gap = sum(g for _, g in eligible)
+        if total_gap > 0:
+            for m, gap in eligible:
+                share = round(excess_pool * (gap / total_gap))
+                if share > 0:
+                    volume_allocation[m] = volume_allocation.get(m, 0) + share
+                    logger.info(
+                        "Volume redistribute: +%d sets → %s (now %d)",
+                        share, m, volume_allocation[m],
+                    )
 
     # -----------------------------------------------------------------------
     # 5. Load latest tape measurements for symmetry assessment
@@ -1463,6 +1519,9 @@ async def generate_program_sessions(
                 day_dup_profile = day.get("dup_profile", "moderate")
                 day_intensity_range = day.get("intensity_range", (0.65, 0.75))
                 day_rep_range = day.get("rep_range", (8, 12))
+                # B4.1: user rep-range style overrides DUP if not "auto"
+                if _user_rep_override:
+                    day_rep_range = _user_rep_override
                 session_dup_profile = day_dup_profile
                 session_rep_range = day_rep_range
                 session_candidates_by_muscle[db_muscle] = list(candidates)

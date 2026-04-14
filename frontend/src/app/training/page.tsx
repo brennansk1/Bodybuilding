@@ -6,6 +6,8 @@ import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import PlateLoadingSVG from "@/components/PlateLoadingSVG";
 import SessionProgressRing from "@/components/SessionProgressRing";
+import SessionSummary from "@/components/SessionSummary";
+import ExerciseSwapModal from "@/components/ExerciseSwapModal";
 import { api } from "@/lib/api";
 import { showToast } from "@/components/Toast";
 
@@ -13,6 +15,7 @@ import { showToast } from "@/components/Toast";
 
 interface TrainingSet {
   id: string;
+  exercise_id?: string;
   exercise_name: string;
   muscle_group: string;
   set_number: number;
@@ -43,6 +46,11 @@ interface TrainingSession {
   week_number: number;
   day_number: number;
   completed: boolean;
+  completed_at?: string | null;
+  started_at?: string | null;
+  pump_quality?: number | null;
+  session_difficulty?: number | null;
+  joint_comfort?: number | null;
   sets: TrainingSet[];
   stale_baselines?: boolean;
   dup_profile?: string;
@@ -52,6 +60,16 @@ interface TrainingSession {
     start_time: string | null;
     end_time: string | null;
   };
+}
+
+interface FinishSessionResponse {
+  message: string;
+  progressions: Progression[];
+  session_duration_seconds?: number;
+  total_volume_kg?: number;
+  sets_completed?: number;
+  sets_total?: number;
+  muscles_trained?: string[];
 }
 
 interface Program {
@@ -348,6 +366,33 @@ export default function TrainingPage() {
 
   // ── Session notes ──
   const [sessionNotes, setSessionNotes] = useState("");
+
+  // Post-session summary state
+  interface SessionSummaryData {
+    duration_seconds: number | null;
+    total_volume_kg: number | null;
+    sets_completed: number;
+    sets_total: number;
+    muscles_trained: string[];
+    progressions: Progression[];
+  }
+  const [showSummary, setShowSummary] = useState(false);
+  const [sessionSummary, setSessionSummary] = useState<SessionSummaryData | null>(null);
+
+  // Exercise swap modal state (B5)
+  const [swapTarget, setSwapTarget] = useState<{
+    exerciseId: string; exerciseName: string; primaryMuscle: string;
+  } | null>(null);
+
+  const reloadSession = async () => {
+    if (!session) return;
+    try {
+      const fresh = await api.get<TrainingSession>(`/engine2/session/${session.id}`);
+      setSession(fresh);
+    } catch {
+      /* ignore */
+    }
+  };
   const [showNotes, setShowNotes] = useState(false);
 
   // ── Machine taken / alternative exercise ──
@@ -389,7 +434,6 @@ export default function TrainingPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [exerciseHistory, setExerciseHistory] = useState<StrengthEntry[]>([]);
   const [historyExercise, setHistoryExercise] = useState<string>("");
-  const [progressToast, setProgressToast] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState(false);
 
   // ── Finish Session modal ──
@@ -720,6 +764,7 @@ export default function TrainingPage() {
   };
 
   const startNowPlaying = () => {
+    if (allWorkingSets.length === 0) return;  // BUG-A4 guard
     setCurrentSetIndex(findFirstIncomplete());
     setNowPlaying(true);
     setShowHistory(false);
@@ -731,16 +776,6 @@ export default function TrainingPage() {
 
   const markSetDoneNowPlaying = (set: TrainingSet) => {
     const data = sets[set.id] || { reps: "", weight: "", rpe: "" };
-    // Progressive overload toast — compare to last session
-    const prev = previousSets[set.id];
-    if (prev && data.weight) {
-      const currentW = parseFloat(data.weight);
-      const prevW = prev.weight;
-      if (!isNaN(currentW) && currentW > prevW) {
-        setProgressToast(`${set.exercise_name} — Leveled up! 🎯`);
-        setTimeout(() => setProgressToast(null), 2500);
-      }
-    }
     setCompletedSets((p) => ({ ...p, [set.id]: data }));
     // Fire immediate PATCH on set completion
     if (isToday) patchSet(set.id, data);
@@ -822,20 +857,56 @@ export default function TrainingPage() {
       }
       debounceTimers.current = {};
 
-      const result = await api.post<{ message: string; progressions: Progression[] }>(
+      const result = await api.post<FinishSessionResponse>(
         `/engine2/session/${session.id}/finish`,
         { notes: sessionNotes || undefined }
       );
       setProgressions(result.progressions || []);
-      setSaved(true);
+      // BUG-F1: update local session state so completed badge shows + sticky
+      // bar and start button hide immediately. Also stash summary stats from
+      // the finish response for the SessionSummary component.
+      const completedAt = new Date().toISOString();
+      setSession((prev) => prev ? { ...prev, completed: true, completed_at: completedAt } : prev);
+      setSessionSummary({
+        duration_seconds: result.session_duration_seconds ?? null,
+        total_volume_kg: result.total_volume_kg ?? null,
+        sets_completed: result.sets_completed ?? completedCount,
+        sets_total: result.sets_total ?? totalCount,
+        muscles_trained: result.muscles_trained ?? [],
+        progressions: result.progressions ?? [],
+      });
+      setShowSummary(true);
       setShowFinishModal(false);
       // Clear localStorage after successful finish — workout is persisted to server
       localStorage.removeItem("cpos_workout_completed");
       localStorage.removeItem("cpos_workout_sets");
-      setTimeout(() => setSaved(false), 3000);
     } catch {
       showToast("Failed to finish session", "error");
     } finally { setFinishing(false); }
+  };
+
+  const submitSubjectiveFeedback = async (
+    pump: number,
+    difficulty: number,
+    comfort: number,
+  ) => {
+    if (!session) return;
+    try {
+      await api.patch(`/engine2/session/${session.id}/feedback`, {
+        pump_quality: pump,
+        session_difficulty: difficulty,
+        joint_comfort: comfort,
+      });
+      setSession((prev) => prev ? {
+        ...prev,
+        pump_quality: pump,
+        session_difficulty: difficulty,
+        joint_comfort: comfort,
+      } : prev);
+      showToast("Feedback saved", "success");
+    } catch {
+      showToast("Couldn't save feedback", "error");
+    }
   };
 
   // Legacy save handler — kept for backwards compat with the "Save Progress" flow
@@ -1349,13 +1420,6 @@ export default function TrainingPage() {
                 </div>
               )}
 
-              {/* Progressive Overload Toast */}
-              {progressToast && (
-                <div className="rounded-xl border border-jungle-accent/40 bg-jungle-accent/10 px-4 py-2.5 text-sm font-semibold text-jungle-accent text-center animate-pulse">
-                  {progressToast}
-                </div>
-              )}
-
               {/* ── Now Playing Card ── */}
               {nowPlaying && allWorkingSets.length > 0 && (() => {
                 const currentSet = allWorkingSets[currentSetIndex] ?? allWorkingSets[0];
@@ -1660,7 +1724,7 @@ export default function TrainingPage() {
                       {/* Expanded content */}
                       {isExpanded && (
                         <div className="px-4 pb-4 space-y-2">
-                          {/* Machine taken toggle — only when today */}
+                          {/* Machine taken + swap — only when today */}
                           {isToday && (
                             <div className="flex gap-2 mb-1">
                               <button
@@ -1673,6 +1737,22 @@ export default function TrainingPage() {
                               >
                                 {isMachineTaken ? "Cancel Sub" : "Machine Taken?"}
                               </button>
+                              {(() => {
+                                const exId = workingSets[0]?.exercise_id || warmupSets[0]?.exercise_id;
+                                if (!exId) return null;
+                                return (
+                                  <button
+                                    onClick={() => setSwapTarget({
+                                      exerciseId: exId,
+                                      exerciseName: name,
+                                      primaryMuscle: muscle,
+                                    })}
+                                    className="text-[10px] px-2.5 py-1 rounded-lg border border-jungle-border text-jungle-dim hover:border-jungle-accent/50 hover:text-jungle-accent transition-colors"
+                                  >
+                                    ⇄ Swap
+                                  </button>
+                                );
+                              })()}
                             </div>
                           )}
 
@@ -1982,8 +2062,8 @@ export default function TrainingPage() {
         </div>
       </main>
 
-      {/* ── Sticky bottom bar: progress + save (today only) ── */}
-      {isToday && session && totalCount > 0 && (
+      {/* ── Sticky bottom bar: progress + save (today only, not yet completed) ── */}
+      {isToday && session && !session.completed && totalCount > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-30 bg-jungle-card/95 backdrop-blur-md border-t border-jungle-border safe-bottom">
           <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
             {/* Progress bar */}
@@ -2027,15 +2107,13 @@ export default function TrainingPage() {
             <p className="text-xs text-jungle-dim mb-4">
               This will mark the session as done and check for progressive overload opportunities.
             </p>
-            {sessionNotes ? null : (
-              <textarea
-                placeholder="Session notes (optional)..."
-                value={sessionNotes}
-                onChange={(e) => setSessionNotes(e.target.value)}
-                className="input-field w-full text-sm mb-4 resize-none"
-                rows={2}
-              />
-            )}
+            <textarea
+              placeholder="Session notes (optional)..."
+              value={sessionNotes}
+              onChange={(e) => setSessionNotes(e.target.value)}
+              className="input-field w-full text-sm mb-4 resize-none"
+              rows={2}
+            />
             <div className="flex gap-3">
               <button
                 onClick={() => setShowFinishModal(false)}
@@ -2053,6 +2131,42 @@ export default function TrainingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Exercise Swap Modal */}
+      {swapTarget && session && (
+        <ExerciseSwapModal
+          sessionId={session.id}
+          oldExerciseId={swapTarget.exerciseId}
+          oldExerciseName={swapTarget.exerciseName}
+          primaryMuscle={swapTarget.primaryMuscle}
+          onClose={() => setSwapTarget(null)}
+          onSwapped={(result) => {
+            setSwapTarget(null);
+            reloadSession();
+            if (result.auto_disliked) {
+              showToast("Added to disliked — we won't pick it again", "info");
+            } else {
+              showToast(`Swapped — ${result.sets_updated} sets updated`, "success");
+            }
+          }}
+        />
+      )}
+
+      {/* Post-Session Summary */}
+      {showSummary && sessionSummary && (
+        <SessionSummary
+          durationSeconds={sessionSummary.duration_seconds}
+          totalVolumeKg={sessionSummary.total_volume_kg}
+          setsCompleted={sessionSummary.sets_completed}
+          setsTotal={sessionSummary.sets_total}
+          musclesTrained={sessionSummary.muscles_trained}
+          progressions={sessionSummary.progressions}
+          useLbs={useLbs}
+          onSubmitFeedback={submitSubjectiveFeedback}
+          onClose={() => setShowSummary(false)}
+          onGoToDashboard={() => router.push("/dashboard")}
+        />
       )}
 
       {/* Rest Timer (above sticky bar) */}

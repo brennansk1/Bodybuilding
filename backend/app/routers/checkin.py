@@ -752,6 +752,57 @@ async def submit_weekly(
         "items": feedback_items,
     }
 
+    # ── Rule-based coaching feedback (B6.5) ──
+    try:
+        from app.services.coaching_rules import generate_coaching_feedback
+        from app.models.notification import CoachingFeedback
+        coaching_msgs = await generate_coaching_feedback(user.id, db)
+        if coaching_msgs:
+            cf = CoachingFeedback(
+                user_id=user.id,
+                recorded_date=date.today(),
+                feedback_json=coaching_msgs,
+                dismissed=False,
+            )
+            db.add(cf)
+            await db.flush()
+            response["coaching_feedback"] = {
+                "id": str(cf.id),
+                "messages": coaching_msgs,
+            }
+    except Exception as e:  # pragma: no cover — never break weekly review
+        logger.warning("Coaching feedback generation failed: %s", e)
+
+    # ── Composite weekly coaching score (B9.2) ──
+    try:
+        training_pct = float(response.get("training_adherence_pct") or 0)
+        nutrition_pct = float(response.get("nutrition_adherence_pct") or 0)
+        recovery_pct = float(response.get("recovery_score") or 0)
+        composite = (
+            training_pct * 0.40
+            + nutrition_pct * 0.35
+            + recovery_pct * 0.25
+        )
+        # Identify weakest area
+        areas = {
+            "training adherence": training_pct,
+            "nutrition adherence": nutrition_pct,
+            "recovery": recovery_pct,
+        }
+        worst_name, worst_val = min(areas.items(), key=lambda kv: kv[1])
+        response["weekly_coaching_score"] = {
+            "score": round(composite, 1),
+            "components": {
+                "training_adherence": round(training_pct, 1),
+                "nutrition_adherence": round(nutrition_pct, 1),
+                "recovery": round(recovery_pct, 1),
+            },
+            "focus_area": worst_name,
+            "focus_value": round(worst_val, 1),
+        }
+    except Exception as e:  # pragma: no cover
+        logger.debug("Weekly coaching score skipped: %s", e)
+
     return response
 
 
@@ -1402,6 +1453,55 @@ async def dedupe_adherence(
 
     await db.flush()
     return {"duplicates_removed": deleted, "dates_affected": len(dup_dates)}
+
+
+@router.get("/coaching-feedback")
+async def get_coaching_feedback(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the most recent non-dismissed coaching feedback row."""
+    from app.models.notification import CoachingFeedback
+    result = await db.execute(
+        select(CoachingFeedback)
+        .where(
+            CoachingFeedback.user_id == user.id,
+            CoachingFeedback.dismissed == False,
+        )
+        .order_by(desc(CoachingFeedback.recorded_date), desc(CoachingFeedback.created_at))
+        .limit(1)
+    )
+    cf = result.scalar_one_or_none()
+    if not cf:
+        return {"id": None, "messages": []}
+    return {
+        "id": str(cf.id),
+        "recorded_date": str(cf.recorded_date),
+        "messages": cf.feedback_json,
+    }
+
+
+@router.patch("/coaching-feedback/{feedback_id}/dismiss")
+async def dismiss_coaching_feedback(
+    feedback_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a coaching-feedback row as dismissed."""
+    import uuid as _uuid
+    from app.models.notification import CoachingFeedback
+    result = await db.execute(
+        select(CoachingFeedback).where(
+            CoachingFeedback.id == _uuid.UUID(feedback_id),
+            CoachingFeedback.user_id == user.id,
+        )
+    )
+    cf = result.scalar_one_or_none()
+    if not cf:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    cf.dismissed = True
+    await db.flush()
+    return {"ok": True}
 
 
 @router.get("/sleep-week")

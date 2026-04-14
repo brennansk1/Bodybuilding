@@ -8,7 +8,7 @@ from datetime import date, timedelta
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,7 @@ from app.models.profile import UserProfile
 from app.models.measurement import BodyWeightLog
 from app.models.training import (
     TrainingProgram, TrainingSession, TrainingSet,
-    HRVLog, ARILog, Exercise, StrengthLog,
+    HRVLog, ARILog, Exercise, StrengthLog, StrengthBaseline,
 )
 from app.models.diagnostic import HQILog
 from app.services.training import generate_program_sessions, DEFAULT_VOLUME
@@ -599,6 +599,7 @@ async def get_session(
         technique = getattr(ts, "set_technique", None)
         sets.append({
             "id": str(ts.id),
+            "exercise_id": str(ts.exercise_id),
             "exercise_name": name,
             "muscle_group": muscle,
             "equipment": equipment or "bodyweight",
@@ -995,11 +996,258 @@ async def finish_session(
             })
             seen_exercises.add(ex_key)
 
+    # Compute aggregate session stats for the post-session summary screen.
+    # Reload all sets (including warmups) so the stats reflect the full session.
+    all_sets_result = await db.execute(
+        select(TrainingSet, Exercise)
+        .join(Exercise, TrainingSet.exercise_id == Exercise.id)
+        .where(TrainingSet.session_id == session.id)
+    )
+    all_sets = all_sets_result.all()
+    sets_total = sum(1 for s, _ in all_sets if not s.is_warmup)
+    sets_completed = sum(
+        1 for s, _ in all_sets
+        if not s.is_warmup and s.actual_reps is not None and s.actual_reps > 0
+    )
+    total_volume_kg = sum(
+        (s.actual_weight_kg or 0) * (s.actual_reps or 0)
+        for s, _ in all_sets
+        if not s.is_warmup
+    )
+    muscles_trained = sorted({
+        ex.primary_muscle for s, ex in all_sets
+        if not s.is_warmup and ex.primary_muscle
+    })
+
+    duration_seconds: int | None = None
+    if session.started_at and session.completed_at:
+        duration_seconds = int(
+            (session.completed_at - session.started_at).total_seconds()
+        )
+    elif session.completed_at and not session.started_at:
+        # Backfill missing started_at from earliest set timestamp if available
+        earliest = min(
+            (s.created_at for s, _ in all_sets if s.created_at),
+            default=None,
+        )
+        if earliest:
+            duration_seconds = int(
+                (session.completed_at - earliest).total_seconds()
+            )
+
     await db.flush()
 
     return {
         "message": "Session completed",
         "progressions": progressions,
+        "session_duration_seconds": duration_seconds,
+        "total_volume_kg": round(total_volume_kg, 1),
+        "sets_completed": sets_completed,
+        "sets_total": sets_total,
+        "muscles_trained": muscles_trained,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Apply deload to remaining sessions in the week (B7.2)
+# ---------------------------------------------------------------------------
+
+@router.post("/program/apply-deload")
+async def apply_deload_this_week(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Halve working-set count on all incomplete sessions from today forward
+    this week. Loads stay the same. Returns the number of sessions modified."""
+    from datetime import date as _d, timedelta as _td
+    today = _d.today()
+    week_end = today + _td(days=(6 - today.weekday()))
+
+    sess_result = await db.execute(
+        select(TrainingSession)
+        .where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.session_date >= today,
+            TrainingSession.session_date <= week_end,
+            TrainingSession.completed == False,
+        )
+    )
+    sessions = sess_result.scalars().all()
+    sets_removed_total = 0
+    for session in sessions:
+        sets_result = await db.execute(
+            select(TrainingSet).where(
+                TrainingSet.session_id == session.id,
+                TrainingSet.is_warmup == False,
+            ).order_by(TrainingSet.set_number)
+        )
+        working_sets = sets_result.scalars().all()
+        # Group by exercise_id so we halve each exercise's sets proportionally
+        by_ex: dict[str, list[TrainingSet]] = {}
+        for ts in working_sets:
+            by_ex.setdefault(str(ts.exercise_id), []).append(ts)
+        for ex_id, sets_for_ex in by_ex.items():
+            keep = max(2, len(sets_for_ex) // 2)  # never drop below 2 sets
+            drop_from = sets_for_ex[keep:]
+            for ts in drop_from:
+                await db.delete(ts)
+                sets_removed_total += 1
+    await db.flush()
+    return {
+        "sessions_modified": len(sessions),
+        "sets_removed": sets_removed_total,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Exercise swap during a live session (B5)
+# ---------------------------------------------------------------------------
+
+class ExerciseSwapRequest(BaseModel):
+    old_exercise_id: str
+    new_exercise_id: str
+
+
+@router.post("/session/{session_id}/swap-exercise")
+async def swap_exercise_in_session(
+    session_id: str,
+    data: ExerciseSwapRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Swap one exercise for another within a session. All TrainingSets
+    referencing old_exercise_id get rewired to new_exercise_id. Prescribed
+    weight is re-estimated from the new exercise's strength baseline (if
+    available), else falls back to the old prescribed weight.
+
+    Also tracks swap frequency per exercise — if the user swaps the same
+    exercise out 3+ times across sessions, it's automatically added to
+    their disliked list.
+    """
+    session_result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.id == uuid.UUID(session_id),
+            TrainingSession.user_id == user.id,
+        )
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    old_ex = (await db.execute(
+        select(Exercise).where(Exercise.id == uuid.UUID(data.old_exercise_id))
+    )).scalar_one_or_none()
+    new_ex = (await db.execute(
+        select(Exercise).where(Exercise.id == uuid.UUID(data.new_exercise_id))
+    )).scalar_one_or_none()
+    if not old_ex or not new_ex:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
+    # Look up new-exercise baseline
+    bl_result = await db.execute(
+        select(StrengthBaseline)
+        .where(
+            StrengthBaseline.user_id == user.id,
+            StrengthBaseline.exercise_id == new_ex.id,
+        )
+        .order_by(desc(StrengthBaseline.recorded_date), desc(StrengthBaseline.created_at))
+        .limit(1)
+    )
+    baseline = bl_result.scalar_one_or_none()
+
+    sets_result = await db.execute(
+        select(TrainingSet).where(
+            TrainingSet.session_id == session.id,
+            TrainingSet.exercise_id == old_ex.id,
+        )
+    )
+    swapped_sets = sets_result.scalars().all()
+    if not swapped_sets:
+        raise HTTPException(status_code=404, detail="No sets found for that exercise in this session")
+
+    from app.services.training import compute_weight_from_1rm
+    for ts in swapped_sets:
+        ts.exercise_id = new_ex.id
+        if baseline:
+            # Re-estimate based on prescribed reps with the new exercise's 1RM
+            ts.prescribed_weight_kg = round(
+                compute_weight_from_1rm(baseline.one_rm_kg, ts.prescribed_reps), 1
+            )
+        # else: leave old prescribed_weight_kg as-is
+
+    # ── Swap-frequency → auto-disliked (B5.3) ──
+    # Track per-user swap counts in profile.preferences. Once a specific
+    # exercise has been swapped out 3+ times across sessions, auto-add it
+    # to disliked_exercises so the planner stops selecting it.
+    profile_row = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    profile = profile_row.scalar_one_or_none()
+    auto_disliked = False
+    if profile:
+        prefs = dict(profile.preferences or {})
+        swap_log: dict = dict(prefs.get("exercise_swap_counts", {}))
+        key = old_ex.name
+        swap_log[key] = int(swap_log.get(key, 0)) + 1
+        prefs["exercise_swap_counts"] = swap_log
+        if swap_log[key] >= 3:
+            disliked = list(getattr(profile, "disliked_exercises", None) or [])
+            key_lower = key.lower()
+            if not any(d.lower() == key_lower for d in disliked):
+                disliked.append(key)
+                profile.disliked_exercises = disliked
+                auto_disliked = True
+        profile.preferences = prefs
+
+    await db.flush()
+    return {
+        "message": f"Swapped {old_ex.name} → {new_ex.name}",
+        "sets_updated": len(swapped_sets),
+        "auto_disliked": auto_disliked,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Subjective post-session feedback (B1.4 / B1.5)
+# ---------------------------------------------------------------------------
+
+class SessionFeedbackRequest(BaseModel):
+    pump_quality: int | None = Field(default=None, ge=1, le=3)
+    session_difficulty: int | None = Field(default=None, ge=1, le=3)
+    joint_comfort: int | None = Field(default=None, ge=1, le=3)
+
+
+@router.patch("/session/{session_id}/feedback")
+async def submit_session_feedback(
+    session_id: str,
+    data: SessionFeedbackRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save subjective post-session ratings (pump / difficulty / comfort)."""
+    result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.id == uuid.UUID(session_id),
+            TrainingSession.user_id == user.id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if data.pump_quality is not None:
+        session.pump_quality = data.pump_quality
+    if data.session_difficulty is not None:
+        session.session_difficulty = data.session_difficulty
+    if data.joint_comfort is not None:
+        session.joint_comfort = data.joint_comfort
+
+    await db.flush()
+    return {
+        "pump_quality": session.pump_quality,
+        "session_difficulty": session.session_difficulty,
+        "joint_comfort": session.joint_comfort,
     }
 
 
@@ -1589,6 +1837,97 @@ async def get_weekly_volume(
         "week_start": str(monday),
         "week_end": str(sunday),
         "rows": rows,
+    }
+
+
+@router.get("/volume-landmarks")
+async def get_volume_landmarks_endpoint(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return the user's personalized MEV/MAV/MRV landmarks (scaled by experience)
+    alongside the current weekly volume from their active program.
+
+    Response schema:
+      {
+        "training_years": float,
+        "muscles": [
+          {
+            "name": str,
+            "mev": int, "mav_low": int, "mav_high": int, "mrv": int,
+            "current_weekly_sets": int,
+            "zone": "below_mev" | "mev_to_mav" | "mav_productive" | "mav_to_mrv" | "above_mrv",
+            "week_number": int
+          }
+        ]
+      }
+    """
+    from datetime import date as _d, timedelta as _td
+    from sqlalchemy import and_
+    from app.engines.engine2.volume_landmarks import (
+        get_all_landmarks, classify_volume,
+    )
+
+    profile_result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    training_years = (
+        getattr(profile, "training_experience_years", None) if profile else None
+    )
+    landmarks = get_all_landmarks(training_years)
+
+    program_result = await db.execute(
+        select(TrainingProgram)
+        .where(TrainingProgram.user_id == user.id, TrainingProgram.is_active == True)
+        .order_by(desc(TrainingProgram.created_at)).limit(1)
+    )
+    program = program_result.scalar_one_or_none()
+
+    today = _d.today()
+    monday = today - _td(days=today.weekday())
+    sunday = monday + _td(days=6)
+
+    counts_result = await db.execute(
+        select(Exercise.primary_muscle)
+        .join(TrainingSet, TrainingSet.exercise_id == Exercise.id)
+        .join(TrainingSession, TrainingSet.session_id == TrainingSession.id)
+        .where(
+            and_(
+                TrainingSession.user_id == user.id,
+                TrainingSession.session_date >= monday,
+                TrainingSession.session_date <= sunday,
+                TrainingSet.is_warmup == False,
+            )
+        )
+    )
+    counts: dict[str, int] = {}
+    for (muscle,) in counts_result.all():
+        if not muscle:
+            continue
+        counts[muscle] = counts.get(muscle, 0) + 1
+
+    muscles_out = []
+    for muscle, lm in landmarks.items():
+        sets = counts.get(muscle, 0)
+        muscles_out.append({
+            "name": muscle,
+            "mev": lm["mev"],
+            "mav_low": lm["mav_low"],
+            "mav_high": lm["mav_high"],
+            "mrv": lm["mrv"],
+            "current_weekly_sets": sets,
+            "zone": classify_volume(sets, muscle, training_years),
+            "week_number": program.current_week if program else None,
+        })
+    muscles_out.sort(key=lambda m: m["name"])
+
+    return {
+        "training_years": training_years,
+        "week_start": str(monday),
+        "week_end": str(sunday),
+        "muscles": muscles_out,
     }
 
 

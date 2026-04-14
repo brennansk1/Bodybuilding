@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import MeasurementInstructions from "@/components/MeasurementInstructions";
+import AppleWatchGuide from "@/components/AppleWatchGuide";
 import { api } from "@/lib/api";
 
 interface QuickCheckinResult {
@@ -81,6 +82,9 @@ export default function CheckinPage() {
   const router = useRouter();
   const { user, loading, logout } = useAuth();
   const [mode, setMode] = useState<"quick" | "full" | "fit3d" | null>(null);
+  // Apple Watch guide modal
+  type AwTab = "hrv" | "rhr" | "sleep" | "apps";
+  const [awGuide, setAwGuide] = useState<AwTab | null>(null);
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -609,7 +613,16 @@ export default function CheckinPage() {
                     />
                   </div>
                   <div>
-                    <label className="label-field">HRV — RMSSD (ms)</label>
+                    <div className="flex items-center justify-between">
+                      <label className="label-field mb-0">HRV (ms)</label>
+                      <button
+                        type="button"
+                        onClick={() => setAwGuide("hrv")}
+                        className="text-[10px] text-jungle-dim hover:text-jungle-accent flex items-center gap-1"
+                      >
+                        ⌚ How to find
+                      </button>
+                    </div>
                     <input
                       type="number"
                       value={quickRmssd}
@@ -617,9 +630,21 @@ export default function CheckinPage() {
                       className="input-field mt-1"
                       placeholder="e.g. 65"
                     />
+                    <p className="text-[10px] text-jungle-dim mt-1">
+                      Apple Watch reports SDNN. Enter that value — trends work the same.
+                    </p>
                   </div>
                   <div>
-                    <label className="label-field">Resting HR (bpm)</label>
+                    <div className="flex items-center justify-between">
+                      <label className="label-field mb-0">Resting HR (bpm)</label>
+                      <button
+                        type="button"
+                        onClick={() => setAwGuide("rhr")}
+                        className="text-[10px] text-jungle-dim hover:text-jungle-accent"
+                      >
+                        ⌚ How to find
+                      </button>
+                    </div>
                     <input
                       type="number"
                       value={quickRestingHr}
@@ -632,7 +657,16 @@ export default function CheckinPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="label-field">Sleep Quality (1–10)</label>
+                    <div className="flex items-center justify-between">
+                      <label className="label-field mb-0">Sleep Quality (1–10)</label>
+                      <button
+                        type="button"
+                        onClick={() => setAwGuide("sleep")}
+                        className="text-[10px] text-jungle-dim hover:text-jungle-accent"
+                      >
+                        ⌚ How to find
+                      </button>
+                    </div>
                     <input
                       type="range"
                       min="1"
@@ -1008,8 +1042,18 @@ export default function CheckinPage() {
                     <h2 className="text-lg font-semibold">Recovery & HRV</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="label-field">HRV (RMSSD)</label>
+                        <div className="flex items-center justify-between">
+                          <label className="label-field mb-0">HRV (ms)</label>
+                          <button
+                            type="button"
+                            onClick={() => setAwGuide("hrv")}
+                            className="text-[10px] text-jungle-dim hover:text-jungle-accent"
+                          >
+                            ⌚ How
+                          </button>
+                        </div>
                         <input type="number" value={rmssd} onChange={(e) => setRmssd(e.target.value)} className="input-field" placeholder="65" />
+                        <p className="text-[10px] text-jungle-dim mt-1">Apple Watch reports SDNN — works for trends.</p>
                       </div>
                       <div>
                         <label className="label-field">Resting HR (bpm)</label>
@@ -1525,6 +1569,11 @@ export default function CheckinPage() {
           />
         );
       })()}
+
+      {/* Apple Watch guide modal */}
+      {awGuide && (
+        <AppleWatchGuide initialTab={awGuide} onClose={() => setAwGuide(null)} />
+      )}
     </div>
   );
 }

@@ -42,6 +42,7 @@ interface Profile {
     cheat_meals_per_week?: number;
     intra_workout_nutrition?: boolean;
     fasted_training?: boolean;
+    rep_range_style?: "auto" | "heavy" | "moderate" | "high_rep";
     initial_phase?: string;
     preferred_proteins?: string[];
     preferred_carbs?: string[];
@@ -231,6 +232,8 @@ export default function SettingsPage() {
   const [fastedCardio, setFastedCardio] = useState(true);
   const [intraWorkout, setIntraWorkout] = useState(false);
   const [fastedTraining, setFastedTraining] = useState(false);
+  // B4.1: user-selectable training style rep-range override
+  const [repRangeStyle, setRepRangeStyle] = useState<"auto" | "heavy" | "moderate" | "high_rep">("auto");
   const [equipment, setEquipment] = useState<string[]>([]);
   const [dislikedRaw, setDislikedRaw] = useState("");
   const [injuryRaw, setInjuryRaw] = useState("");
@@ -324,6 +327,7 @@ export default function SettingsPage() {
         setFastedCardio(prefs.fasted_cardio ?? true);
         setIntraWorkout(prefs.intra_workout_nutrition ?? false);
         setFastedTraining(prefs.fasted_training ?? false);
+        setRepRangeStyle((prefs.rep_range_style as typeof repRangeStyle) ?? "auto");
         setEquipment(p.available_equipment ?? []);
         setDislikedRaw((p.disliked_exercises ?? []).join(", "));
         setInjuryRaw((p.injury_history ?? []).join(", "));
@@ -541,6 +545,7 @@ export default function SettingsPage() {
           cheat_meals_per_week: cheatMeals ? parseInt(cheatMeals) : 0,
           intra_workout_nutrition: intraWorkout,
           fasted_training: fastedTraining,
+          rep_range_style: repRangeStyle,
           initial_phase: currentPhase || null,
           preferred_proteins: preferredProteins,
           preferred_carbs: preferredCarbs,
@@ -592,6 +597,7 @@ export default function SettingsPage() {
       (originalPrefs.cheat_meals_per_week ?? 0) !== parseInt(cheatMeals || "0") ||
       (originalPrefs.intra_workout_nutrition ?? false) !== intraWorkout ||
       (originalPrefs.fasted_training ?? false) !== fastedTraining ||
+      (originalPrefs.rep_range_style ?? "auto") !== repRangeStyle ||
       (originalPrefs.initial_phase ?? "") !== (currentPhase || "") ||
       structuralKeysChanged;   // body composition changes affect macros
 
@@ -1091,6 +1097,41 @@ export default function SettingsPage() {
                       {s.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="card space-y-4">
+                <SectionHeader description="How you like to train — overrides the auto rep prescription">
+                  Training Style
+                </SectionHeader>
+                <div>
+                  <label className="label-field mb-2 block">Rep Range Preference</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { v: "auto", label: "Auto", sub: "Engine decides" },
+                      { v: "heavy", label: "Heavy", sub: "4–8 reps" },
+                      { v: "moderate", label: "Moderate", sub: "8–12 reps" },
+                      { v: "high_rep", label: "High Rep", sub: "12–20 reps" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.v}
+                        type="button"
+                        onClick={() => setRepRangeStyle(opt.v)}
+                        className={`py-2.5 rounded-lg text-xs font-medium border transition-colors ${
+                          repRangeStyle === opt.v
+                            ? "bg-jungle-accent/20 border-jungle-accent text-jungle-accent"
+                            : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-jungle-accent/50"
+                        }`}
+                      >
+                        <div className="font-semibold">{opt.label}</div>
+                        <div className="text-[10px] text-jungle-dim mt-0.5">{opt.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-jungle-dim mt-2">
+                    Auto uses Daily Undulating Periodization (rotates heavy / moderate / light across days).
+                    Pick a specific range to lock it for every working set.
+                  </p>
                 </div>
               </div>
 

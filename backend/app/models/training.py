@@ -154,6 +154,11 @@ class TrainingSession(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dup_profile: Mapped[str | None] = mapped_column(String(10), nullable=True)  # heavy/moderate/light
+    # Subjective post-session feedback (1-3 scale; null until rated).
+    # Drives future per-muscle volume autoregulation (RP-style).
+    pump_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    session_difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    joint_comfort: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     program: Mapped["TrainingProgram"] = relationship(back_populates="sessions")

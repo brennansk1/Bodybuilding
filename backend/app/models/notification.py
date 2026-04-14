@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -36,3 +36,28 @@ class NotificationLog(Base):
     __table_args__ = (
         Index("ix_notif_user_type_sent", "user_id", "notification_type", "sent_at"),
     )
+
+
+class CoachingFeedback(Base):
+    """
+    Rule-based coaching feedback generated from the weekly check-in pipeline.
+    One row per check-in cycle. `feedback_json` holds a list of message dicts
+    ({severity, category, title, body, metric_value, threshold}).
+
+    The dashboard + check-in review page query the most recent non-dismissed
+    row and surface the messages as expandable cards.
+    """
+    __tablename__ = "coaching_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    )
+    recorded_date: Mapped[date] = mapped_column(Date, nullable=False)
+    feedback_json: Mapped[list | dict] = mapped_column(JSONB, nullable=False)
+    dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+
+    __table_args__ = (Index("ix_coaching_user_date", "user_id", "recorded_date"),)

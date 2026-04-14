@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import WeightTrendChart from "@/components/WeightTrendChart";
+import CoachingFeedbackCard, { type CoachingMessage } from "@/components/CoachingFeedbackCard";
 import { api } from "@/lib/api";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -104,6 +105,8 @@ export default function WeeklyReviewPage() {
   const [fetching, setFetching] = useState(true);
   const [useLbs, setUseLbs] = useState(false);
   const [photoCompare, setPhotoCompare] = useState<string | null>(null);
+  const [coachingFeedbackId, setCoachingFeedbackId] = useState<string | null>(null);
+  const [coachingMessages, setCoachingMessages] = useState<CoachingMessage[]>([]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -122,6 +125,10 @@ export default function WeeklyReviewPage() {
         .then(setReview)
         .catch(() => {})
         .finally(() => setFetching(false));
+      api
+        .get<{ id: string | null; messages: CoachingMessage[] }>("/checkin/coaching-feedback")
+        .then((r) => { setCoachingFeedbackId(r.id); setCoachingMessages(r.messages || []); })
+        .catch(() => {});
     }
   }, [user, loading, router]);
 
@@ -154,6 +161,17 @@ export default function WeeklyReviewPage() {
               )}
             </div>
           </div>
+
+          {/* Coaching feedback — surfaced at the top of review */}
+          {coachingMessages.length > 0 && (
+            <div className="card mb-4">
+              <CoachingFeedbackCard
+                feedbackId={coachingFeedbackId}
+                messages={coachingMessages}
+                onDismiss={() => { setCoachingMessages([]); setCoachingFeedbackId(null); }}
+              />
+            </div>
+          )}
 
           {/* Loading */}
           {fetching && (

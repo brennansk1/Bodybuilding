@@ -187,6 +187,25 @@ export default function ProgramPage() {
   const [calendarOverlay, setCalendarOverlay] = useState<"none" | "macrocycle" | "mesocycle" | "microcycle" | "split">("none");
   const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
 
+  // Volume landmark data — MEV/MAV/MRV + current weekly sets (B3.5)
+  interface LandmarkMuscle {
+    name: string;
+    mev: number;
+    mav_low: number;
+    mav_high: number;
+    mrv: number;
+    current_weekly_sets: number;
+    zone: "below_mev" | "mev_to_mav" | "mav_productive" | "mav_to_mrv" | "above_mrv";
+    week_number: number | null;
+  }
+  interface LandmarksResponse {
+    training_years: number | null;
+    week_start: string;
+    week_end: string;
+    muscles: LandmarkMuscle[];
+  }
+  const [landmarks, setLandmarks] = useState<LandmarksResponse | null>(null);
+
   const today = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
@@ -202,7 +221,9 @@ export default function ProgramPage() {
         api.get<Program>("/engine2/program/current").catch(() => null),
         api.get<AnnualCalendarResponse>("/engine1/annual-calendar").catch(() => null),
         api.get<any>("/engine1/muscle-gaps").catch(() => null),
-      ]).then(([scheduleRes, programRes, calendarRes, gapsRes]) => {
+        api.get<LandmarksResponse>("/engine2/volume-landmarks").catch(() => null),
+      ]).then(([scheduleRes, programRes, calendarRes, gapsRes, landmarksRes]) => {
+        if (landmarksRes) setLandmarks(landmarksRes);
         if (scheduleRes) {
           setProgram(scheduleRes.program);
           setSessions(scheduleRes.sessions);
@@ -1002,6 +1023,94 @@ export default function ProgramPage() {
                 </a>
               </div>
             </>
+          )}
+
+          {/* ── Volume Landmarks (B3.5) ── */}
+          {landmarks && landmarks.muscles.length > 0 && (
+            <div className="card mt-5 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wider">
+                  Weekly Volume vs Landmarks
+                </h2>
+                <span className="text-[10px] text-jungle-dim">
+                  Week of {landmarks.week_start}
+                </span>
+              </div>
+              <p className="text-[11px] text-jungle-dim">
+                MEV → MAV (productive band) → MRV per muscle, scaled to your training experience.
+              </p>
+              <div className="space-y-2">
+                {landmarks.muscles.map((m) => {
+                  const axisMax = Math.max(m.mrv + 2, m.current_weekly_sets + 1);
+                  const mevPct = (m.mev / axisMax) * 100;
+                  const mavLowPct = (m.mav_low / axisMax) * 100;
+                  const mavHighPct = (m.mav_high / axisMax) * 100;
+                  const mrvPct = (m.mrv / axisMax) * 100;
+                  const currentPct = (m.current_weekly_sets / axisMax) * 100;
+                  const zoneColor =
+                    m.zone === "below_mev" ? "#ef4444" :
+                    m.zone === "mev_to_mav" ? "#eab308" :
+                    m.zone === "mav_productive" ? "#4ade80" :
+                    m.zone === "mav_to_mrv" ? "#22c55e" :
+                    "#ef4444";
+                  const zoneLabel =
+                    m.zone === "below_mev" ? "Below MEV" :
+                    m.zone === "mev_to_mav" ? "Sub-productive" :
+                    m.zone === "mav_productive" ? "Productive" :
+                    m.zone === "mav_to_mrv" ? "High productive" :
+                    "Over MRV";
+                  return (
+                    <div key={m.name}>
+                      <div className="flex items-baseline justify-between mb-1">
+                        <span className="text-[11px] text-jungle-muted capitalize">
+                          {m.name.replace(/_/g, " ")}
+                        </span>
+                        <span className="text-[10px] font-mono" style={{ color: zoneColor }}>
+                          {m.current_weekly_sets} / {m.mrv} · {zoneLabel}
+                        </span>
+                      </div>
+                      <div className="relative h-3 bg-jungle-deeper rounded-full overflow-hidden">
+                        {/* Productive band background */}
+                        <div
+                          className="absolute top-0 bottom-0 bg-green-500/10"
+                          style={{
+                            left: `${mavLowPct}%`,
+                            width: `${mavHighPct - mavLowPct}%`,
+                          }}
+                        />
+                        {/* Current volume fill */}
+                        <div
+                          className="absolute top-0 bottom-0 rounded-full transition-all"
+                          style={{
+                            width: `${currentPct}%`,
+                            backgroundColor: zoneColor,
+                            opacity: 0.85,
+                          }}
+                        />
+                        {/* MEV tick */}
+                        <div
+                          className="absolute top-0 bottom-0 w-px bg-amber-400/70"
+                          style={{ left: `${mevPct}%` }}
+                          title={`MEV ${m.mev}`}
+                        />
+                        {/* MRV tick */}
+                        <div
+                          className="absolute top-0 bottom-0 w-px bg-red-400/70"
+                          style={{ left: `${mrvPct}%` }}
+                          title={`MRV ${m.mrv}`}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[9px] text-jungle-dim/70 mt-0.5 font-mono">
+                        <span>0</span>
+                        <span>MEV {m.mev}</span>
+                        <span>MAV {m.mav_low}-{m.mav_high}</span>
+                        <span>MRV {m.mrv}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       </main>
