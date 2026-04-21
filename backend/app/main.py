@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from app.config import settings
 from app.database import engine, Base, async_session
 from app.models import *  # noqa: F401, F403 — register all models with Base
-from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin, telegram
+from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin, telegram, ppm
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +75,19 @@ def _run_schema_migrations(conn):
     _add_column_if_missing(conn, "weekly_checkins", "side_right_photo_url", "VARCHAR(255)")
     _add_column_if_missing(conn, "weekly_checkins", "front_pose_photo_url", "VARCHAR(255)")
     _add_column_if_missing(conn, "weekly_checkins", "back_pose_photo_url", "VARCHAR(255)")
+    # PPM (Perpetual Progression Mode) + training-status fields on profile
+    _add_column_if_missing(conn, "user_profiles", "training_status", "VARCHAR(16) NOT NULL DEFAULT 'natural'")
+    _add_column_if_missing(conn, "user_profiles", "ppm_enabled", "BOOLEAN NOT NULL DEFAULT FALSE")
+    _add_column_if_missing(conn, "user_profiles", "target_tier", "INTEGER")
+    _add_column_if_missing(conn, "user_profiles", "current_cycle_number", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "user_profiles", "current_cycle_start_date", "DATE")
+    _add_column_if_missing(conn, "user_profiles", "current_cycle_week", "INTEGER NOT NULL DEFAULT 1")
+    _add_column_if_missing(conn, "user_profiles", "cycle_focus_muscles", "JSONB")
     # Indexes for frequently queried columns
     _create_index_if_missing(conn, "ix_session_user_date", "training_sessions", "user_id, session_date")
     _create_index_if_missing(conn, "ix_sets_session", "training_sets", "session_id")
     _create_index_if_missing(conn, "ix_exercises_muscle", "exercises", "primary_muscle")
+    _create_index_if_missing(conn, "ix_ppm_checkpoints_user_cycle", "ppm_checkpoints", "user_id, cycle_number")
 
 
 @asynccontextmanager
@@ -175,6 +184,7 @@ app.include_router(export.router, prefix="/api/v1")
 app.include_router(upload.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(telegram.router, prefix="/api/v1")
+app.include_router(ppm.router, prefix="/api/v1")
 
 import os
 from pathlib import Path as _Path

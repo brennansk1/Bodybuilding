@@ -33,6 +33,16 @@ import {
 } from "@dnd-kit/sortable";
 import OnboardingWizard, { shouldShowWizard } from "@/components/OnboardingWizard";
 import CoachingFeedbackCard, { type CoachingMessage } from "@/components/CoachingFeedbackCard";
+import TierReadinessCard from "@/components/TierReadinessCard";
+import {
+  CycleProgressCard,
+  ParityCheckCard,
+  ChestWaistCard,
+  CarbCycleCard,
+  ConditioningStyleCard,
+  NaturalCeilingCard,
+} from "@/components/PPMCards";
+import type { TierReadiness, TierProjection, NaturalAttainability } from "@/lib/types";
 import { getQuoteForToday } from "@/lib/quotes";
 
 interface PDSEntry {
@@ -172,6 +182,13 @@ const PHASE_COLORS: Record<string, string> = {
   peak_week:   "bg-yellow-500/20 text-yellow-400",
   contest:     "bg-red-500/20 text-red-400",
   restoration: "bg-purple-500/20 text-purple-400",
+  // PPM (Perpetual Progression Mode) sub-phases
+  ppm_assessment:      "bg-sky-500/20 text-sky-400",
+  ppm_accumulation:    "bg-emerald-500/20 text-emerald-400",
+  ppm_intensification: "bg-amber-500/20 text-amber-400",
+  ppm_deload:          "bg-slate-500/20 text-slate-400",
+  ppm_checkpoint:      "bg-purple-500/20 text-purple-400",
+  ppm_mini_cut:        "bg-orange-500/20 text-orange-400",
 };
 
 const GAP_TYPE_COLORS: Record<string, string> = {
@@ -222,6 +239,14 @@ const CARD_REGISTRY: Array<{ key: string; label: string }> = [
   { key: "recovery_trend", label: "Recovery Trend" },
   { key: "energy_availability", label: "Energy Availability" },
   { key: "training_time", label: "Weekly Training Time" },
+  // PPM (Perpetual Progression Mode) widgets — active when profile.ppm_enabled.
+  { key: "tier_readiness", label: "Tier Readiness" },
+  { key: "cycle_progress", label: "Improvement Cycle" },
+  { key: "parity_check", label: "Arm-Calf-Neck Parity" },
+  { key: "chest_waist", label: "Chest : Waist Ratio" },
+  { key: "carb_cycle", label: "Carb Cycle" },
+  { key: "conditioning_style", label: "Conditioning Style" },
+  { key: "natural_ceiling", label: "Natural Ceiling" },
 ];
 const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
 
@@ -386,6 +411,40 @@ export default function DashboardPage() {
   const [diagnostic, setDiagnostic] = useState<DiagnosticData | null>(null);
   const [classEstimate, setClassEstimate] = useState<ClassEstimate | null>(null);
   const [dashLoading, setDashLoading] = useState(true);
+
+  // ── PPM (Perpetual Progression Mode) ────────────────────────────────────
+  interface PPMStatus {
+    ppm_enabled: boolean;
+    target_tier: number | null;
+    training_status: "natural" | "enhanced";
+    current_cycle_number: number;
+    current_cycle_start_date: string | null;
+    current_cycle_week: number;
+    cycle_focus_muscles: string[] | null;
+    competition_date: string | null;
+    current_phase: string;
+  }
+  const [ppmStatus, setPpmStatus] = useState<PPMStatus | null>(null);
+  const [ppmReadiness, setPpmReadiness] = useState<TierReadiness | null>(null);
+  const [ppmProjection, setPpmProjection] = useState<TierProjection | null>(null);
+  const [ppmAttain, setPpmAttain] = useState<NaturalAttainability | null>(null);
+  interface PPMTape {
+    bicep: number | null;
+    calf: number | null;
+    neck: number | null;
+    chest: number | null;
+    waist: number | null;
+  }
+  const [ppmTape, setPpmTape] = useState<PPMTape | null>(null);
+  interface CarbCycleData {
+    high_day: { protein_g: number; carbs_g: number; fat_g: number; target_calories: number } | null;
+    medium_day: { protein_g: number; carbs_g: number; fat_g: number; target_calories: number } | null;
+    low_day: { protein_g: number; carbs_g: number; fat_g: number; target_calories: number } | null;
+    days_per_week?: { high: number; medium: number; low: number };
+  }
+  const [carbCycle, setCarbCycle] = useState<CarbCycleData | null>(null);
+  const [conditioningStyle, setConditioningStyle] = useState<"full" | "tight" | "dry" | "grainy" | null>(null);
+  const [divisionCapKg, setDivisionCapKg] = useState<number | null>(null);
 
   // Today's session preview
   const [todaySession, setTodaySession] = useState<{ session_type: string; sets: { exercise_name: string }[] } | null>(null);
@@ -579,6 +638,44 @@ export default function DashboardPage() {
       softFetch<PhaseRecommendation>("/engine1/phase-recommendation", setPhaseRec),
       softFetch<DiagnosticData>("/engine1/diagnostic", setDiagnostic),
       softFetch<ClassEstimate>("/engine1/class-estimate", setClassEstimate),
+      // PPM status — always fetched; the component renders cards only when enabled.
+      api.get<PPMStatus>("/ppm/status")
+        .then((s) => {
+          setPpmStatus(s);
+          if (s.ppm_enabled && s.target_tier != null) {
+            // Fetch readiness + honesty + macros once PPM is active.
+            interface EvaluateResp {
+              readiness: TierReadiness;
+              projection: TierProjection;
+              tape: { bicep: number | null; calf: number | null; neck: number | null; chest: number | null; waist: number | null };
+              weight_cap_kg: number;
+            }
+            api.post<EvaluateResp>("/ppm/evaluate", {})
+              .then((r) => {
+                setPpmReadiness(r.readiness);
+                setPpmProjection(r.projection);
+                setDivisionCapKg(r.weight_cap_kg ?? null);
+                setPpmTape({
+                  bicep: r.tape?.bicep ?? null,
+                  calf: r.tape?.calf ?? null,
+                  neck: r.tape?.neck ?? null,
+                  chest: r.tape?.chest ?? null,
+                  waist: r.tape?.waist ?? null,
+                });
+              })
+              .catch(() => {});
+            api.post<NaturalAttainability>("/ppm/attainability", { target_tier: s.target_tier })
+              .then(setPpmAttain)
+              .catch(() => {});
+            // Carb cycle comes back with the current week's plan macros.
+            api.get<{
+              week_plan: { macros: { carb_cycle: CarbCycleData } };
+            }>(`/ppm/plan/${s.current_cycle_week || 1}`)
+              .then((p) => setCarbCycle(p.week_plan?.macros?.carb_cycle ?? null))
+              .catch(() => {});
+          }
+        })
+        .catch(() => { /* PPM not enabled or endpoint unavailable */ }),
     ]).then(() => {
       if (failCount > 3) {
         showToast("Some dashboard data failed to load. Check your connection.", "warning");
@@ -1663,10 +1760,100 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
+            ) : ppmStatus?.ppm_enabled && ppmReadiness ? (
+              <div className="mt-3">
+                <TierReadinessCard
+                  readiness={ppmReadiness}
+                  projection={ppmProjection ?? undefined}
+                  currentCycleWeek={ppmStatus.current_cycle_week}
+                  totalCycleWeeks={ppmStatus.current_cycle_week && ppmStatus.current_cycle_week > 14 ? 16 : 14}
+                  onTransitionToComp={() => router.push("/settings")}
+                />
+              </div>
             ) : (
               <EmptyState label="Run diagnostics to load prep timeline" />
             )}
           </ChartCard>
+            );
+
+            // ── PPM: Improvement Cycle progress ───────────────────────────
+            if (isVizOn("cycle_progress") && ppmStatus?.ppm_enabled) bodies.cycle_progress = (
+              <ChartCard title="Improvement Cycle" subtitle={`Cycle #${ppmStatus.current_cycle_number}`}>
+                <CycleProgressCard
+                  cycleNumber={ppmStatus.current_cycle_number}
+                  cycleWeek={ppmStatus.current_cycle_week}
+                  totalWeeks={ppmStatus.current_cycle_week > 14 ? 16 : 14}
+                  subPhase={ppmStatus.current_phase}
+                  focusMuscles={ppmStatus.cycle_focus_muscles || []}
+                />
+              </ChartCard>
+            );
+
+            // ── PPM: Tier Readiness (card-sized summary, mirrors prep_timeline) ──
+            if (isVizOn("tier_readiness") && ppmStatus?.ppm_enabled && ppmReadiness) bodies.tier_readiness = (
+              <ChartCard title="Tier Readiness" subtitle={ppmReadiness.tier.replace(/_/g, " ")}>
+                <TierReadinessCard
+                  readiness={ppmReadiness}
+                  projection={ppmProjection ?? undefined}
+                  currentCycleWeek={ppmStatus.current_cycle_week}
+                  totalCycleWeeks={ppmStatus.current_cycle_week > 14 ? 16 : 14}
+                  onTransitionToComp={() => router.push("/settings")}
+                />
+              </ChartCard>
+            );
+
+            // ── PPM: Arm-Calf-Neck parity (Classic only, surfaced via tape) ──
+            if (isVizOn("parity_check") && ppmStatus?.ppm_enabled) bodies.parity_check = (
+              <ChartCard title="Arm-Calf-Neck Parity" subtitle="Reeves classical standard">
+                <ParityCheckCard
+                  arm_cm={ppmTape?.bicep ?? null}
+                  calf_cm={ppmTape?.calf ?? null}
+                  neck_cm={ppmTape?.neck ?? null}
+                />
+              </ChartCard>
+            );
+
+            // ── PPM: Chest : Waist ratio ──
+            if (isVizOn("chest_waist") && ppmStatus?.ppm_enabled) bodies.chest_waist = (
+              <ChartCard title="Chest : Waist" subtitle="V-taper ratio">
+                <ChestWaistCard chest_cm={ppmTape?.chest ?? null} waist_cm={ppmTape?.waist ?? null} />
+              </ChartCard>
+            );
+
+            // ── PPM: Carb cycle (high/medium/low days) ──
+            if (isVizOn("carb_cycle") && ppmStatus?.ppm_enabled && carbCycle) bodies.carb_cycle = (
+              <ChartCard title="Carb Cycle" subtitle="High / Medium / Low days">
+                <CarbCycleCard
+                  high_day={carbCycle.high_day}
+                  medium_day={carbCycle.medium_day}
+                  low_day={carbCycle.low_day}
+                  days_per_week={carbCycle.days_per_week}
+                />
+              </ChartCard>
+            );
+
+            // ── Conditioning style — Classic only ──
+            if (isVizOn("conditioning_style") && ppmStatus?.ppm_enabled) bodies.conditioning_style = (
+              <ChartCard title="Conditioning Style" subtitle="Classic judging modifier">
+                <ConditioningStyleCard
+                  style={conditioningStyle}
+                  onChange={setConditioningStyle}
+                />
+              </ChartCard>
+            );
+
+            // ── Natural ceiling (honesty) ──
+            if (isVizOn("natural_ceiling") && ppmStatus?.ppm_enabled && ppmAttain) bodies.natural_ceiling = (
+              <ChartCard title="Natural Ceiling" subtitle="Casey Butt prediction">
+                <NaturalCeilingCard
+                  predictedStageKg={ppmAttain.predicted_natural_max_stage_kg}
+                  tierRequiredKg={ppmAttain.tier_required_stage_kg}
+                  divisionCapKg={divisionCapKg}
+                  attainable={ppmAttain.overall_attainable}
+                  ffmiPredicted={ppmAttain.predicted_natural_ffmi}
+                  ffmiRequired={ppmAttain.tier_ffmi_requirement}
+                />
+              </ChartCard>
             );
 
             if (isVizOn("strength_progression")) bodies.strength_progression = (

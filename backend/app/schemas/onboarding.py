@@ -17,6 +17,13 @@ class ProfileCreate(BaseModel):
     # Optional fields from onboarding enhancements
     manual_body_fat_pct: float | None = Field(default=None, ge=3, le=50)
     current_phase: str | None = Field(default=None, pattern="^(bulk|lean_bulk|cut|maintain|restoration|peak)?$")
+    # PPM (Perpetual Progression Mode) — mutually exclusive with competition_date.
+    ppm_enabled: bool | None = None
+    target_tier: int | None = Field(default=None, ge=1, le=5)
+    training_status: str | None = Field(default=None, pattern="^(natural|enhanced)$")
+    # Natural attainability acknowledgement — required when enabling PPM at T3+
+    # as a natural athlete with an overall_attainable=False honesty result.
+    acknowledge_natural_gap: bool = False
 
 
 class MeasurementsCreate(BaseModel):

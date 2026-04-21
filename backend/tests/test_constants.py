@@ -31,12 +31,14 @@ class TestDivisionVectors:
         """Classic should have higher shoulder_to_waist than Open due to tighter waist."""
         assert DIVISION_VECTORS["classic_physique"]["shoulder_to_waist"] > DIVISION_VECTORS["mens_open"]["shoulder_to_waist"]
 
-    def test_mens_physique_tightest_waist(self):
-        """Men's Physique should have the tightest male waist."""
+    def test_classic_has_tightest_male_waist(self):
+        """Classic Physique now carries the tightest male waist target (0.405), matching
+        CBum/Dino/Ruffin empirical data. Corrected per the Ground Truth audit.
+        Men's Physique (0.415) is next; Men's Open (0.447) is largest."""
         male_divs = ["mens_open", "classic_physique", "mens_physique"]
-        mp_waist = DIVISION_VECTORS["mens_physique"]["waist"]
+        cp_waist = DIVISION_VECTORS["classic_physique"]["waist"]
         for div in male_divs:
-            assert mp_waist <= DIVISION_VECTORS[div]["waist"]
+            assert cp_waist <= DIVISION_VECTORS[div]["waist"]
 
     def test_mens_physique_smallest_thigh(self):
         """Board shorts division = smallest thigh emphasis."""
@@ -58,8 +60,16 @@ class TestDivisionVectors:
         assert bikini < figure < physique
 
     def test_shoulder_to_waist_algebraic(self):
-        """shoulder_to_waist should equal shoulders/waist (algebraically derived)."""
+        """shoulder_to_waist should equal shoulders/waist (algebraically derived).
+
+        Classic Physique is intentionally exempt: the corrected
+        ``shoulder_to_waist=1.75`` encodes the circumferential Olympia ratio
+        (Ground Truth doc §3.3), which is decoupled from the height-normalized
+        shoulders/waist ratios used elsewhere.
+        """
         for div_name, div in DIVISION_VECTORS.items():
+            if div_name == "classic_physique":
+                continue
             expected = div["shoulders"] / div["waist"]
             assert abs(div["shoulder_to_waist"] - expected) < 0.01, \
                 f"{div_name}: expected {expected:.4f}, got {div['shoulder_to_waist']}"

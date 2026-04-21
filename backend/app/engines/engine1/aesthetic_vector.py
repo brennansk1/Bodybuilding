@@ -150,6 +150,68 @@ def compute_priority_scores(
     return priorities
 
 
+# ---------------------------------------------------------------------------
+# Arm-Calf-Neck Parity (Steve Reeves Classical Standard)
+# ---------------------------------------------------------------------------
+# Reeves' "Building the Classic Physique the Natural Way" states that flexed
+# upper arm, neck, and calf should be equal in circumference. Modern Classic
+# judges still reward this balance — particularly arm:calf parity. This
+# metric exposes the gap and is used by Classic-only HQI bonuses (see pds.py).
+_REEVES_EQUAL_THRESHOLD_CM = 1.27    # 0.5 inch tolerance
+
+
+def compute_arm_calf_neck_parity(measurements: dict) -> dict:
+    """Compare arm, calf, and neck circumferences for Reeves-style parity.
+
+    Expected keys in ``measurements`` (centimeters): ``bicep``, ``calf``,
+    ``neck``. Missing keys return a non-evaluated result.
+
+    Returns
+    -------
+    dict
+        ``{"arm_cm", "calf_cm", "neck_cm", "max_diff_cm", "max_diff_inches",
+           "reeves_equal"}``. ``reeves_equal`` is True when the three
+        circumferences are within 0.5" (1.27 cm) of each other.
+    """
+    arm = measurements.get("bicep")
+    calf = measurements.get("calf")
+    neck = measurements.get("neck")
+
+    if arm is None or calf is None or neck is None:
+        return {
+            "arm_cm": arm, "calf_cm": calf, "neck_cm": neck,
+            "max_diff_cm": None, "max_diff_inches": None,
+            "reeves_equal": False, "evaluated": False,
+        }
+
+    values = [arm, calf, neck]
+    max_diff_cm = max(values) - min(values)
+    return {
+        "arm_cm": round(float(arm), 2),
+        "calf_cm": round(float(calf), 2),
+        "neck_cm": round(float(neck), 2),
+        "max_diff_cm": round(max_diff_cm, 2),
+        "max_diff_inches": round(max_diff_cm / 2.54, 2),
+        "reeves_equal": max_diff_cm <= _REEVES_EQUAL_THRESHOLD_CM,
+        "evaluated": True,
+    }
+
+
+def compute_chest_waist_ratio(chest_cm: float, waist_cm: float) -> float:
+    """Return the circumferential chest-to-waist ratio.
+
+    Reference values per Ground Truth doc §3.5:
+    - Reeves ideal: 1.48 (148%)
+    - CBum empirical: 1.79 (52"/29")
+    - Ruffin empirical: 1.74
+
+    Returns 0.0 when waist_cm is non-positive to avoid division errors.
+    """
+    if waist_cm is None or waist_cm <= 0:
+        return 0.0
+    return round(float(chest_cm) / float(waist_cm), 3)
+
+
 def cosine_similarity(
     actual_vector: dict[str, float],
     ideal_vector: dict[str, float],

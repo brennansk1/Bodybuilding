@@ -38,6 +38,43 @@ async def create_profile(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Mutual exclusion: a user cannot have both a competition date AND PPM enabled.
+    if data.competition_date is not None and data.ppm_enabled:
+        raise HTTPException(
+            status_code=422,
+            detail="Competition date and PPM are mutually exclusive — set only one."
+        )
+
+    # Honesty gate: natural athletes aiming at T3+ must either be attainable
+    # per Casey Butt or explicitly acknowledge the gap.
+    if (
+        data.ppm_enabled
+        and (data.training_status or "natural") == "natural"
+        and data.target_tier is not None
+        and data.target_tier >= 3
+    ):
+        try:
+            from app.engines.engine1.honesty import check_natural_attainability
+            honesty = check_natural_attainability(
+                height_cm=data.height_cm,
+                wrist_cm=data.wrist_circumference_cm,
+                ankle_cm=data.ankle_circumference_cm,
+                target_tier=data.target_tier,
+                division=data.division,
+            )
+            if not honesty["overall_attainable"] and not data.acknowledge_natural_gap:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "honesty_gate_blocked",
+                        "attainability": honesty,
+                        "hint": "Re-submit with acknowledge_natural_gap=true to proceed anyway, or lower target_tier.",
+                    },
+                )
+        except NotImplementedError:
+            # Non-Classic divisions skip the gate silently.
+            pass
+
     existing = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
     profile = existing.scalar_one_or_none()
 
@@ -53,6 +90,16 @@ async def create_profile(
         profile.ankle_circumference_cm = data.ankle_circumference_cm
         if data.manual_body_fat_pct is not None:
             profile.manual_body_fat_pct = data.manual_body_fat_pct
+        if data.training_status is not None:
+            profile.training_status = data.training_status
+        if data.target_tier is not None:
+            profile.target_tier = data.target_tier
+        if data.ppm_enabled is not None:
+            profile.ppm_enabled = bool(data.ppm_enabled)
+            if profile.ppm_enabled and profile.current_cycle_start_date is None:
+                profile.current_cycle_start_date = date.today()
+                profile.current_cycle_number = max(1, profile.current_cycle_number or 0)
+                profile.current_cycle_week = 1
         # Store current_phase in preferences JSONB
         if data.current_phase:
             prefs = profile.preferences or {}
@@ -73,6 +120,14 @@ async def create_profile(
             wrist_circumference_cm=data.wrist_circumference_cm,
             ankle_circumference_cm=data.ankle_circumference_cm,
             manual_body_fat_pct=data.manual_body_fat_pct,
+            training_status=data.training_status or "natural",
+            ppm_enabled=bool(data.ppm_enabled),
+            target_tier=data.target_tier,
+            current_cycle_start_date=(
+                date.today() if data.ppm_enabled else None
+            ),
+            current_cycle_number=(1 if data.ppm_enabled else 0),
+            current_cycle_week=1,
             preferences=prefs if prefs else None,
         )
         db.add(profile)
@@ -231,6 +286,17 @@ async def get_profile(
         "program_start_date": str(profile.program_start_date) if profile.program_start_date else None,
         "cycle_tracking_enabled": profile.cycle_tracking_enabled,
         "cycle_start_date": str(profile.cycle_start_date) if profile.cycle_start_date else None,
+        # PPM fields
+        "ppm_enabled": bool(profile.ppm_enabled),
+        "target_tier": profile.target_tier,
+        "training_status": profile.training_status or "natural",
+        "current_cycle_number": profile.current_cycle_number or 0,
+        "current_cycle_start_date": (
+            str(profile.current_cycle_start_date)
+            if profile.current_cycle_start_date else None
+        ),
+        "current_cycle_week": profile.current_cycle_week or 1,
+        "cycle_focus_muscles": profile.cycle_focus_muscles or [],
         "available_equipment": profile.available_equipment or [],
         "disliked_exercises": profile.disliked_exercises or [],
         "injury_history": profile.injury_history or [],
@@ -257,6 +323,7 @@ async def update_profile(
         "age": (14, 100),
         "training_experience_years": (0, 70),
         "training_duration_min": (20, 240),
+        "target_tier": (1, 5),
     }
     numeric_float_fields = {
         "height_cm": (120.0, 230.0),
@@ -271,15 +338,38 @@ async def update_profile(
             "womens_bikini", "womens_figure", "womens_physique", "wellness",
         },
         "training_time_anchor": {"start", "end"},
+        "training_status": {"natural", "enhanced"},
     }
     hhmm_fields = {"training_start_time", "training_end_time"}
-    bool_fields = {"cycle_tracking_enabled"}
-    date_fields = {"competition_date", "cycle_start_date", "program_start_date"}
-    list_fields = {"available_equipment", "disliked_exercises", "injury_history"}
+    bool_fields = {"cycle_tracking_enabled", "ppm_enabled"}
+    date_fields = {
+        "competition_date", "cycle_start_date", "program_start_date",
+        "current_cycle_start_date",
+    }
+    list_fields = {
+        "available_equipment", "disliked_exercises", "injury_history",
+        "cycle_focus_muscles",
+    }
     all_allowed = (
         set(numeric_int_fields) | set(numeric_float_fields) | set(string_fields)
         | hhmm_fields | bool_fields | date_fields
     )
+
+    # Mutual exclusion: can't set competition_date AND ppm_enabled=True in one payload.
+    _incoming_comp_date = data.get("competition_date")
+    _incoming_ppm = data.get("ppm_enabled")
+    if _incoming_comp_date and _incoming_ppm is True:
+        raise HTTPException(
+            status_code=422,
+            detail="Competition date and PPM are mutually exclusive — set only one.",
+        )
+    # Cross-field: if enabling PPM, ensure any existing competition_date is cleared
+    # (but only when the client didn't explicitly submit a date in the same payload).
+    if _incoming_ppm is True and profile.competition_date is not None and not _incoming_comp_date:
+        profile.competition_date = None
+    # And vice versa: setting a competition_date disables PPM.
+    if _incoming_comp_date and profile.ppm_enabled:
+        profile.ppm_enabled = False
 
     for field, value in data.items():
         if field in list_fields:

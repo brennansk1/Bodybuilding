@@ -68,6 +68,16 @@ _SPLIT_TEMPLATES: dict[str, list[dict[str, list[str]]]] = {
         {"day": "Arms",      "muscles": ["biceps", "triceps", "forearms"]},
         {"day": "Legs",      "muscles": ["quads", "hamstrings", "glutes", "calves"]},
     ],
+    # Historical split associated with golden-era/Classic Physique athletes
+    # (Arnold Schwarzenegger). 3-day rotation hit twice a week.
+    "arnold_split": [
+        {"day": "Chest & Back",      "muscles": ["chest", "back"]},
+        {"day": "Shoulders & Arms",  "muscles": [
+            "front_delt", "side_delt", "rear_delt",
+            "biceps", "triceps", "forearms",
+        ]},
+        {"day": "Legs",              "muscles": ["quads", "hamstrings", "glutes", "calves"]},
+    ],
 }
 
 # Deload cadence and magnitude — now phase-aware.
@@ -158,6 +168,92 @@ MESO_PHASE_MAP: dict[int, dict] = {
 }
 
 _DEFAULT_MESOCYCLE_WEEKS: int = 6
+
+
+# ---------------------------------------------------------------------------
+# PPM 14-week improvement-cycle mesocycle
+# ---------------------------------------------------------------------------
+# Perpetual Progression Mode design §3.2. Specialization focus (limiting
+# muscles from readiness.py) gets +20% volume capped at MRV.
+_PPM_CYCLE_SPECIALIZATION_BONUS: float = 0.20
+
+
+def _ppm_landmark_for_week(cycle_week: int) -> str:
+    """Return the volume-landmark zone for a given 1-indexed cycle week."""
+    if cycle_week <= 2:
+        return "mev"               # assessment
+    if cycle_week <= 6:
+        return "mav"               # accumulation ramp
+    if cycle_week <= 10:
+        return "mav_high"          # late accumulation
+    if cycle_week <= 12:
+        return "mrv"               # intensification
+    if cycle_week == 13:
+        return "deload"
+    if cycle_week == 14:
+        return "mev"               # checkpoint
+    # weeks 15–16 conditional mini-cut
+    return "mav"
+
+
+def compute_cycle_mesocycle(
+    cycle_week: int,
+    focus_muscles: list[str] | None,
+    landmarks: dict[str, dict[str, int]],
+) -> dict[str, dict]:
+    """Return per-muscle weekly working-set targets for a PPM cycle week.
+
+    Parameters
+    ----------
+    cycle_week : int
+        1-indexed week of the 14(-16)-week improvement cycle.
+    focus_muscles : list[str] | None
+        Muscles flagged as the current cycle's specialization focus
+        (derived from ``readiness.evaluate_readiness().limiting_factor``).
+        Receive a +20% volume bonus capped at MRV.
+    landmarks : dict[str, dict[str, int]]
+        Output of ``get_all_landmarks(training_years, training_status)``.
+
+    Returns
+    -------
+    dict
+        ``{muscle: {target_sets, landmark, is_focus, rir, fst7_mode}}``
+    """
+    zone = _ppm_landmark_for_week(cycle_week)
+    focus = set(focus_muscles or [])
+
+    # Map zone → base key + RIR/FST-7 profile.
+    if zone == "mev":
+        base_key, rir, fst7 = "mev", 2, "none"
+    elif zone == "mav":
+        base_key, rir, fst7 = "mav_low", 2, "light"
+    elif zone == "mav_high":
+        base_key, rir, fst7 = "mav_high", 1, "moderate"
+    elif zone == "mrv":
+        base_key, rir, fst7 = "mrv", 1, "aggressive"
+    elif zone == "deload":
+        base_key, rir, fst7 = "mev", 4, "none"
+    else:
+        base_key, rir, fst7 = "mav_low", 2, "light"
+
+    out: dict[str, dict] = {}
+    for muscle, lm in landmarks.items():
+        base = lm.get(base_key, lm.get("mav_low", 10))
+        mrv_cap = lm.get("mrv", base)
+        is_focus = muscle in focus
+        target = base * (1.0 + _PPM_CYCLE_SPECIALIZATION_BONUS) if is_focus else base
+        # Deload applies 50% volume regardless of focus.
+        if zone == "deload":
+            target = base * 0.5
+        target_sets = max(0, int(round(min(target, mrv_cap))))
+        out[muscle] = {
+            "target_sets": target_sets,
+            "landmark": zone,
+            "is_focus": is_focus,
+            "rir": rir,
+            "fst7_mode": fst7,
+        }
+    return out
 
 # Weekly set progression per muscle group.
 _MIN_WEEKLY_SET_INCREASE: int = 1
@@ -373,6 +469,8 @@ def should_deload(avg_ari_last_week: float, current_week: int, mesocycle_weeks: 
 def auto_select_split(
     hqi_scores: dict[str, float],
     days_per_week: int,
+    division: str | None = None,
+    training_status: str = "natural",
 ) -> str:
     """
     Select the optimal training split for this athlete's gap profile.
@@ -431,6 +529,18 @@ def auto_select_split(
     # (bro_split needs ≥5 days to be meaningful, for example)
     candidate_splits = _get_candidate_splits(days_per_week)
 
+    # Classic Physique elite practice favors bro / Arnold-style splits
+    # at 5-6 day/week frequencies (Ground Truth doc §4.1). Apply a small
+    # bias for Classic athletes who are past the beginner stage.
+    _CLASSIC_BIAS_SPLITS = {"bro_split", "arnold_split"}
+    _CLASSIC_BIAS = 0.15
+    div_key = (division or "").lower().replace(" ", "_")
+    apply_classic_bias = (
+        div_key == "classic_physique"
+        and days_per_week in (5, 6)
+        and training_status != "beginner"
+    )
+
     best_split = "ppl"
     best_score = float("-inf")
 
@@ -441,6 +551,8 @@ def auto_select_split(
             muscle_desired_freq,
             muscle_priority,
         )
+        if apply_classic_bias and split_name in _CLASSIC_BIAS_SPLITS:
+            score += _CLASSIC_BIAS
         if score > best_score:
             best_score = score
             best_split = split_name
@@ -494,6 +606,9 @@ def _get_candidate_splits(days_per_week: int) -> list[str]:
     candidates = []
     if days_per_week >= 2:
         candidates.extend(["ppl", "upper_lower", "full_body"])
+    if days_per_week >= 3:
+        # Arnold split = 3-day rotation; hit twice a week at 6 days.
+        candidates.append("arnold_split")
     if days_per_week >= 5:
         candidates.append("bro_split")
     return candidates if candidates else ["full_body"]

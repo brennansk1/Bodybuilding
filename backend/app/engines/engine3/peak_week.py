@@ -39,11 +39,26 @@ _WATER_NORMAL    = 4000
 _WATER_MODERATE  = 3000
 _WATER_REDUCED   = 2000
 
+# ---------------------------------------------------------------------------
+# Classic-Physique-specific evidence-based peak-week constants.
+# Source: Escalante 2021 (BMC Sports Sci Med Rehabil 13:68). Water and sodium
+# tapers are NOT supported — 100% of athletes in Mitchell 2018 who tried
+# sodium/water manipulation found it "largely ineffective". Sodium restriction
+# inhibits SGLT1 and impairs glucose absorption during carb load.
+# For Classic specifically (Ground Truth doc §6.2): slightly lower total carb
+# load than Open (7 g/kg vs 8-10 g/kg) to protect vacuum fullness.
+# ---------------------------------------------------------------------------
+_CLASSIC_LOAD_CARBS_PER_KG      = 7.0   # Thu, Fri=×0.9 (vs 5.0 aggressive / 4.0 gentle)
+_CLASSIC_SODIUM_FLAT_MG         = 2500  # constant Mon-Sat
+_CLASSIC_SODIUM_RECOVERY_MG     = 2500  # Sun
+_CLASSIC_WATER_FLAT_ML          = 4500  # constant Mon-Sat
+
 
 def compute_peak_week_protocol(
     lean_mass_kg: float,
     show_date: date | None = None,
     division: str = "mens_open",
+    practice_peak_week: bool = False,
 ) -> list[dict]:
     """
     Generate a 7-day peak-week protocol scaled to the athlete's lean mass.
@@ -70,17 +85,24 @@ def compute_peak_week_protocol(
     lbm = max(40.0, lean_mass_kg)  # floor for safety
     protein_g = round(lbm * 2.2, 0)
 
-    # Division-specific peak week intensity
+    # Division-specific peak week intensity.
+    # Classic Physique splits off from "aggressive" and follows the
+    # Escalante 2021 evidence-based protocol (constant water+sodium,
+    # 7 g/kg LBM carb load, no tapers).
     div_key = division.lower().replace(" ", "_")
-    _AGGRESSIVE_DIVISIONS = {"mens_open", "classic_physique", "womens_physique", "womens_figure"}
+    _AGGRESSIVE_DIVISIONS = {"mens_open", "womens_physique", "womens_figure"}
     _GENTLE_DIVISIONS = {"womens_bikini", "mens_physique"}
 
+    classic = div_key == "classic_physique"
     aggressive = div_key in _AGGRESSIVE_DIVISIONS
     gentle = div_key in _GENTLE_DIVISIONS
 
-    # Water loading protocol: aggressive divisions load heavily then cut;
-    # gentle divisions taper gradually and maintain moderate hydration
-    if aggressive:
+    # Water loading protocol.
+    # Classic: flat schedule (Escalante 2021) — no taper at all.
+    # Aggressive: load heavily then cut; gentle: minimal manipulation.
+    if classic:
+        water_schedule = [_CLASSIC_WATER_FLAT_ML] * 7
+    elif aggressive:
         # Graduated taper — never below 3000 mL on show day
         # 8L water load depletes vasopressin, then gradual reduction
         water_schedule = [8000, 8000, 6000, 4000, 3500, 3000, 4000]
@@ -90,13 +112,12 @@ def compute_peak_week_protocol(
     else:
         water_schedule = [6000, 6000, 5000, 4000, 3500, 3000, 4000]
 
-    # Sodium protocol — MAINTAIN or INCREASE during carb load days
-    # Research (Barakat et al. 2022, Escalante et al. 2021): SGLT1 glucose
-    # transport requires sodium for intestinal absorption. Cutting sodium
-    # during carb loading impairs glycogen storage.
-    # Load days (Thu/Fri) get HIGHER sodium to facilitate glucose absorption.
-    # Only show day gets modest reduction for final water tightening.
-    if aggressive:
+    # Sodium protocol — MAINTAIN or INCREASE during carb load days.
+    # Classic: constant 2500 mg/day per Escalante 2021 (no taper).
+    # Aggressive: elevated on load days for SGLT1, modest show-day reduction.
+    if classic:
+        sodium_schedule = [_CLASSIC_SODIUM_FLAT_MG] * 6 + [_CLASSIC_SODIUM_RECOVERY_MG]
+    elif aggressive:
         sodium_schedule = [2300, 2300, 2000, 2500, 2300, 1500, 2300]
     elif gentle:
         sodium_schedule = [2300, 2300, 2300, 2300, 2000, 1800, 2300]
@@ -206,6 +227,30 @@ def compute_peak_week_protocol(
             ),
         },
     ]
+
+    # Classic evidence-based protocol: raise load-day carbs to 7 g/kg LBM
+    # (Escalante et al. 2021, Barakat/Escalante 2022 case data).
+    if classic:
+        for cfg in day_configs:
+            if cfg["protocol_day"] == "load_1":
+                cfg["carbs_factor"] = _CLASSIC_LOAD_CARBS_PER_KG           # Thu 7.0
+            elif cfg["protocol_day"] == "load_2":
+                cfg["carbs_factor"] = _CLASSIC_LOAD_CARBS_PER_KG * 0.9     # Fri 6.3
+
+    # Practice peak week (4–6 weeks out): half-load, single-day test, no
+    # sodium/water changes — calibrate individual response.
+    if practice_peak_week:
+        for cfg in day_configs:
+            if cfg["protocol_day"] in ("load_1", "load_2"):
+                cfg["carbs_factor"] = 5.0
+            if cfg["protocol_day"] == "show_day":
+                cfg["notes"] = (
+                    "Practice peak check-in: photograph each morning this week. "
+                    "Adjust real peak week based on today's reaction to the 5 g/kg load."
+                )
+        # keep sodium/water at habitual for practice
+        sodium_schedule = [_CLASSIC_SODIUM_FLAT_MG] * 7
+        water_schedule = [_CLASSIC_WATER_FLAT_ML] * 7
 
     # Apply division-specific schedules to day configs
     for i, config in enumerate(day_configs):

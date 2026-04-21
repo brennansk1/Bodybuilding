@@ -12,15 +12,42 @@ from typing import Dict
 
 
 # ---------------------------------------------------------------------------
-# Phase caloric adjustments (kcal)
+# Phase caloric adjustments — percentage of TDEE (preferred; scales with size)
 # ---------------------------------------------------------------------------
+# Fixed kcal offsets fail for different athlete sizes. A 225 lb competitor
+# needs a larger absolute deficit than a 170 lb competitor to hit the same
+# rate-of-loss. Ground Truth doc §5.3: Iraki 2019 (10–20% surplus), Helms 2014
+# (rate-of-loss based deficit 0.5–1.0% BW/wk).
+_PHASE_OFFSET_PCT: dict[str, float] = {
+    "bulk":      0.15,   # +15% TDEE
+    "lean_bulk": 0.10,   # +10% TDEE
+    "maintain":  0.00,
+    "cut":      -0.20,   # -20% TDEE (autoregulated by rate-of-loss)
+    "peak":     -0.30,   # -30% TDEE (1-week phase)
+    "restoration": 0.00, # handled by restoration ramp (macros.py compute_restoration_ramp)
+}
+
+# Legacy fixed-kcal offsets preserved only for restoration fallback and any
+# caller that still passes a flat offset override.
 _PHASE_OFFSETS = {
-    "bulk":     450,    # +300-600 surplus
-    "lean_bulk": 250,   # +200-300 controlled surplus
-    "cut":     -400,    # deficit
+    "bulk":     450,
+    "lean_bulk": 250,
+    "cut":     -400,
     "maintain":  0,
     "peak":   -700,
     "restoration": 0,
+}
+
+# PPM (Perpetual Progression Mode) improvement-cycle sub-phase mapping.
+# See design doc §8.2. Cycle flow: assessment → accumulation → intensification
+# → deload → checkpoint (→ optional mini-cut if BF > 15%).
+_PPM_PHASE_ALIAS: dict[str, str] = {
+    "ppm_assessment":     "maintain",
+    "ppm_accumulation":   "lean_bulk",
+    "ppm_intensification": "lean_bulk",  # override pct below to +10%
+    "ppm_deload":         "maintain",
+    "ppm_checkpoint":     "maintain",
+    "ppm_mini_cut":       "cut",
 }
 
 # Protein targets (g per kg TOTAL body weight) — aligned with ISSN position stand and
@@ -29,10 +56,13 @@ _PHASE_OFFSETS = {
 # at typical offseason body fat levels (15–25% BF).
 # Higher during deficit phases to defend against catabolism; lower in surplus where
 # anabolic environment reduces the protein stimulus required.
+# Ground Truth doc §5.1: raise bulk/maintain from 2.0→2.2 and lean_bulk from
+# 2.2→2.4 to better match elite bodybuilding practice (still within ISSN/Helms
+# ranges).
 _PROTEIN_PER_KG = {
-    "bulk":      2.0,
-    "lean_bulk": 2.2,   # slightly higher to prioritize LBM in surplus
-    "maintain":  2.0,
+    "bulk":      2.2,
+    "lean_bulk": 2.4,   # slightly higher to prioritize LBM in surplus
+    "maintain":  2.2,
     "cut":       2.8,   # elite cut standard — defend LBM aggressively in deficit
     "peak":      3.0,   # peak week: max MPS signal, depleted glycogen = more gluconeogenesis
     "restoration": 2.2,
@@ -112,15 +142,32 @@ _KCAL_PER_G_PROTEIN = 4.0
 _KCAL_PER_G_CARB    = 4.0
 _KCAL_PER_G_FAT     = 9.0
 
+# PAL compensation for the academic Cunningham switch: +0.05 at active tiers
+# partially offsets the ~160 kcal RMR drop for hypermuscular athletes.
+_PAL_BUMP_THRESHOLD = 1.6    # applies to moderately-active and above
+_PAL_BUMP_HEAVY     = 1.8    # active / very active
+_PAL_BUMP_MODERATE  = 0.03
+_PAL_BUMP_STRONG    = 0.05
+
+
+def _bumped_activity_multiplier(activity_multiplier: float) -> float:
+    """Bump activity factor to partially offset academic Cunningham RMR drop."""
+    if activity_multiplier >= _PAL_BUMP_HEAVY:
+        return activity_multiplier + _PAL_BUMP_STRONG
+    if activity_multiplier >= _PAL_BUMP_THRESHOLD:
+        return activity_multiplier + _PAL_BUMP_MODERATE
+    return activity_multiplier
+
 
 def compute_rmr_cunningham(lbm_kg: float) -> float:
-    """Cunningham equation — gold standard for hyper-muscular athletes.
+    """Cunningham equation — academic standard (Cunningham 1991).
 
-    RMR = 500 + (22 × LBM_kg)
+    RMR = 370 + (21.6 × LBM_kg)
 
-    More accurate than Katch-McArdle for athletes with LBM > 75 kg
-    (Men's Open / Classic competitors), as Katch-McArdle under-predicts
-    RMR at extreme lean mass levels.
+    Supersedes the previous inflated variant (500 + 22×LBM) to match the
+    published literature. For an 85 kg LBM athlete: 2206 kcal (was 2370).
+    TDEE activity factors are bumped +0.05 on active/very-active tiers to
+    compensate for hypermuscular NEAT — see _ACTIVITY_FACTOR_BUMP below.
 
     Parameters
     ----------
@@ -132,7 +179,7 @@ def compute_rmr_cunningham(lbm_kg: float) -> float:
     float
         Resting metabolic rate in kcal/day.
     """
-    return 500.0 + (22.0 * lbm_kg)
+    return 370.0 + (21.6 * lbm_kg)
 
 
 def compute_tdee(
@@ -192,7 +239,101 @@ def compute_tdee(
     else:
         raise ValueError(f"sex must be 'male' or 'female', got '{sex}'")
 
-    return bmr * activity_multiplier
+    return bmr * _bumped_activity_multiplier(activity_multiplier)
+
+
+# ---------------------------------------------------------------------------
+# Rate-of-loss tracker
+# ---------------------------------------------------------------------------
+# Helms 2014 and Iraki 2019: evidence-based deficits target 0.5–1.0% BW/week.
+# Feed this into the autoregulation module to dynamically adjust deficit size
+# based on the athlete's observed 4-week bodyweight trend.
+_RATE_FAST_THRESHOLD_PCT = 1.0   # >1%/wk loss → too aggressive
+_RATE_SLOW_THRESHOLD_PCT = 0.5   # <0.5%/wk loss → deficit insufficient
+_RATE_ADJ_STEP_PCT       = 0.05  # 5 percentage points per adjustment
+_RATE_DEFICIT_FLOOR_PCT  = -0.35 # never deficit beyond -35% TDEE
+
+
+def adjust_deficit_for_loss_rate(
+    current_offset_pct: float,
+    bw_last_4wk: list[float],
+    target_rate_pct_per_week: float = 0.0075,
+) -> dict:
+    """Recommend a deficit adjustment based on 4-week body-weight trend.
+
+    Intended for use in autoregulation.py's metabolic-adaptation / rate-of-loss
+    checks. Returns the proposed new offset as a fraction of TDEE along with a
+    rationale string that can be surfaced to the athlete.
+
+    Parameters
+    ----------
+    current_offset_pct : float
+        Current phase offset as fraction of TDEE (e.g. ``-0.20`` for -20%).
+    bw_last_4wk : list[float]
+        Bodyweights in kg, ordered oldest → newest. Needs at least two entries.
+    target_rate_pct_per_week : float
+        Target weekly loss as a fraction of body weight (default 0.75%/wk,
+        midpoint of the Helms 0.5–1.0% range). Positive for cuts.
+
+    Returns
+    -------
+    dict
+        ``{"new_offset_pct", "observed_rate_pct_per_week", "action", "reason"}``
+        where action is one of ``"tighten"``, ``"loosen"``, or ``"hold"``.
+    """
+    if len(bw_last_4wk) < 2:
+        return {
+            "new_offset_pct": current_offset_pct,
+            "observed_rate_pct_per_week": 0.0,
+            "action": "hold",
+            "reason": "Need ≥2 body-weight data points to compute loss rate.",
+        }
+
+    weeks = max(1, len(bw_last_4wk) - 1)
+    start = bw_last_4wk[0]
+    end = bw_last_4wk[-1]
+    if start <= 0:
+        return {
+            "new_offset_pct": current_offset_pct,
+            "observed_rate_pct_per_week": 0.0,
+            "action": "hold",
+            "reason": "Invalid starting body weight.",
+        }
+
+    # Positive rate = losing weight (matches target convention for cuts).
+    observed_rate_pct = ((start - end) / start) / weeks
+
+    action = "hold"
+    reason = (
+        f"Observed rate {observed_rate_pct * 100:.2f}%/wk is within the target "
+        f"band ({_RATE_SLOW_THRESHOLD_PCT:.2f}–{_RATE_FAST_THRESHOLD_PCT:.2f}%)."
+    )
+    new_offset = current_offset_pct
+
+    if observed_rate_pct * 100 > _RATE_FAST_THRESHOLD_PCT:
+        # Losing too fast — shrink the deficit (raise offset toward 0).
+        new_offset = min(0.0, current_offset_pct + _RATE_ADJ_STEP_PCT)
+        action = "loosen"
+        reason = (
+            f"Rate {observed_rate_pct * 100:.2f}%/wk exceeds 1.0% ceiling — "
+            f"deficit reduced by 5 pct to preserve LBM."
+        )
+    elif observed_rate_pct * 100 < _RATE_SLOW_THRESHOLD_PCT and current_offset_pct < 0:
+        # Losing too slow — deepen the deficit but never below the floor.
+        new_offset = max(_RATE_DEFICIT_FLOOR_PCT, current_offset_pct - _RATE_ADJ_STEP_PCT)
+        action = "tighten"
+        reason = (
+            f"Rate {observed_rate_pct * 100:.2f}%/wk below 0.5% floor — "
+            f"deficit deepened by 5 pct (capped at {_RATE_DEFICIT_FLOOR_PCT * 100:.0f}%)."
+        )
+
+    return {
+        "new_offset_pct": round(new_offset, 4),
+        "observed_rate_pct_per_week": round(observed_rate_pct * 100, 3),
+        "action": action,
+        "reason": reason,
+        "target_rate_pct_per_week": round(target_rate_pct_per_week * 100, 3),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -313,12 +454,18 @@ def compute_macros(
         If *phase* is not a recognised value.
     """
     phase_lower = phase.strip().lower()
+    # Map PPM improvement-cycle sub-phases to their base nutrition phases.
+    # ppm_intensification uses +10% TDEE (override below) to manage fatigue.
+    phase_lower = _PPM_PHASE_ALIAS.get(phase_lower, phase_lower)
     if phase_lower not in _PHASE_OFFSETS:
         raise ValueError(
             f"phase must be one of {list(_PHASE_OFFSETS)}, got '{phase}'"
         )
 
-    target_calories = tdee + _PHASE_OFFSETS[phase_lower]
+    # %-based caloric offset (scales with athlete size). Falls back to legacy
+    # fixed kcal for restoration (which uses its own ramp elsewhere).
+    pct = _PHASE_OFFSET_PCT.get(phase_lower, 0.0)
+    target_calories = tdee * (1.0 + pct)
 
     # Protein and fat are anchored to TOTAL body weight (TBW), not lean mass.
     # Research (Morton et al. 2018, ISSN 2017) reports optimal intakes in g/kg TBW.
@@ -468,12 +615,112 @@ def compute_macros(
             "trust 7-day rolling trends over single-day spikes."
         )
 
+    # ──────────────────────────────────────────────────────────────────────
+# Carb cycle (3-tier high/med/low) — weekly-neutral
+    # ──────────────────────────────────────────────────────────────────────
+    # Ground Truth doc §5.4: elite Classic preps run 2 high / 3 medium / 2
+    # low days/week. High days align with large-muscle sessions (back, legs),
+    # low days with rest days. Protein stays constant; only carbs fluctuate
+    # (with fat moved inversely to preserve weekly calories).
+    try:
+        cycle = compute_carb_cycle_days(
+            base_protein_g=protein_g,
+            base_carbs_g=carbs_g,
+            base_fat_g=fat_g,
+            weight_kg=weight_kg,
+            swing_factor=0.25,   # ±25% carbs (division-specific factor
+                                 # available via compute_division_nutrition_priorities)
+            high_days=2,
+            medium_days=3,
+            low_days=2,
+            sex=sex,
+            phase=phase_lower,
+            body_fat_pct=body_fat_pct,
+        )
+    except Exception:
+        cycle = None
+
     return {
         "protein_g": protein_g,
         "fat_g": fat_g,
         "carbs_g": carbs_g,
         "target_calories": round(target_calories, 0),
         "coach_warnings": warnings,
+        "carb_cycle": cycle,
+    }
+
+
+def compute_carb_cycle_days(
+    base_protein_g: float,
+    base_carbs_g: float,
+    base_fat_g: float,
+    weight_kg: float,
+    swing_factor: float = 0.25,
+    high_days: int = 2,
+    medium_days: int = 3,
+    low_days: int = 2,
+    sex: str = "male",
+    phase: str = "cut",
+    body_fat_pct: float | None = None,
+) -> dict:
+    """Return high/medium/low carb-day macros with weekly calories preserved.
+
+    The daily *protein* target is constant; *carbs* swing by ``±swing_factor``
+    around the baseline, and *fat* is the inverse sink so that the 7-day
+    caloric total matches 7 × base_target_calories.
+
+    Typical pattern per Ground Truth doc §5.4: 2 high / 3 medium / 2 low.
+    Assign high days to large-muscle training sessions (back, legs), medium
+    to small-muscle/arm days, low to rest days.
+
+    Returns
+    -------
+    dict
+        ``{"high_day": {...}, "medium_day": {...}, "low_day": {...},
+           "mapping": {"high": "large_muscle_training",
+                       "medium": "small_muscle_training",
+                       "low": "rest"}}``
+    """
+    total_days = high_days + medium_days + low_days
+    if total_days != 7:
+        raise ValueError(
+            f"high+medium+low must sum to 7 (got {total_days})."
+        )
+
+    fat_floor_g = _fat_floor_for_context(phase, body_fat_pct, sex) * weight_kg
+    base_cals = base_protein_g * _KCAL_PER_G_PROTEIN + base_carbs_g * _KCAL_PER_G_CARB + base_fat_g * _KCAL_PER_G_FAT
+
+    high_carbs = round(base_carbs_g * (1.0 + swing_factor), 1)
+    low_carbs  = round(base_carbs_g * (1.0 - swing_factor), 1)
+    # Medium day: whatever keeps the weekly carb total == 7 × base_carbs_g.
+    medium_carbs = round(
+        (7.0 * base_carbs_g - high_days * high_carbs - low_days * low_carbs) / max(1, medium_days),
+        1,
+    )
+
+    def _day(carbs_g: float) -> dict:
+        # Fat acts as the kcal inverse so each day hits base_cals.
+        fat_g = (base_cals - base_protein_g * _KCAL_PER_G_PROTEIN - carbs_g * _KCAL_PER_G_CARB) / _KCAL_PER_G_FAT
+        fat_g = max(fat_floor_g, fat_g)
+        cals  = base_protein_g * _KCAL_PER_G_PROTEIN + carbs_g * _KCAL_PER_G_CARB + fat_g * _KCAL_PER_G_FAT
+        return {
+            "protein_g": round(base_protein_g, 1),
+            "carbs_g":   round(carbs_g, 1),
+            "fat_g":     round(fat_g, 1),
+            "target_calories": round(cals, 0),
+        }
+
+    return {
+        "high_day":   _day(high_carbs),
+        "medium_day": _day(medium_carbs),
+        "low_day":    _day(low_carbs),
+        "swing_factor": swing_factor,
+        "days_per_week": {"high": high_days, "medium": medium_days, "low": low_days},
+        "mapping": {
+            "high":   "large_muscle_training",
+            "medium": "small_muscle_or_arms",
+            "low":    "rest",
+        },
     }
 
 

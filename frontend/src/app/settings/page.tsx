@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import { showError, showSuccess } from "@/components/Toast";
+import CompetitionModeToggle from "@/components/CompetitionModeToggle";
 import { api } from "@/lib/api";
 import { validateRequired, validateRanges, extractErrorMessage } from "@/lib/validation";
 
@@ -210,6 +211,11 @@ export default function SettingsPage() {
   const [heightCm, setHeightCm] = useState("");
   const [division, setDivision] = useState("mens_open");
   const [compDate, setCompDate] = useState("");
+  // PPM (Perpetual Progression Mode) state
+  const [ppmEnabled, setPpmEnabled] = useState<boolean>(false);
+  const [targetTier, setTargetTier] = useState<number | null>(null);
+  const [trainingStatus, setTrainingStatus] = useState<"natural" | "enhanced">("natural");
+  const [acknowledgeGap, setAcknowledgeGap] = useState<boolean>(false);
   const [programStartDate, setProgramStartDate] = useState("");
   const [expYears, setExpYears] = useState("");
   const [wrist, setWrist] = useState("");
@@ -306,6 +312,13 @@ export default function SettingsPage() {
         setHeightCm(p.height_cm?.toString() ?? "");
         setDivision(p.division || "mens_open");
         setCompDate(p.competition_date ?? "");
+        // PPM hydration (fields added by backend in this release; fall back if absent)
+        // @ts-expect-error new PPM fields on Profile
+        setPpmEnabled(Boolean(p.ppm_enabled));
+        // @ts-expect-error new PPM fields on Profile
+        setTargetTier(p.target_tier ?? null);
+        // @ts-expect-error new PPM fields on Profile
+        setTrainingStatus(p.training_status ?? "natural");
         setProgramStartDate(p.program_start_date ?? "");
         setExpYears(p.training_experience_years?.toString() ?? "");
         setWrist(p.wrist_circumference_cm?.toString() ?? "");
@@ -518,12 +531,16 @@ export default function SettingsPage() {
         age: age ? parseInt(age) : null,
         height_cm: heightCm ? parseFloat(heightCm) : null,
         division,
-        competition_date: compDate || null,
+        competition_date: ppmEnabled ? null : (compDate || null),
         program_start_date: programStartDate || null,
         training_experience_years: expYears ? parseInt(expYears) : 0,
         wrist_circumference_cm: wrist ? parseFloat(wrist) : null,
         ankle_circumference_cm: ankle ? parseFloat(ankle) : null,
         manual_body_fat_pct: manualBF ? parseFloat(manualBF) : null,
+        // PPM (Perpetual Progression Mode)
+        ppm_enabled: ppmEnabled,
+        target_tier: ppmEnabled ? targetTier : null,
+        training_status: trainingStatus,
         training_start_time: trainingStartTime || null,
         training_end_time: trainingEndTime || null,
         training_time_anchor: trainingTimeAnchor,
@@ -852,15 +869,31 @@ export default function SettingsPage() {
                 </div>
 
                 <div>
-                  <label className="label-field">Competition Date</label>
-                  <input
-                    type="date"
-                    value={compDate}
-                    onChange={(e) => setCompDate(e.target.value)}
-                    className="input-field mt-1"
-                  />
-                  {daysLeft !== null && (
-                    <p className="text-xs mt-1">
+                  <label className="label-field">Competition Mode</label>
+                  <div className="mt-2">
+                    <CompetitionModeToggle
+                      initialMode={ppmEnabled ? "ppm" : "competition"}
+                      initialDate={compDate}
+                      initialTier={(targetTier as 1 | 2 | 3 | 4 | 5 | null) ?? undefined}
+                      initialStatus={trainingStatus}
+                      onChange={(next) => {
+                        setPpmEnabled(next.ppm_enabled);
+                        setCompDate(next.competition_date || "");
+                        setTargetTier(next.target_tier);
+                        setTrainingStatus(next.training_status);
+                        setAcknowledgeGap(Boolean(next.acknowledge_natural_gap));
+                      }}
+                      runAttainabilityCheck={async (tier) => {
+                        try {
+                          return await api.post("/ppm/attainability", { target_tier: tier });
+                        } catch {
+                          return null;
+                        }
+                      }}
+                    />
+                  </div>
+                  {!ppmEnabled && daysLeft !== null && (
+                    <p className="text-xs mt-2">
                       <span className={daysLeft <= 14 ? "text-red-400" : daysLeft <= 56 ? "text-yellow-400" : "text-jungle-accent"}>
                         {daysLeft} days out
                       </span>

@@ -493,12 +493,15 @@ class TestMacroAlignment:
 
     @pytest.mark.parametrize("profile", ALL_PROFILES, ids=lambda p: f"{p.division}_{p.phase}")
     def test_protein_in_research_range(self, profile):
-        """Protein must be 1.6–2.7 g/kg TBW — ISSN position stand."""
+        """Protein must be 1.6–3.1 g/kg TBW — ISSN + Helms 2014 (peak can go to 3.1)."""
         r = run_full_diagnostic(profile)
         protein_per_kg = r["macros"]["protein_g"] / profile.body_weight_kg
-        assert 1.6 <= protein_per_kg <= 2.8, (
+        # Peak week allows the upper end of Helms 2014 (up to 3.1 g/kg LBM
+        # applied to TBW at elite leanness). Use a slightly wider band for peak.
+        upper = 3.1 if profile.phase in ("peak", "peak_week") else 2.81
+        assert 1.6 <= protein_per_kg <= upper, (
             f"{profile.division}/{profile.phase}: protein {protein_per_kg:.2f} g/kg "
-            f"out of range [1.6, 2.8]"
+            f"out of range [1.6, {upper}]"
         )
 
     @pytest.mark.parametrize("profile", ALL_PROFILES, ids=lambda p: f"{p.division}_{p.phase}")

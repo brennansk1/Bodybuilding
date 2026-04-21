@@ -75,12 +75,19 @@ def compute_conditioning_score(
     vascularity: float | None = None,
     muscle_hardness: float | None = None,
     striation_visibility: float | None = None,
+    conditioning_style: str | None = None,
+    division: str | None = None,
 ) -> float:
     """
     Score conditioning 0-100.
 
     80% from body fat proximity to phase ideal (quadratic penalty).
     20% from optional subjective visual indicators when provided.
+
+    For Classic Physique only, ``conditioning_style`` modulates the score:
+    the ANBF/IFBB rulebook (Ground Truth doc §1.3) explicitly flags
+    "ripped/shredded/grainy" language as non-Classic — Classic judges
+    reward "full and tight" over "dry and grainy".
     """
     if body_fat_pct is None:
         return 50.0
@@ -108,6 +115,17 @@ def compute_conditioning_score(
         score = 0.80 * bf_score + 0.20 * visual_avg
     else:
         score = bf_score
+
+    # Classic-only conditioning-style modifier.
+    if (division or "").lower().replace(" ", "_") == "classic_physique" and conditioning_style:
+        style = conditioning_style.strip().lower()
+        if style == "full":
+            score += 10
+        elif style in ("tight", "dry"):
+            score += 0  # neutral
+        elif style == "grainy":
+            score -= 10
+        score = max(0.0, min(100.0, score))
 
     return round(score, 1)
 

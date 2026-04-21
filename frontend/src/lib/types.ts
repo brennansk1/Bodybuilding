@@ -21,6 +21,84 @@ export interface UserProfile {
   competition_date?: string;
   training_experience_years: number;
   sex: "male" | "female";
+  // Perpetual Progression Mode fields
+  ppm_enabled?: boolean;
+  target_tier?: CompetitiveTier;
+  training_status?: TrainingStatus;
+  current_cycle_number?: number;
+  current_cycle_start_date?: string;
+  current_cycle_week?: number;
+  cycle_focus_muscles?: string[];
+}
+
+export type CompetitiveTier = 1 | 2 | 3 | 4 | 5;
+export type TrainingStatus = "natural" | "enhanced";
+export type ReadinessState =
+  | "not_ready"
+  | "developing"
+  | "approaching"
+  | "stage_ready";
+
+export interface TierMetric {
+  current: number;
+  target: number;
+  met: boolean;
+  pct_progress: number;
+}
+
+export interface TierReadiness {
+  state: ReadinessState;
+  tier: string;
+  tier_value: number;
+  metrics_met: number;
+  metrics_total: number;
+  pct_met: number;
+  per_metric: Record<string, TierMetric>;
+  limiting_factor: string;
+  limiting_detail: TierMetric;
+}
+
+export interface PPMCheckpoint {
+  id: string;
+  cycle_number: number;
+  checkpoint_date: string;
+  body_weight_kg: number | null;
+  bf_pct: number | null;
+  ffmi: number | null;
+  shoulder_waist_ratio: number | null;
+  chest_waist_ratio: number | null;
+  arm_calf_neck_parity: number | null;
+  hqi_score: number | null;
+  weight_cap_pct: number | null;
+  readiness_state: ReadinessState;
+  limiting_factor: string | null;
+  cycle_focus: string | null;
+}
+
+export interface TierProjection {
+  estimated_cycles: number;
+  estimated_months: number;
+  estimated_years: number;
+  limiting_dimension: "mass" | "proportions";
+  mass_cycles_needed: number;
+  proportion_cycles_needed: number;
+  annual_lbm_projection_kg: number;
+  per_cycle_lbm_kg: number;
+}
+
+export interface NaturalAttainability {
+  predicted_natural_max_stage_kg: number;
+  predicted_natural_max_lbm_kg: number;
+  tier_required_stage_kg: number;
+  gap_kg: number;
+  weight_attainable: boolean;
+  predicted_natural_ffmi: number;
+  tier_ffmi_requirement: number;
+  ffmi_attainable: boolean;
+  overall_attainable: boolean;
+  tier: string;
+  tier_value: number;
+  recommendation: string;
 }
 
 export type Division =

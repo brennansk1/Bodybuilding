@@ -20,11 +20,18 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 
-# Weeks remaining → phase boundary thresholds
-_OFFSEASON_MIN_WEEKS = 20
-_LEAN_BULK_MIN_WEEKS = 12
+# Weeks remaining → phase boundary thresholds.
+# Ground Truth doc §7.1: elite Classic preps are 16-20 weeks of deficit
+# (CBum now starts 20 weeks out; naturals need ≥24). Previous bounds (cut 4-12 wk)
+# were too short. Extended to 3-20 weeks cut, 20-28 weeks lean bulk, >28 offseason.
+_OFFSEASON_MIN_WEEKS = 28
+_LEAN_BULK_MIN_WEEKS = 20
 _CUT_MIN_WEEKS = 3
 _PEAK_MIN_WEEKS = 0
+
+# Day-boundary constants (derived from week thresholds).
+_CUT_MAX_DAYS = _LEAN_BULK_MIN_WEEKS * 7       # ≤ 140 days → cut window
+_LEAN_BULK_MAX_DAYS = _OFFSEASON_MIN_WEEKS * 7  # ≤ 196 days → lean-bulk window
 
 
 def prep_phase_for_date(
@@ -58,20 +65,86 @@ def prep_phase_for_date(
         return "contest"     # show day only
     if days_out <= 7:        # ≤ 1 week out — true peak week (7 days)
         return "peak_week"
-    if days_out <= 84:       # ≤ 12 weeks out
+    if days_out <= _CUT_MAX_DAYS:       # ≤ 20 weeks out → cut
         return "cut"
-    if days_out <= 140:      # ≤ 20 weeks out
+    if days_out <= _LEAN_BULK_MAX_DAYS: # ≤ 28 weeks out → lean bulk
         return "lean_bulk"
 
-    # For long preps (> 20 weeks out), insert mini-cut phases every 16 weeks
-    # of offseason growth to resensitize insulin and prevent excessive adiposity
-    if days_out > 140:
+    # For long preps (> 28 weeks out), insert mini-cut phases every 16 weeks
+    # of offseason growth to resensitize insulin and prevent excessive adiposity.
+    if days_out > _LEAN_BULK_MAX_DAYS:
         weeks_out_val = days_out // 7
-        # Calculate which 16-week block we're in (counting backward from cut start)
-        weeks_into_offseason = weeks_out_val - 20  # weeks before lean_bulk starts
+        weeks_into_offseason = weeks_out_val - _OFFSEASON_MIN_WEEKS
         block_position = weeks_into_offseason % 20  # 16 weeks bulk + 4 weeks mini-cut
         if block_position < 4:
             return "mini_cut"
+
+    return "offseason"
+
+
+# ---------------------------------------------------------------------------
+# PPM (Perpetual Progression Mode) sub-phases
+# ---------------------------------------------------------------------------
+# 14-week improvement cycle (optionally extended with a 15-16 week mini-cut):
+#   weeks 1–2   → ppm_assessment          (maintenance kcal)
+#   weeks 3–10  → ppm_accumulation        (lean_bulk kcal, MEV → MAV_high)
+#   weeks 11–12 → ppm_intensification     (lean_bulk kcal, MAV_high → MRV)
+#   week 13     → ppm_deload              (maintenance, 50% volume)
+#   week 14     → ppm_checkpoint          (maintenance, measurements)
+#   weeks 15–16 → ppm_mini_cut (optional, only if checkpoint BF > 15%)
+_PPM_PHASE_BY_WEEK: dict[range | int, str] = {}  # documentation only
+
+
+def ppm_phase_for_week(cycle_week: int, mini_cut_active: bool = False) -> str:
+    """Return the PPM sub-phase for a given 1-indexed cycle week."""
+    if cycle_week < 1:
+        return "ppm_assessment"
+    if cycle_week <= 2:
+        return "ppm_assessment"
+    if cycle_week <= 10:
+        return "ppm_accumulation"
+    if cycle_week <= 12:
+        return "ppm_intensification"
+    if cycle_week == 13:
+        return "ppm_deload"
+    if cycle_week == 14:
+        return "ppm_checkpoint"
+    if 15 <= cycle_week <= 16 and mini_cut_active:
+        return "ppm_mini_cut"
+    # Past week 14 (or 16 with mini-cut) → new cycle begins
+    return "ppm_assessment"
+
+
+def get_current_phase(
+    competition_date: date | None = None,
+    current_date: date | None = None,
+    *,
+    ppm_enabled: bool = False,
+    cycle_start_date: date | None = None,
+    mini_cut_active: bool = False,
+) -> str:
+    """Unified phase resolver (Ground Truth PPM doc §8.1).
+
+    Resolution order:
+    1. ``competition_date`` set → delegate to ``prep_phase_for_date`` (legacy).
+    2. ``ppm_enabled`` and ``cycle_start_date`` set → return the PPM sub-phase.
+    3. Fallback → ``"offseason"``.
+
+    Returns
+    -------
+    str
+        A canonical phase name accepted by macros/periodization engines.
+        PPM sub-phases start with ``"ppm_"``.
+    """
+    if competition_date is not None:
+        return prep_phase_for_date(competition_date, current_date)
+
+    if ppm_enabled and cycle_start_date is not None:
+        ref = current_date or date.today()
+        delta_days = (ref - cycle_start_date).days
+        # 1-indexed cycle week; negative deltas default to assessment.
+        cycle_week = max(1, (delta_days // 7) + 1)
+        return ppm_phase_for_week(cycle_week, mini_cut_active=mini_cut_active)
 
     return "offseason"
 

@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 import { showError } from "@/components/Toast";
+import CompetitionModeToggle from "@/components/CompetitionModeToggle";
 import { validateRequired, extractErrorMessage } from "@/lib/validation";
 
 const DIVISIONS = [
@@ -59,6 +60,10 @@ export default function OnboardingPage() {
   const [division, setDivision] = useState("mens_open");
   const [experience, setExperience] = useState("");
   const [competitionDate, setCompetitionDate] = useState("");
+  const [ppmEnabled, setPpmEnabled] = useState<boolean>(false);
+  const [targetTier, setTargetTier] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
+  const [trainingStatus, setTrainingStatus] = useState<"natural" | "enhanced">("natural");
+  const [acknowledgeGap, setAcknowledgeGap] = useState<boolean>(false);
   const [wrist, setWrist] = useState("");
   const [ankle, setAnkle] = useState("");
   const [manualBodyFatPct, setManualBodyFatPct] = useState("");
@@ -173,12 +178,16 @@ export default function OnboardingPage() {
           age: age ? parseInt(age) : null,
           height_cm: parseFloat(heightCm),
           division,
-          competition_date: competitionDate ? competitionDate : null,
+          competition_date: ppmEnabled ? null : (competitionDate || null),
           training_experience_years: parseInt(experience) || 0,
           wrist_circumference_cm: wrist ? parseFloat(wrist) : null,
           ankle_circumference_cm: ankle ? parseFloat(ankle) : null,
           manual_body_fat_pct: manualBodyFatPct ? parseFloat(manualBodyFatPct) : null,
           current_phase: currentPhase || null,
+          ppm_enabled: ppmEnabled,
+          target_tier: ppmEnabled ? targetTier : null,
+          training_status: trainingStatus,
+          acknowledge_natural_gap: acknowledgeGap,
         });
       } else if (step === 2) {
         const tapeNums: Record<string, number | null> = {};
@@ -326,9 +335,32 @@ export default function OnboardingPage() {
                     <label className="label-field">Training Experience (years)</label>
                     <input type="number" value={experience} onChange={(e) => setExperience(e.target.value)} className="input-field" placeholder="5" />
                   </div>
-                  <div>
-                    <label className="label-field">Competition Date (optional)</label>
-                    <input type="date" value={competitionDate} onChange={(e) => setCompetitionDate(e.target.value)} className="input-field" />
+                  <div className="sm:col-span-2">
+                    <label className="label-field">Competition Mode</label>
+                    <div className="mt-2">
+                      <CompetitionModeToggle
+                        initialMode={ppmEnabled ? "ppm" : "competition"}
+                        initialDate={competitionDate}
+                        initialTier={targetTier ?? undefined}
+                        initialStatus={trainingStatus}
+                        onChange={(next) => {
+                          setPpmEnabled(next.ppm_enabled);
+                          setCompetitionDate(next.competition_date || "");
+                          setTargetTier(next.target_tier as 1 | 2 | 3 | 4 | 5 | null);
+                          setTrainingStatus(next.training_status);
+                          setAcknowledgeGap(Boolean(next.acknowledge_natural_gap));
+                        }}
+                        runAttainabilityCheck={async (tier) => {
+                          // Pre-account-created path: cannot call /ppm/attainability yet.
+                          // Guard: return null so the UI skips the gate preview.
+                          try {
+                            return await api.post("/ppm/attainability", { target_tier: tier });
+                          } catch {
+                            return null;
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="label-field">Current Phase</label>

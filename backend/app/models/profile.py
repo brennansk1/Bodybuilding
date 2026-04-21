@@ -37,6 +37,19 @@ class UserProfile(Base):
     program_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     cycle_tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Training status — "natural" or "enhanced". Affects MRV/MAV_high scaling
+    # in volume_landmarks and tier-threshold year requirements in readiness.py.
+    training_status: Mapped[str] = mapped_column(String(16), nullable=False, default="natural")
+
+    # Perpetual Progression Mode (PPM). Mutually exclusive with competition_date
+    # — validated at the /profile API layer.
+    ppm_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    target_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1–5 (CompetitiveTier)
+    current_cycle_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    current_cycle_week: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    cycle_focus_muscles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # Per-user Telegram bot token from BotFather. Never exposed in GET responses.
     # TODO: encrypt at rest (app-level Fernet or pgcrypto) before production.
     telegram_bot_token: Mapped[str | None] = mapped_column(String(256), nullable=True)

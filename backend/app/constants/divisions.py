@@ -12,11 +12,14 @@ DIVISION_VECTORS = {
         "shoulder_to_waist": 1.382, "v_taper": 1.618,
     },
     "classic_physique": {
-        "neck": 0.238, "shoulders": 0.600, "chest": 0.540,
-        "bicep": 0.220, "forearm": 0.170, "waist": 0.432,
+        # Waist 0.405 = CBum/Dino/Ruffin empirical average (29-30" waist at 73.5" height).
+        # shoulder_to_waist 1.75 = modern Olympia circumferential ratio (52"/29").
+        # chest 0.560 pushes chest:waist toward Reeves' 148% ideal (0.560/0.405 = 138%).
+        "neck": 0.238, "shoulders": 0.600, "chest": 0.560,
+        "bicep": 0.220, "forearm": 0.170, "waist": 0.405,
         "hips": 0.510, "thigh": 0.340, "calf": 0.230,
         "back_width": 0.258,
-        "shoulder_to_waist": 1.389, "v_taper": 1.618,
+        "shoulder_to_waist": 1.75, "v_taper": 1.618,
     },
     "mens_physique": {
         # MP: V-taper dominated. Weight cap is only ~10 lbs below Classic per
