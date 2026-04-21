@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Contrail_One, Crimson_Pro, Inter } from "next/font/google";
 import "./globals.css";
 import ToastContainer from "@/components/Toast";
+import RouteProgress from "@/components/RouteProgress";
 
 // Display — the Contrail One wordmark font, single weight.
 const contrail = Contrail_One({
@@ -65,6 +67,9 @@ export default function RootLayout({
       className={`${contrail.variable} ${crimson.variable} ${inter.variable}`}
     >
       <body className="min-h-screen antialiased flex flex-col">
+        <Suspense fallback={null}>
+          <RouteProgress />
+        </Suspense>
         <div className="flex-1">{children}</div>
         {/* Global footer — motto + wordmark, unobtrusive */}
         <footer className="border-t border-viltrum-ash bg-white/50 py-6 mt-12">

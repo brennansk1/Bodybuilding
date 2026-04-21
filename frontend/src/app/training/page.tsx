@@ -1312,7 +1312,7 @@ export default function TrainingPage() {
           {/* No session today */}
           {program && !session && (
             <div className="card text-center py-10">
-              <p className="text-jungle-muted text-lg">Rest Day 💤</p>
+              <p className="text-jungle-muted text-lg">Rest Day</p>
               <p className="text-jungle-dim text-sm mt-1">No session scheduled — enjoy recovery</p>
             </div>
           )}

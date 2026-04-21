@@ -40,28 +40,37 @@ body {
   letter-spacing: 0;
 }
 
-/* Background — Viltrumite city at low opacity, tinted onto marble.
-   The opacity is kept low (0.10) so the sci-fi skyline feels like an atmospheric
-   watermark rather than a photograph fighting card content. */
+/* Background — Viltrumite city skyline.
+   Bumped opacity so the sci-fi backdrop actually reads through the marble
+   page. A soft radial vignette on top keeps card content readable. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: -2;
   background-image: url("/viltrum-city-bg.webp");
   background-position: center center;
   background-size: cover;
   background-repeat: no-repeat;
   background-attachment: fixed;
-  opacity: 0.10;
+  opacity: 0.32;
   pointer-events: none;
-  /* Desaturate slightly so the bright blues lean toward the marble palette */
-  filter: saturate(0.75);
+}
+/* Vignette + marble tint so card content keeps its contrast without
+   killing the skyline entirely. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, rgba(245,244,241,0.35) 0%, rgba(245,244,241,0.85) 70%, rgba(245,244,241,0.95) 100%);
 }
 @media (max-width: 767px) {
   body::before {
     background-attachment: scroll;
-    opacity: 0.08;
+    opacity: 0.28;
   }
 }
 

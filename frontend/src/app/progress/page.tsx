@@ -122,13 +122,13 @@ function ArcGauge({ value, target, max = 100 }: { value: number; target: number;
       {/* Track */}
       <path d={arcPath(startAngle, endDeg)} fill="none" stroke="#2a3a2a" strokeWidth="10" strokeLinecap="round" />
       {/* Value fill */}
-      <path d={arcPath(startAngle, valueDeg)} fill="none" stroke="#c8a84e" strokeWidth="10" strokeLinecap="round" />
+      <path d={arcPath(startAngle, valueDeg)} fill="none" stroke="var(--viltrum-accent)" strokeWidth="10" strokeLinecap="round" />
       {/* Target marker */}
       <circle
         cx={polarToXY(targetDeg).x}
         cy={polarToXY(targetDeg).y}
         r={5}
-        fill="#4ade80"
+        fill="var(--viltrum-success)"
         stroke="#1a2a1a"
         strokeWidth={2}
       />
@@ -538,7 +538,7 @@ export default function ProgressPage() {
                               className="h-full rounded-full"
                               style={{
                                 width: `${pct}%`,
-                                backgroundColor: pct >= 75 ? "#4ade80" : pct >= 50 ? "#c8a84e" : "#ef4444",
+                                backgroundColor: pct >= 75 ? "var(--viltrum-success)" : pct >= 50 ? "var(--viltrum-accent)" : "var(--viltrum-accent)",
                               }}
                             />
                           </div>
@@ -663,7 +663,7 @@ export default function ProgressPage() {
                           className="h-full rounded-full"
                           style={{
                             width: `${feasibility.confidence * 100}%`,
-                            backgroundColor: feasibility.confidence >= 0.7 ? "#4ade80" : feasibility.confidence >= 0.4 ? "#c8a84e" : "#ef4444"
+                            backgroundColor: feasibility.confidence >= 0.7 ? "var(--viltrum-success)" : feasibility.confidence >= 0.4 ? "var(--viltrum-accent)" : "var(--viltrum-accent)"
                           }}
                         />
                       </div>
@@ -762,10 +762,10 @@ export default function ProgressPage() {
                               width: `${Math.min(100, Math.max(0, ((diagnostic.prep_timeline as DiagnosticResult["prep_timeline"] & { season_position?: number })!.season_position ?? 0) * 100))}%`,
                               backgroundColor:
                                 diagnostic.prep_timeline.current_phase === "peak_week" || diagnostic.prep_timeline.current_phase === "contest"
-                                  ? "#c8a84e"
+                                  ? "var(--viltrum-accent)"
                                   : diagnostic.prep_timeline.current_phase === "cut"
-                                  ? "#f97316"
-                                  : "#4ade80",
+                                  ? "var(--viltrum-warning)"
+                                  : "var(--viltrum-success)",
                             }}
                           />
                         </div>
@@ -889,7 +889,7 @@ export default function ProgressPage() {
                   {lcsaTotalHistory.length >= 2 ? (
                     <div>
                       <p className="text-[10px] text-jungle-dim uppercase tracking-wide mb-2">Total LCSA Over Time</p>
-                      <MiniLineChart data={lcsaTotalHistory} height={90} color="#c8a84e" />
+                      <MiniLineChart data={lcsaTotalHistory} height={90} color="var(--viltrum-accent)" />
                     </div>
                   ) : null}
                 </div>
@@ -912,7 +912,7 @@ export default function ProgressPage() {
                           <div className="h-1.5 bg-jungle-deeper rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all"
-                              style={{ width: `${barPct}%`, backgroundColor: "#c8a84e" }}
+                              style={{ width: `${barPct}%`, backgroundColor: "var(--viltrum-accent)" }}
                             />
                           </div>
                         </div>
@@ -949,7 +949,7 @@ export default function ProgressPage() {
                         <MiniLineChart
                           data={history}
                           height={90}
-                          color={currentScore !== undefined && currentScore >= 75 ? "#4ade80" : "#c8a84e"}
+                          color={currentScore !== undefined && currentScore >= 75 ? "var(--viltrum-success)" : "var(--viltrum-accent)"}
                           showPoints={history.length <= 10}
                         />
                       ) : (

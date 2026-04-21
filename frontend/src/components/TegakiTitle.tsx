@@ -1,42 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 /**
- * Stroke-by-stroke handwriting reveal for headline text.
+ * Staggered per-character reveal for headline text, *in the intended font*.
  *
- * UX pattern: a cursive Caveat stroke animation plays for ~1.2s, then fades
- * out and reveals the Contrail One wordmark that was beneath it the whole
- * time. The Contrail text carries the permanent Viltrum brand; Caveat is
- * just the intro flourish.
+ * Earlier revisions used the tegaki-js library with a Caveat cursive
+ * overlay, which produced a visible double-render (Contrail One + Caveat at
+ * the same time). This replacement does the "drawn" effect via CSS on the
+ * Contrail One glyphs themselves: each character fades/slides in with a
+ * staggered delay so the title feels like it's being written, in the font
+ * the brand actually uses.
  *
- * Reasons to skip the animation:
+ * Reasons to skip the animation (all render static immediately):
  *   - `prefers-reduced-motion: reduce` user setting
- *   - `skipOnRevisit` + sessionStorage flag (e.g. page-scoped one-shot)
- *   - Tegaki library fails to load (graceful degradation)
- *
- * Usage:
- *   <TegakiTitle text="Dashboard" as="h1" size="display-lg" />
+ *   - `skipOnRevisit` + sessionStorage flag (one-shot per page per session)
  */
-
-// Defer-load the Tegaki lib so SSR doesn't choke on a browser-only dep.
-type TegakiRenderer = React.ComponentType<{
-  font: unknown;
-  children: string;
-  style?: React.CSSProperties;
-  className?: string;
-  onAnimationEnd?: () => void;
-}>;
-
 interface TegakiTitleProps {
   text: string;
-  /** Tag rendered for the static Contrail One title. Defaults to `h1`. */
   as?: "h1" | "h2" | "h3";
-  /** Contrail-One size token. Maps to one of the `h-display-*` classes. */
   size?: "display-xl" | "display-lg" | "display-md" | "display-sm";
-  /** Skip the animation after first render in a session. */
   skipOnRevisit?: boolean;
-  /** Unique key for session-storage skipping. Defaults to the text value. */
   revisitKey?: string;
   className?: string;
 }
@@ -48,14 +32,9 @@ const SIZE_CLASS: Record<NonNullable<TegakiTitleProps["size"]>, string> = {
   "display-sm": "h-display-sm",
 };
 
-// Match the Caveat overlay to the Contrail text metrics roughly — Caveat is
-// condensed so we bump it a little for visual parity.
-const CAVEAT_FONT_SIZE: Record<NonNullable<TegakiTitleProps["size"]>, string> = {
-  "display-xl": "64px",
-  "display-lg": "56px",
-  "display-md": "44px",
-  "display-sm": "34px",
-};
+// Per-character delay — low enough to feel snappy on long titles.
+const STEP_MS = 55;
+const BASE_DURATION_MS = 380;
 
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined") return false;
@@ -76,89 +55,56 @@ export default function TegakiTitle({
     [revisitKey, text],
   );
 
-  // Start assuming no animation so SSR matches initial client render.
-  const [phase, setPhase] = useState<"idle" | "drawing" | "done">("idle");
-  const [TegakiMod, setTegakiMod] = useState<{
-    Renderer: TegakiRenderer;
-    font: unknown;
-  } | null>(null);
-  const didStart = useRef(false);
+  // SSR + initial render: render static. Decide on animation client-side so
+  // hydration matches and we can branch off prefers-reduced-motion etc.
+  const [animate, setAnimate] = useState(false);
 
   useEffect(() => {
-    if (didStart.current) return;
-    didStart.current = true;
-    if (prefersReducedMotion()) {
-      setPhase("done");
-      return;
-    }
+    if (prefersReducedMotion()) return;
     if (skipOnRevisit && typeof window !== "undefined") {
       try {
-        if (window.sessionStorage.getItem(storageKey)) {
-          setPhase("done");
-          return;
-        }
-      } catch {
-        /* sessionStorage unavailable — continue */
-      }
-    }
-
-    let cancelled = false;
-    // Dynamically import the Tegaki React entrypoint + the Caveat font bundle.
-    Promise.all([
-      import("tegaki/react").catch(() => null),
-      import("tegaki/fonts/caveat").catch(() => null),
-    ])
-      .then(([reactMod, fontMod]) => {
-        if (cancelled) return;
-        if (!reactMod || !fontMod) {
-          setPhase("done");
-          return;
-        }
-        const Renderer = (reactMod as { TegakiRenderer: TegakiRenderer }).TegakiRenderer;
-        const font = (fontMod as { default: unknown }).default ?? fontMod;
-        setTegakiMod({ Renderer, font });
-        setPhase("drawing");
-      })
-      .catch(() => setPhase("done"));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [skipOnRevisit, storageKey]);
-
-  // When the animation finishes, persist the skip flag.
-  const handleAnimationEnd = () => {
-    if (skipOnRevisit && typeof window !== "undefined") {
-      try {
+        if (window.sessionStorage.getItem(storageKey)) return;
         window.sessionStorage.setItem(storageKey, "1");
       } catch {
-        /* no-op */
+        /* sessionStorage unavailable — fall through and still animate */
       }
     }
-    // Soft cross-fade: wait a tick, then drop the overlay.
-    setTimeout(() => setPhase("done"), 280);
-  };
+    // Allow a tick so the DOM is painted with opacity:0 before we flip.
+    const raf = window.requestAnimationFrame(() => setAnimate(true));
+    return () => window.cancelAnimationFrame(raf);
+  }, [skipOnRevisit, storageKey]);
 
+  const chars = useMemo(() => Array.from(text), [text]);
   const sizeClass = SIZE_CLASS[size];
 
   return (
-    <span className={`relative inline-block ${className}`.trim()}>
-      <Tag className={sizeClass}>{text}</Tag>
-      {phase === "drawing" && TegakiMod && (
-        <span
-          aria-hidden="true"
-          className="absolute inset-0 flex items-center pointer-events-none transition-opacity duration-300"
-          style={{ color: "#1A1816" }}
-        >
-          <TegakiMod.Renderer
-            font={TegakiMod.font}
-            style={{ fontSize: CAVEAT_FONT_SIZE[size], lineHeight: 1 }}
-            onAnimationEnd={handleAnimationEnd}
+    <Tag
+      className={`${sizeClass} ${className}`.trim()}
+      aria-label={text}
+    >
+      {chars.map((ch, i) => {
+        const delay = i * STEP_MS;
+        const style: React.CSSProperties = animate
+          ? {
+              opacity: 1,
+              transform: "translateY(0)",
+              transition: `opacity ${BASE_DURATION_MS}ms ease-out ${delay}ms, transform ${BASE_DURATION_MS}ms ease-out ${delay}ms`,
+            }
+          : {
+              opacity: 0,
+              transform: "translateY(6px)",
+              transition: "none",
+            };
+        return (
+          <span
+            key={`${i}-${ch}`}
+            aria-hidden="true"
+            style={{ display: "inline-block", whiteSpace: "pre", ...style }}
           >
-            {text}
-          </TegakiMod.Renderer>
-        </span>
-      )}
-    </span>
+            {ch}
+          </span>
+        );
+      })}
+    </Tag>
   );
 }

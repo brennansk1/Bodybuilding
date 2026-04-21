@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 type LogoVariant = "mark" | "lockup" | "splash";
-type LogoSize = "sm" | "md" | "lg" | "xl";
+type LogoSize = "sm" | "md" | "lg" | "xl" | "navbar";
 type LogoTone = "ink" | "light";
 
 interface LogoProps {
@@ -21,20 +21,22 @@ interface LogoProps {
   className?: string;
 }
 
-const ICON_PX: Record<LogoSize, number> = { sm: 28, md: 36, lg: 56, xl: 96 };
+const ICON_PX: Record<LogoSize, number> = { sm: 28, md: 36, lg: 56, xl: 96, navbar: 64 };
 const WORDMARK_SIZE: Record<LogoSize, string> = {
-  sm: "text-[18px] tracking-[4px]",
-  md: "text-[24px] tracking-[6px]",
-  lg: "text-[36px] tracking-[8px]",
-  xl: "text-[56px] tracking-[10px]",
+  sm:     "text-[18px] tracking-[4px]",
+  md:     "text-[24px] tracking-[6px]",
+  lg:     "text-[36px] tracking-[8px]",
+  xl:     "text-[56px] tracking-[10px]",
+  navbar: "text-[26px] sm:text-[30px] tracking-[6px]",
 };
 const TAGLINE_SIZE: Record<LogoSize, string> = {
-  sm: "text-[9px] tracking-[4px]",
-  md: "text-[10px] tracking-[5px]",
-  lg: "text-[12px] tracking-[6px]",
-  xl: "text-[14px] tracking-[7px]",
+  sm:     "text-[9px] tracking-[4px]",
+  md:     "text-[10px] tracking-[5px]",
+  lg:     "text-[12px] tracking-[6px]",
+  xl:     "text-[14px] tracking-[7px]",
+  navbar: "text-[10px] tracking-[5px]",
 };
-const GAP: Record<LogoSize, string> = { sm: "gap-2", md: "gap-3", lg: "gap-4", xl: "gap-5" };
+const GAP: Record<LogoSize, string> = { sm: "gap-2", md: "gap-3", lg: "gap-4", xl: "gap-5", navbar: "gap-3" };
 
 export default function Logo({
   variant,

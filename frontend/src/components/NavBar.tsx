@@ -113,14 +113,14 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
   return (
     <nav className="sticky top-0 z-50 bg-white border-b-[2.5px] border-viltrum-obsidian">
       <div className="container-app">
-        <div className="flex items-center justify-between h-14 sm:h-16 gap-4">
-          {/* Logo + desktop wordmark */}
+        <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
+          {/* Logo — the circle crops the banner top/bottom, VILTRUM wordmark is oversized. */}
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex items-center group shrink-0"
+            className="flex items-center shrink-0 -my-1 hover:opacity-85 transition-opacity"
             aria-label="Viltrum — home"
           >
-            <Logo variant="lockup" size="sm" />
+            <Logo variant="lockup" size="navbar" />
           </button>
 
           {/* Desktop nav */}

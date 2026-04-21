@@ -69,15 +69,15 @@ function sessionDotColor(session: ScheduledSession, today: string): string {
 // Use hex colors instead of Tailwind classes — template literals with
 // opacity modifiers (e.g. `bg-blue-500/50`) don't reliably compile in JIT.
 const PHASE_HEX: Record<string, string> = {
-  offseason: "#3b82f6",
-  bulk: "#3b82f6",
+  offseason: "var(--viltrum-info)",
+  bulk: "var(--viltrum-info)",
   lean_bulk: "#06b6d4",
-  mini_cut: "#f97316",
-  cut: "#f97316",
-  peak_week: "#ef4444",
-  peak: "#ef4444",
+  mini_cut: "var(--viltrum-warning)",
+  cut: "var(--viltrum-warning)",
+  peak_week: "var(--viltrum-accent)",
+  peak: "var(--viltrum-accent)",
   contest: "#eab308",
-  restoration: "#22c55e",
+  restoration: "var(--viltrum-success)",
 };
 
 function getPhaseColor(phase: string): string {
@@ -1064,11 +1064,11 @@ export default function ProgramPage() {
                   const mrvPct = (m.mrv / axisMax) * 100;
                   const currentPct = (m.current_weekly_sets / axisMax) * 100;
                   const zoneColor =
-                    m.zone === "below_mev" ? "#ef4444" :
+                    m.zone === "below_mev" ? "var(--viltrum-accent)" :
                     m.zone === "mev_to_mav" ? "#eab308" :
-                    m.zone === "mav_productive" ? "#4ade80" :
-                    m.zone === "mav_to_mrv" ? "#22c55e" :
-                    "#ef4444";
+                    m.zone === "mav_productive" ? "var(--viltrum-success)" :
+                    m.zone === "mav_to_mrv" ? "var(--viltrum-success)" :
+                    "var(--viltrum-accent)";
                   const zoneLabel =
                     m.zone === "below_mev" ? "Below MEV" :
                     m.zone === "mev_to_mav" ? "Sub-productive" :

@@ -193,10 +193,10 @@ const PHASE_COLORS: Record<string, string> = {
 };
 
 const GAP_TYPE_COLORS: Record<string, string> = {
-  add_muscle:   "#ef4444",
-  at_ideal:     "#4ade80",
-  above_ideal:  "#a3e635",
-  reduce_girth: "#f97316",
+  add_muscle:   "var(--viltrum-accent)",
+  at_ideal:     "var(--viltrum-success)",
+  above_ideal:  "var(--viltrum-success)",
+  reduce_girth: "var(--viltrum-warning)",
 };
 
 // Heatmap color-scale floor slider — 10% steps from 0 to 110.
@@ -260,10 +260,10 @@ const LABEL_OF: Record<string, string> = Object.fromEntries(
 );
 
 function pctToBarColor(pct: number): string {
-  if (pct >= 95) return "#4ade80";
-  if (pct >= 80) return "#a3e635";
+  if (pct >= 95) return "var(--viltrum-success)";
+  if (pct >= 80) return "var(--viltrum-success)";
   if (pct >= 60) return "#eab308";
-  return "#ef4444";
+  return "var(--viltrum-accent)";
 }
 
 function InfoTooltip({ text }: { text: string }) {
@@ -949,7 +949,7 @@ export default function DashboardPage() {
                       cy="50"
                       r="42"
                       fill="none"
-                      stroke="#c8a84e"
+                      stroke="var(--viltrum-accent)"
                       strokeWidth="8"
                       strokeLinecap="round"
                       strokeDasharray={`${(pds.current.pds_score / 100) * 263.9} 263.9`}
@@ -984,7 +984,7 @@ export default function DashboardPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-1 w-full">
                 {Object.entries(pds.current.components).map(([key, val]) => {
                   const pct = Math.max(0, Math.min(100, val));
-                  const color = pct >= 80 ? "#22c55e" : pct >= 60 ? "#c8a84e" : pct >= 40 ? "#f97316" : "#ef4444";
+                  const color = pct >= 80 ? "var(--viltrum-success)" : pct >= 60 ? "var(--viltrum-accent)" : pct >= 40 ? "var(--viltrum-warning)" : "var(--viltrum-accent)";
                   return (
                     <div key={key} className="flex flex-col items-center">
                       <div className="relative w-14 h-14">
@@ -1260,7 +1260,7 @@ export default function DashboardPage() {
                   domain={[0, 100]}
                   bandMin={tierBand[0]}
                   bandMax={tierBand[1]}
-                  bandColor="#c8a84e18"
+                  bandColor="color-mix(in srgb, var(--viltrum-accent) 9%, transparent)"
                 />
                 <div className="flex items-center justify-between mt-2 text-[10px] text-jungle-dim">
                   <div className="flex items-center gap-2">
@@ -1380,7 +1380,7 @@ export default function DashboardPage() {
                   <span className="text-xs text-jungle-muted">Symmetry Score</span>
                   <span
                     className="text-2xl font-bold"
-                    style={{ color: symmetry.symmetry_score >= 90 ? "#4ade80" : symmetry.symmetry_score >= 75 ? "#eab308" : "#ef4444" }}
+                    style={{ color: symmetry.symmetry_score >= 90 ? "var(--viltrum-success)" : symmetry.symmetry_score >= 75 ? "#eab308" : "var(--viltrum-accent)" }}
                   >
                     {symmetry.symmetry_score}
                   </span>
@@ -1390,7 +1390,7 @@ export default function DashboardPage() {
                     className="h-full rounded-full transition-all"
                     style={{
                       width: `${symmetry.symmetry_score}%`,
-                      backgroundColor: symmetry.symmetry_score >= 90 ? "#4ade80" : symmetry.symmetry_score >= 75 ? "#eab308" : "#ef4444",
+                      backgroundColor: symmetry.symmetry_score >= 90 ? "var(--viltrum-success)" : symmetry.symmetry_score >= 75 ? "#eab308" : "var(--viltrum-accent)",
                     }}
                   />
                 </div>
@@ -1403,7 +1403,7 @@ export default function DashboardPage() {
                       <span className="text-jungle-dim">L {d.left_cm} / R {d.right_cm} cm</span>
                       <span
                         className="font-medium ml-1"
-                        style={{ color: d.deviation_pct > 2 ? "#f97316" : "#4ade80" }}
+                        style={{ color: d.deviation_pct > 2 ? "var(--viltrum-warning)" : "var(--viltrum-success)" }}
                       >
                         {d.deviation_pct > 0.05 ? `${d.deviation_pct}%` : "even"}
                         {d.deviation_pct > 2 && (
@@ -1544,7 +1544,7 @@ export default function DashboardPage() {
                       .sort(([, a]: [string, any], [, b]: [string, any]) => (a.pct_of_ideal || 0) - (b.pct_of_ideal || 0))
                       .map(([site, data]: [string, any]) => {
                         const pct = data.pct_of_ideal || 0;
-                        const color = pct >= 98 ? "#4ade80" : pct >= 90 ? "#c8a84e" : pct >= 80 ? "#f97316" : "#ef4444";
+                        const color = pct >= 98 ? "var(--viltrum-success)" : pct >= 90 ? "var(--viltrum-accent)" : pct >= 80 ? "var(--viltrum-warning)" : "var(--viltrum-accent)";
                         return (
                           <div key={site} className="flex items-center gap-2">
                             <span className="text-[10px] text-jungle-muted w-20 capitalize truncate">{site.replace(/_/g, " ")}</span>
@@ -1647,10 +1647,10 @@ export default function DashboardPage() {
                       width: `${ari.ari_score}%`,
                       backgroundColor:
                         ari.zone === "green"
-                          ? "#4ade80"
+                          ? "var(--viltrum-success)"
                           : ari.zone === "yellow"
                           ? "#eab308"
-                          : "#ef4444",
+                          : "var(--viltrum-accent)",
                     }}
                   />
                 </div>
@@ -1923,7 +1923,7 @@ export default function DashboardPage() {
                   const pct = Math.min(100, (week / totalWeeks) * 100);
                   const weeksToDeload = Math.max(0, totalWeeks - week);
                   const phase = week <= 2 ? "MEV" : week <= 4 ? "MAV" : week === 5 ? "MRV" : "DELOAD";
-                  const phaseColor = phase === "MEV" ? "#a3e635" : phase === "MAV" ? "#c8a84e" : phase === "MRV" ? "#f97316" : "#3b82f6";
+                  const phaseColor = phase === "MEV" ? "var(--viltrum-success)" : phase === "MAV" ? "var(--viltrum-accent)" : phase === "MRV" ? "var(--viltrum-warning)" : "var(--viltrum-info)";
                   return (
                     <div className="flex items-center gap-4 mt-2">
                       <div className="relative w-20 h-20 shrink-0">
@@ -1973,7 +1973,7 @@ export default function DashboardPage() {
                   }
                   const value = ea.ea_kcal_per_kg_ffm;
                   const status = ea.status || "unknown";
-                  const statusColor = status === "ok" ? "#22c55e" : status === "warning" ? "#f97316" : "#ef4444";
+                  const statusColor = status === "ok" ? "var(--viltrum-success)" : status === "warning" ? "var(--viltrum-warning)" : "var(--viltrum-accent)";
                   const pct = Math.max(0, Math.min(100, (value / 55) * 100)); // scale to 55 as "max healthy"
                   return (
                     <div className="mt-3 space-y-3">
@@ -2099,7 +2099,7 @@ export default function DashboardPage() {
                   return (
                     <div className="mt-3">
                       <p className="text-[10px] text-jungle-dim uppercase tracking-wider">{weekday} · {dateLabel}</p>
-                      <p className="text-2xl font-bold text-jungle-muted mt-1">Rest Day 💤</p>
+                      <p className="text-2xl font-bold text-jungle-muted mt-1">Rest Day</p>
                       <p className="text-[11px] text-jungle-dim mt-1">No session scheduled — recover hard.</p>
                     </div>
                   );
@@ -2154,7 +2154,7 @@ export default function DashboardPage() {
                       {sleepWeek.days.map((d) => {
                         const qual = d.quality ?? 0;
                         const height = qual > 0 ? (qual / 10) * 100 : 0;
-                        const color = qual >= 7 ? "#4ade80" : qual >= 5 ? "#eab308" : qual > 0 ? "#ef4444" : "transparent";
+                        const color = qual >= 7 ? "var(--viltrum-success)" : qual >= 5 ? "#eab308" : qual > 0 ? "var(--viltrum-accent)" : "transparent";
                         return (
                           <div key={d.date} className="flex-1 flex flex-col items-center">
                             <div className="w-full bg-jungle-deeper rounded-sm flex items-end h-20 overflow-hidden">
@@ -2350,7 +2350,7 @@ export default function DashboardPage() {
                   <path
                     d={sparklinePath}
                     fill="none"
-                    stroke="#c8a84e"
+                    stroke="var(--viltrum-accent)"
                     strokeWidth="1.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -2363,7 +2363,7 @@ export default function DashboardPage() {
                     const lastX = 80;
                     const lastY = 24 - ((values[values.length - 1] - min) / range) * 24;
                     return (
-                      <circle cx={lastX} cy={lastY} r="2" fill="#c8a84e" />
+                      <circle cx={lastX} cy={lastY} r="2" fill="var(--viltrum-accent)" />
                     );
                   })()}
                 </svg>
@@ -2420,12 +2420,14 @@ const ChartCard = memo(function ChartCard({
 }) {
   return (
     <div className="card">
-      <div className="flex items-baseline justify-between mb-1">
-        <h3 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider flex items-center">
+      <div className="flex items-baseline justify-between mb-2 gap-3">
+        <h3 className="h-card flex items-center">
           {title}
           {tooltip && <InfoTooltip text={tooltip} />}
         </h3>
-        <span className="text-[10px] text-jungle-dim">{subtitle}</span>
+        <span className="text-[10px] text-viltrum-travertine uppercase tracking-[2px] font-sans truncate">
+          {subtitle}
+        </span>
       </div>
       {children}
     </div>
