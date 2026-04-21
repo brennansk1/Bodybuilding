@@ -162,7 +162,7 @@ function PlateCalculator({
   const totalLoaded = barWeight + plates.reduce((s, p) => s + p, 0) * 2;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-viltrum-obsidian/30" onClick={onClose}>
       <div
         className="w-full max-w-lg mx-auto bg-jungle-card border border-jungle-border rounded-t-2xl p-5 space-y-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -179,7 +179,7 @@ function PlateCalculator({
             onClick={() => setBarWeight(defaultBar)}
             className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               barWeight === defaultBar
-                ? "bg-jungle-accent text-jungle-dark"
+                ? "bg-jungle-accent text-white"
                 : "bg-jungle-deeper border border-jungle-border text-jungle-muted"
             }`}
           >
@@ -189,7 +189,7 @@ function PlateCalculator({
             onClick={() => setBarWeight(altBar)}
             className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               barWeight === altBar
-                ? "bg-jungle-accent text-jungle-dark"
+                ? "bg-jungle-accent text-white"
                 : "bg-jungle-deeper border border-jungle-border text-jungle-muted"
             }`}
           >
@@ -1032,7 +1032,7 @@ export default function TrainingPage() {
                 onClick={toggleUnit}
                 className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-colors ${
                   useLbs
-                    ? "bg-jungle-accent text-jungle-dark"
+                    ? "bg-jungle-accent text-white"
                     : "bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent"
                 }`}
               >
@@ -1042,7 +1042,7 @@ export default function TrainingPage() {
                 onClick={toggleGymMode}
                 className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold tracking-wide transition-colors ${
                   gymMode
-                    ? "bg-jungle-accent text-jungle-dark"
+                    ? "bg-jungle-accent text-white"
                     : "bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent"
                 }`}
               >
@@ -1397,7 +1397,7 @@ export default function TrainingPage() {
                         className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                           nowPlaying
                             ? "bg-jungle-deeper border border-jungle-border text-jungle-dim"
-                            : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover active:scale-95"
+                            : "bg-jungle-accent text-white hover:bg-jungle-accent-hover active:scale-95"
                         }`}
                       >
                         {nowPlaying ? "Overview" : "▶ Start"}
@@ -1625,7 +1625,7 @@ export default function TrainingPage() {
                         className={`set-done-btn w-full py-5 rounded-2xl text-lg font-bold transition-all ${
                           isCompleted
                             ? "bg-green-500/20 text-green-400 border-2 border-green-500/30 active:scale-95"
-                            : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover active:scale-[0.97] shadow-lg shadow-jungle-accent/20"
+                            : "bg-jungle-accent text-white hover:bg-jungle-accent-hover active:scale-[0.97] shadow-lg shadow-jungle-accent/20"
                         }`}
                       >
                         {isCompleted ? "✓ Done — Tap to Undo" : "Log Set ▶"}
@@ -1824,7 +1824,7 @@ export default function TrainingPage() {
                                       className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
                                         isCompleted
                                           ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                                          : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover"
+                                          : "bg-jungle-accent text-white hover:bg-jungle-accent-hover"
                                       }`}
                                     >
                                       {isCompleted ? "Undo" : "Done ✓"}
@@ -2087,7 +2087,7 @@ export default function TrainingPage() {
               <button
                 onClick={() => setShowFinishModal(true)}
                 disabled={saving || finishing || !isToday}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 bg-jungle-accent text-jungle-dark shadow-lg shadow-jungle-accent/20"
+                className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 bg-jungle-accent text-white shadow-lg shadow-jungle-accent/20"
               >
                 {saved ? "Saved ✓" : finishing ? "Finishing..." : "Finish Session"}
               </button>
@@ -2103,7 +2103,7 @@ export default function TrainingPage() {
                 <button
                   onClick={() => setShowFinishModal(true)}
                   disabled={saving || finishing || !isToday || completedCount === 0}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-40 bg-jungle-accent/20 border border-jungle-accent/60 text-jungle-accent hover:bg-jungle-accent hover:text-jungle-dark"
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-40 bg-jungle-accent/20 border border-jungle-accent/60 text-jungle-accent hover:bg-jungle-accent hover:text-white"
                   title={completedCount === 0 ? "Log at least one set before finishing" : "End the session now — unlogged sets won't count"}
                 >
                   {finishing ? "Finishing..." : "Finish Early"}
@@ -2116,7 +2116,7 @@ export default function TrainingPage() {
 
       {/* Finish Session Confirmation Modal */}
       {showFinishModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-viltrum-obsidian/45 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-jungle-card border border-jungle-border rounded-2xl p-6 max-w-sm w-full">
             <h3 className="text-lg font-bold text-jungle-text mb-2">
               {allWorkingSetsComplete ? "Finish Session?" : "Finish Early?"}
@@ -2165,8 +2165,8 @@ export default function TrainingPage() {
                 disabled={finishing}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-bold active:scale-95 disabled:opacity-50 ${
                   allWorkingSetsComplete
-                    ? "bg-jungle-accent text-jungle-dark"
-                    : "bg-amber-500 text-jungle-dark"
+                    ? "bg-jungle-accent text-white"
+                    : "bg-amber-500 text-white"
                 }`}
               >
                 {finishing ? "Finishing..." : allWorkingSetsComplete ? "Finish" : "Finish Early"}

@@ -173,7 +173,7 @@ export default function TrainingAnalyticsPage() {
                           onClick={() => setSelectedWeek(w.week_number)}
                           className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
                             selectedWeek === w.week_number
-                              ? "bg-jungle-accent text-jungle-dark"
+                              ? "bg-jungle-accent text-white"
                               : "bg-jungle-deeper text-jungle-dim hover:text-jungle-muted"
                           }`}
                         >

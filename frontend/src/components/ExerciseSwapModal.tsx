@@ -77,7 +77,7 @@ export default function ExerciseSwapModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[70] bg-viltrum-obsidian/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={onClose}
     >
       <div
@@ -156,7 +156,7 @@ export default function ExerciseSwapModal({
           <button
             onClick={submit}
             disabled={!selectedId || swapping}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-jungle-accent text-jungle-dark disabled:opacity-50 active:scale-95"
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-jungle-accent text-white disabled:opacity-50 active:scale-95"
           >
             {swapping ? "Swapping…" : "Swap"}
           </button>

@@ -177,7 +177,7 @@ export default function TimelinePage() {
               onClick={() => setFilter(f.key)}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors whitespace-nowrap ${
                 filter === f.key
-                  ? "bg-jungle-accent text-jungle-dark"
+                  ? "bg-jungle-accent text-white"
                   : "bg-jungle-deeper text-jungle-muted hover:text-jungle-accent"
               }`}
             >
@@ -332,7 +332,7 @@ export default function TimelinePage() {
 
       {/* ── Pose Comparison Modal ── */}
       {showCompare && compareA && compareB && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setShowCompare(false)}>
+        <div className="fixed inset-0 z-50 bg-viltrum-obsidian/55 flex flex-col" onClick={() => setShowCompare(false)}>
           <div className="flex items-center justify-between px-4 py-3 bg-jungle-card/90 border-b border-jungle-border" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-jungle-text">
               Pose Comparison: <span className="text-jungle-accent">{formatDate(compareA.date)}</span> vs <span className="text-jungle-accent">{formatDate(compareB.date)}</span>
@@ -358,7 +358,7 @@ export default function TimelinePage() {
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-jungle-dim text-xs">No photo</div>
                         )}
-                        <span className="absolute bottom-1 left-1 text-[8px] bg-black/60 px-1.5 py-0.5 rounded text-white">
+                        <span className="absolute bottom-1 left-1 text-[8px] bg-viltrum-obsidian/40 px-1.5 py-0.5 rounded text-white">
                           {formatDate(compareA.date)}
                         </span>
                       </div>
@@ -368,7 +368,7 @@ export default function TimelinePage() {
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-jungle-dim text-xs">No photo</div>
                         )}
-                        <span className="absolute bottom-1 left-1 text-[8px] bg-black/60 px-1.5 py-0.5 rounded text-white">
+                        <span className="absolute bottom-1 left-1 text-[8px] bg-viltrum-obsidian/40 px-1.5 py-0.5 rounded text-white">
                           {formatDate(compareB.date)}
                         </span>
                       </div>

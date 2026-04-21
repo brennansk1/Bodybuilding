@@ -353,7 +353,7 @@ export default function ProgressPage() {
                 onClick={() => setActiveTab(tab)}
                 className={`flex-1 min-w-[50px] py-2 text-xs sm:text-sm rounded-lg transition-colors ${
                   activeTab === tab
-                    ? "bg-jungle-accent text-jungle-dark font-semibold"
+                    ? "bg-jungle-accent text-white font-semibold"
                     : "text-jungle-muted hover:text-jungle-accent"
                 }`}
               >
@@ -1061,7 +1061,7 @@ export default function ProgressPage() {
 
           {/* Compare Modal */}
           {compareModalOpen && compareA && compareB && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-viltrum-obsidian/50 p-4">
               <div className="bg-jungle-deeper border border-jungle-border rounded-2xl max-w-2xl w-full overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-jungle-border">
                   <h3 className="text-sm font-semibold">Photo Comparison</h3>

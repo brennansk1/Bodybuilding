@@ -126,20 +126,27 @@ function MacroPieChart({ pPct, cPct, fPct }: { pPct: number; cPct: number; fPct:
   const fOff = pLen + cLen;
 
   return (
-    <svg viewBox="0 0 100 100" className="w-24 h-24">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1a3328" strokeWidth="14" />
-      {/* Protein (blue) */}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#60a5fa" strokeWidth="14"
+    <svg
+      viewBox="0 0 100 100"
+      className="w-24 h-24"
+      role="img"
+      aria-label={`Macro split: ${Math.round(pPct)}% protein, ${Math.round(cPct)}% carbs, ${Math.round(fPct)}% fat`}
+    >
+      <title>{`Macro split: ${Math.round(pPct)}% protein, ${Math.round(cPct)}% carbs, ${Math.round(fPct)}% fat`}</title>
+      {/* Track — ash so the empty ring reads on marble */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--viltrum-border)" strokeWidth="14" />
+      {/* Protein (adriatic blue) */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--viltrum-info)" strokeWidth="14"
         strokeDasharray={`${pLen} ${circumference - pLen}`}
         strokeDashoffset={-pOff}
         transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
-      {/* Carbs (amber) */}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#fbbf24" strokeWidth="14"
+      {/* Carbs (aureus gold) */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--viltrum-warning)" strokeWidth="14"
         strokeDasharray={`${cLen} ${circumference - cLen}`}
         strokeDashoffset={-cOff}
         transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
-      {/* Fat (red) */}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f87171" strokeWidth="14"
+      {/* Fat (legion red) */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--viltrum-accent)" strokeWidth="14"
         strokeDasharray={`${fLen} ${circumference - fLen}`}
         strokeDashoffset={-fOff}
         transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
@@ -326,7 +333,7 @@ export default function NutritionPage() {
               <div className="flex gap-1 bg-jungle-deeper rounded-xl p-0.5">
                 {(["training", "rest"] as const).map(tab => (
                   <button key={tab} onClick={() => setDayTab(tab)}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${dayTab === tab ? "bg-jungle-accent text-jungle-dark" : "text-jungle-muted hover:text-jungle-text"}`}>
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${dayTab === tab ? "bg-jungle-accent text-white" : "text-jungle-muted hover:text-jungle-text"}`}>
                     {tab === "training" ? "Training Day" : "Rest Day"}
                   </button>
                 ))}
@@ -748,7 +755,7 @@ export default function NutritionPage() {
 
       {shoppingOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
+          className="fixed inset-0 z-50 bg-viltrum-obsidian/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
           onClick={() => setShoppingOpen(false)}
         >
           <div

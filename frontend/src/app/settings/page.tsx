@@ -761,7 +761,7 @@ export default function SettingsPage() {
                 onClick={() => setActiveSection(key)}
                 className={`py-2.5 rounded-lg transition-all text-center ${
                   activeSection === key
-                    ? "bg-jungle-accent text-jungle-dark shadow-sm"
+                    ? "bg-jungle-accent text-white shadow-sm"
                     : "text-jungle-muted hover:text-jungle-accent hover:bg-jungle-card/50"
                 }`}
               >
@@ -800,7 +800,7 @@ export default function SettingsPage() {
                         onClick={() => setSex(v)}
                         className={`py-2.5 rounded-lg text-sm font-semibold border transition-colors ${
                           sex === v
-                            ? "bg-jungle-accent text-jungle-dark border-jungle-accent"
+                            ? "bg-jungle-accent text-white border-jungle-accent"
                             : "bg-jungle-deeper border-jungle-border text-jungle-muted hover:border-jungle-accent/50"
                         }`}
                       >
@@ -1029,7 +1029,7 @@ export default function SettingsPage() {
                         onClick={() => setDaysPerWeek(d.toString())}
                         className={`py-2.5 rounded-lg text-sm font-semibold transition-colors ${
                           daysPerWeek === d.toString()
-                            ? "bg-jungle-accent text-jungle-dark"
+                            ? "bg-jungle-accent text-white"
                             : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
                         }`}
                       >
@@ -1276,7 +1276,7 @@ export default function SettingsPage() {
                       onClick={() => setMealCount("0")}
                       className={`py-2.5 rounded-xl text-[10px] font-semibold transition-colors col-span-1 ${
                         mealCount === "0"
-                          ? "bg-jungle-accent text-jungle-dark"
+                          ? "bg-jungle-accent text-white"
                           : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
                       }`}
                     >
@@ -1288,7 +1288,7 @@ export default function SettingsPage() {
                         onClick={() => setMealCount(n.toString())}
                         className={`py-2.5 rounded-xl text-sm font-semibold transition-colors ${
                           mealCount === n.toString()
-                            ? "bg-jungle-accent text-jungle-dark"
+                            ? "bg-jungle-accent text-white"
                             : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
                         }`}
                       >
@@ -1316,7 +1316,7 @@ export default function SettingsPage() {
                         onClick={() => setCheatMeals(n.toString())}
                         className={`py-2.5 rounded-lg text-sm font-semibold transition-colors ${
                           cheatMeals === n.toString()
-                            ? "bg-jungle-accent text-jungle-dark"
+                            ? "bg-jungle-accent text-white"
                             : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
                         }`}
                       >
@@ -1924,7 +1924,7 @@ export default function SettingsPage() {
               className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-50 ${
                 saved
                   ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                  : "bg-jungle-accent text-jungle-dark hover:bg-jungle-accent-hover shadow-lg shadow-jungle-accent/20"
+                  : "bg-jungle-accent text-white hover:bg-jungle-accent-hover shadow-lg shadow-jungle-accent/20"
               }`}
             >
               {saved ? "Saved" : syncing ? "Syncing..." : saving ? "Saving..." : "Save Changes"}
@@ -1938,7 +1938,7 @@ export default function SettingsPage() {
       {/* iPhone Shortcut setup guide modal */}
       {showTelegramGuide && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
+          className="fixed inset-0 z-50 bg-viltrum-obsidian/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
           onClick={() => setShowTelegramGuide(false)}
         >
           <div
@@ -2074,7 +2074,7 @@ Keep your token secure and store it safely...`}</pre>
 
       {showShortcutGuide && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
+          className="fixed inset-0 z-50 bg-viltrum-obsidian/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
           onClick={() => setShowShortcutGuide(false)}
         >
           <div

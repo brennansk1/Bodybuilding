@@ -339,7 +339,7 @@ export default function WeeklyReviewPage() {
                             alt={photo.label}
                             className="w-full h-full object-cover"
                           />
-                          <span className="absolute bottom-1 left-1 text-[9px] bg-black/60 px-1.5 py-0.5 rounded text-white">
+                          <span className="absolute bottom-1 left-1 text-[9px] bg-viltrum-obsidian/40 px-1.5 py-0.5 rounded text-white">
                             {photo.label}
                           </span>
                         </button>
@@ -364,7 +364,7 @@ export default function WeeklyReviewPage() {
 
       {/* Photo fullscreen modal */}
       {photoCompare && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setPhotoCompare(null)}>
+        <div className="fixed inset-0 z-50 bg-viltrum-obsidian/55 flex items-center justify-center p-4" onClick={() => setPhotoCompare(null)}>
           <img src={photoCompare} alt="Photo" className="max-w-full max-h-full object-contain rounded-lg" />
           <button
             onClick={() => setPhotoCompare(null)}

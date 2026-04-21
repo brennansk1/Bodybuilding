@@ -45,7 +45,9 @@ interface MuscleHeatmapProps {
 export default function MuscleHeatmap({ siteScores, overall, sex = "male", floorPct = 75 }: MuscleHeatmapProps) {
   const [hovered, setHovered] = useState<string | null>(null);
 
-  const backgroundColor = "#0f1a0c";
+  // Light-mode body silhouette: limestone fill so the figure reads as
+  // a soft "canvas" rather than a dark cut-out pasted onto marble.
+  const backgroundColor = "#F0EFEC";
 
   // Map muscle gap site keys (pct_of_ideal values 0-100%) to SVG muscle group IDs.
   // We prioritize granular measurements (e.g. distal thigh for teardrop) over broad averages.
@@ -95,7 +97,7 @@ export default function MuscleHeatmap({ siteScores, overall, sex = "male", floor
   const stops = computeHeatmapStops(floorPct);
 
   function scoreToColor(score: number | undefined): string {
-    if (score === undefined || score === null) return "#52525b"; // grey — not measured
+    if (score === undefined || score === null) return "#D0CFC8"; // pumice — not measured
     const clamped = Math.max(0, Math.min(score, 110));
     let lo = stops[0], hi = stops[stops.length - 1];
     for (let i = 0; i < stops.length - 1; i++) {

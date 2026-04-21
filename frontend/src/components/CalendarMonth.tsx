@@ -211,7 +211,7 @@ export default function CalendarMonth({ sessions, today }: CalendarMonthProps) {
       {/* Preview modal */}
       {previewDate && (
         <div
-          className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center p-4 sm:items-center"
+          className="fixed inset-0 bg-viltrum-obsidian/45 z-50 flex items-end justify-center p-4 sm:items-center"
           onClick={() => setPreviewDate(null)}
         >
           <div

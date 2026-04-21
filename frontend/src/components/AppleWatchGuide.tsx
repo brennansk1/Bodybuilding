@@ -14,7 +14,7 @@ export default function AppleWatchGuide({ initialTab = "hrv", onClose }: AppleWa
 
   return (
     <div
-      className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-[80] bg-viltrum-obsidian/45 backdrop-blur-sm flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div

@@ -147,7 +147,7 @@ export default function ExercisesPage() {
                   onClick={() => setSelectedMuscle(m)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
                     selectedMuscle === m
-                      ? "bg-jungle-accent text-jungle-dark"
+                      ? "bg-jungle-accent text-white"
                       : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:border-jungle-accent"
                   }`}
                 >

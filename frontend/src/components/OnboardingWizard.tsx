@@ -93,7 +93,7 @@ export default function OnboardingWizard({ onDismiss, userId }: OnboardingWizard
 
   return (
     <div
-      className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-viltrum-obsidian/50 z-50 flex items-center justify-center p-4"
       onClick={complete}
     >
       <div
@@ -154,7 +154,7 @@ export default function OnboardingWizard({ onDismiss, userId }: OnboardingWizard
           )}
           <button
             onClick={handleNext}
-            className="flex-1 py-2.5 rounded-xl bg-jungle-accent text-jungle-dark text-sm font-bold hover:bg-jungle-accent/90 transition-colors active:scale-95"
+            className="flex-1 py-2.5 rounded-xl bg-jungle-accent text-white text-sm font-bold hover:bg-jungle-accent/90 transition-colors active:scale-95"
           >
             {isLast ? "Get Started" : "Next"}
           </button>

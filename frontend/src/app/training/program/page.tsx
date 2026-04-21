@@ -443,7 +443,7 @@ export default function ProgramPage() {
                                     key={weekNum}
                                     title={`Week ${weekNum} — ${getPhaseLabel(block.phase)}`}
                                     className={`w-7 h-7 rounded-md flex items-center justify-center text-[9px] font-bold transition-all ${
-                                      isCurrent ? "ring-2 ring-white/80 shadow-lg scale-110 text-white" : "text-white"
+                                      isCurrent ? "ring-2 ring-viltrum-obsidian/30 shadow-lg scale-110 text-white" : "text-white"
                                     }`}
                                     style={{
                                       backgroundColor: hex,
@@ -511,7 +511,7 @@ export default function ProgramPage() {
                         onClick={() => setSelectedMesoWeek(weekNum)}
                         className={`rounded-xl p-2 text-center border transition-all active:scale-95 ${
                           isSelected 
-                            ? `${phase.color} ring-1 ring-white/20 border-white/40 shadow-lg shadow-black/20` 
+                            ? `${phase.color} ring-1 ring-viltrum-obsidian/15 border-viltrum-obsidian/30 shadow-lg shadow-viltrum-obsidian/10` 
                             : isPast 
                               ? "bg-jungle-deeper/50 border-jungle-border/50 text-jungle-dim" 
                               : "bg-jungle-deeper border-jungle-border"
@@ -544,7 +544,7 @@ export default function ProgramPage() {
                           <span className={`text-sm font-black tracking-tight ${phase.textColor}`}>{phase.label}</span>
                           <span className="text-xs font-bold text-white/90">{phase.name}</span>
                         </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isCurrent ? 'bg-white/20 text-white' : 'bg-black/20 text-jungle-dim'}`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isCurrent ? 'bg-white/20 text-white' : 'bg-viltrum-obsidian/20 text-jungle-dim'}`}>
                           {isCurrent ? "Active Week" : `Week ${weekToShow}`}
                         </span>
                       </div>
@@ -745,7 +745,7 @@ export default function ProgramPage() {
                             const isToday_ = dateStr === today;
                             cells.push(
                               <div key={d} title={`${getPhaseLabel(phase)}`}
-                                className={`h-6 rounded flex items-center justify-center text-[8px] font-bold ${getPhaseColor(phase)}${isToday_ ? "/80 ring-1 ring-white/50" : "/40"} text-white/80`}
+                                className={`h-6 rounded flex items-center justify-center text-[8px] font-bold ${getPhaseColor(phase)}${isToday_ ? "/80 ring-1 ring-viltrum-obsidian/25" : "/40"} text-white/80`}
                               >
                                 {d}
                               </div>
@@ -787,7 +787,7 @@ export default function ProgramPage() {
                               <div key={d}
                                 className={`h-6 rounded flex items-center justify-center text-[8px] font-bold ${
                                   phase ? `${phase.color} ${phase.textColor}` : "bg-jungle-deeper/20 text-jungle-dim/30"
-                                }${isToday_ ? " ring-1 ring-white/50" : ""}`}
+                                }${isToday_ ? " ring-1 ring-viltrum-obsidian/25" : ""}`}
                               >
                                 {d}
                               </div>

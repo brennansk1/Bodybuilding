@@ -33,7 +33,7 @@ function FeedbackReportModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-viltrum-obsidian/40 p-4" onClick={onClose}>
       <div
         className="bg-jungle-card border border-jungle-border rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -1125,7 +1125,7 @@ export default function CheckinPage() {
                             {p.state ? (
                               <div className="relative rounded-lg overflow-hidden border border-jungle-border aspect-[3/4] bg-jungle-deeper group">
                                 <img src={p.state} alt={p.label} className="absolute inset-0 w-full h-full object-cover" />
-                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
+                                <div className="absolute inset-0 bg-viltrum-obsidian/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
                                   <span className="text-xs text-white/90 font-medium px-2 text-center">{p.label}</span>
                                   <button type="button" onClick={() => p.setter("")} className="btn-secondary text-xs bg-red-500/80 hover:bg-red-500 text-white border-none py-1.5 px-3 rounded-full">Remove</button>
                                 </div>

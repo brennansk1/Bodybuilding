@@ -67,7 +67,7 @@ export default function ToastContainer() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-lg text-sm shadow-xl shadow-black/20 ${TYPE_STYLES[toast.type]}`}
+          className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-lg text-sm shadow-xl shadow-viltrum-obsidian/10 ${TYPE_STYLES[toast.type]}`}
           style={{ animation: "fadeScale 0.2s ease-out" }}
         >
           <svg className="w-4 h-4 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
