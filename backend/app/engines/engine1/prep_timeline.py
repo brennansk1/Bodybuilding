@@ -223,6 +223,49 @@ def phase_description(phase: str) -> dict:
             "training_cue": "Reduce intensity 20-30%. Focus on enjoyment and movement quality. No maximal loading for 2-3 weeks.",
             "calorie_modifier": 0.85,  # starting value; use restoration_calorie_modifier() for weekly ramp
         },
+        # ── Perpetual Progression Mode sub-phases ──
+        "ppm_assessment": {
+            "label": "PPM — Assessment",
+            "description": "Weeks 1-2 of a 14-week improvement cycle. Re-measure, re-photograph, re-test baselines before ramping volume.",
+            "nutrition_cue": "Maintenance calories. Re-establish baseline TDEE before surplus.",
+            "training_cue": "MEV volume, 2 RIR. No intensity techniques. Focus on movement quality.",
+            "calorie_modifier": 1.00,
+        },
+        "ppm_accumulation": {
+            "label": "PPM — Accumulation",
+            "description": "Weeks 3-10 of the cycle. Progressive overload from MEV toward MAV-high. Primary growth phase.",
+            "nutrition_cue": "+10% TDEE lean-bulk surplus. Protein 2.4 g/kg. Carb cycle on training days.",
+            "training_cue": "Add 1-2 working sets per muscle weekly. Compound-led, isolation finishers.",
+            "calorie_modifier": 1.10,
+        },
+        "ppm_intensification": {
+            "label": "PPM — Intensification",
+            "description": "Weeks 11-12. Push to MRV on priority muscles. Layer intensity techniques (FST-7, myo-reps, drop sets) on lagging groups.",
+            "nutrition_cue": "Hold +10% surplus. Peri-workout carbs matter more than ever.",
+            "training_cue": "RIR 1 on compounds, RIR 0 on isolations. Max FST-7 on cycle focus muscles.",
+            "calorie_modifier": 1.10,
+        },
+        "ppm_deload": {
+            "label": "PPM — Deload",
+            "description": "Week 13. 50% volume, 60% loads. Clear accumulated fatigue before the checkpoint.",
+            "nutrition_cue": "Drop back to maintenance. Keep protein elevated.",
+            "training_cue": "Half the work sets, moderate loads. No intensity techniques.",
+            "calorie_modifier": 1.00,
+        },
+        "ppm_checkpoint": {
+            "label": "PPM — Checkpoint",
+            "description": "Week 14. Full measurement battery + progress photos + tier readiness re-evaluation.",
+            "nutrition_cue": "Maintenance. Full hydration ahead of measurements and photos.",
+            "training_cue": "MEV + strength re-test. Establish next cycle's baseline.",
+            "calorie_modifier": 1.00,
+        },
+        "ppm_mini_cut": {
+            "label": "PPM — Mini-Cut",
+            "description": "Optional weeks 15-16 — triggered when checkpoint BF > 15%. 2-week -20% deficit to resensitize insulin before the next cycle.",
+            "nutrition_cue": "-20% TDEE deficit. Protein 2.8 g/kg to defend LBM.",
+            "training_cue": "Hold intensity, reduce volume 15%. Strength retention focus.",
+            "calorie_modifier": 0.80,
+        },
     }
     return _DESCRIPTIONS.get(phase, _DESCRIPTIONS["offseason"])
 
@@ -247,6 +290,13 @@ def get_phase_config(phase: str) -> dict:
         "peak_week":  {"recommended_meso_weeks": 2},
         "contest":    {"recommended_meso_weeks": 1},
         "restoration": {"recommended_meso_weeks": 4},
+        # PPM sub-phases map to their own recommended cycle-week duration.
+        "ppm_assessment":      {"recommended_meso_weeks": 2},
+        "ppm_accumulation":    {"recommended_meso_weeks": 8},
+        "ppm_intensification": {"recommended_meso_weeks": 2},
+        "ppm_deload":          {"recommended_meso_weeks": 1},
+        "ppm_checkpoint":      {"recommended_meso_weeks": 1},
+        "ppm_mini_cut":        {"recommended_meso_weeks": 2},
     }
     return _CONFIGS.get(phase, {"recommended_meso_weeks": 4})
 
