@@ -503,8 +503,14 @@ async def submit_weekly(
     phase_mismatch = False
     phase_mismatch_detail = None
     if profile and rx and actual_rate is not None:
-        from app.engines.engine1.prep_timeline import prep_phase_for_date
-        auto_phase = prep_phase_for_date(profile.competition_date)
+        from app.engines.engine1.prep_timeline import prep_phase_for_date, get_current_phase
+        # Use the unified resolver so PPM sub-phases participate instead of
+        # defaulting to 'offseason' when no competition date is set.
+        auto_phase = get_current_phase(
+            competition_date=profile.competition_date,
+            ppm_enabled=profile.ppm_enabled,
+            cycle_start_date=profile.current_cycle_start_date,
+        )
         current_phase = rx.phase
         rate_per_week = actual_rate * 7
         if current_phase == "cut" and rate_per_week > 0.1:

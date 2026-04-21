@@ -371,10 +371,17 @@ async def generate_program(
     if not profile:
         raise HTTPException(status_code=400, detail="Complete onboarding first")
 
-    # Read phase for strategic mesocycle length (e.g. 6w bulk, 4w cut)
-    from app.engines.engine1.prep_timeline import prep_phase_for_date, get_phase_config
+    # Read phase for strategic mesocycle length (e.g. 6w bulk, 4w cut).
+    # Use the unified resolver so PPM sub-phases participate — a user in
+    # ppm_accumulation should get an 8-week accumulation block, a user in
+    # ppm_deload gets a 1-week deload meso, etc.
+    from app.engines.engine1.prep_timeline import get_current_phase, get_phase_config
     comp_date = getattr(profile, "competition_date", None)
-    current_phase = prep_phase_for_date(comp_date)
+    current_phase = get_current_phase(
+        competition_date=comp_date,
+        ppm_enabled=bool(getattr(profile, "ppm_enabled", False)),
+        cycle_start_date=getattr(profile, "current_cycle_start_date", None),
+    )
     phase_config = get_phase_config(current_phase)
     mesocycle_weeks = max(4, phase_config.get("recommended_meso_weeks", 6))
 

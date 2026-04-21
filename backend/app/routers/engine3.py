@@ -97,6 +97,19 @@ async def get_current_prescription(
         )
         recommended_phase = rec["recommended_phase"]
 
+        # Perpetual Progression Mode override: when PPM is enabled and no
+        # competition date is set, the unified phase resolver is authoritative.
+        # It returns a ppm_* sub-phase that compute_macros aliases to the
+        # correct base phase (assessment/deload→maintain, accumulation/
+        # intensification→lean_bulk, mini_cut→cut).
+        if profile.ppm_enabled and profile.competition_date is None:
+            from app.engines.engine1.prep_timeline import get_current_phase
+            recommended_phase = get_current_phase(
+                competition_date=profile.competition_date,
+                ppm_enabled=profile.ppm_enabled,
+                cycle_start_date=profile.current_cycle_start_date,
+            )
+
         # User-override: if initial_phase is set in preferences, honor it
         initial_phase = (profile.preferences or {}).get("initial_phase")
         if initial_phase and initial_phase.strip():
@@ -159,14 +172,23 @@ async def get_current_prescription(
         await db.flush()
 
     # --- AUTO-SYNC Phase logic ---
-    # If the current prescription phase is 'maintain' but Engine 1 suggests a bulk/cut,
-    # and it was created as a default, we should sync it to match the recommendation.
-    if rx.phase == "maintain" and profile:
+    # Out-of-band resync if the prescription has drifted from the resolver:
+    #   (a) rx phase is 'maintain' while Engine 1 suggests bulk/cut, OR
+    #   (b) PPM is enabled but the rx is still pinned to a legacy phase
+    #       (cut/lean_bulk/bulk/peak) from before PPM was turned on.
+    _LEGACY_PHASES = {"cut", "lean_bulk", "bulk", "peak"}
+    _rx_is_stale_vs_ppm = (
+        profile is not None
+        and profile.ppm_enabled
+        and profile.competition_date is None
+        and rx.phase in _LEGACY_PHASES
+    )
+    if (rx.phase == "maintain" or _rx_is_stale_vs_ppm) and profile:
         hqi_res = await db.execute(select(HQILog).where(HQILog.user_id == user.id).order_by(desc(HQILog.recorded_date), desc(HQILog.created_at)).limit(1))
         hqi = hqi_res.scalar_one_or_none()
         pds_res = await db.execute(select(PDSLog).where(PDSLog.user_id == user.id).order_by(desc(PDSLog.recorded_date), desc(PDSLog.created_at)).limit(1))
         pds_val = pds_res.scalar_one_or_none()
-        
+
         tape = await get_latest_tape(db, user.id)
         skinfold = await get_latest_skinfold(db, user.id)
         bf_pct = skinfold.body_fat_pct if skinfold else None
@@ -185,6 +207,16 @@ async def get_current_prescription(
             competition_date=profile.competition_date,
         )
         new_phase = rec["recommended_phase"]
+
+        # Perpetual Progression Mode override takes priority over the legacy
+        # _recommend_phase heuristic when PPM is active (no comp date).
+        if profile.ppm_enabled and profile.competition_date is None:
+            from app.engines.engine1.prep_timeline import get_current_phase
+            new_phase = get_current_phase(
+                competition_date=profile.competition_date,
+                ppm_enabled=profile.ppm_enabled,
+                cycle_start_date=profile.current_cycle_start_date,
+            )
         
         if new_phase != rx.phase:
             bw_res = await db.execute(select(BodyWeightLog).where(BodyWeightLog.user_id == user.id).order_by(desc(BodyWeightLog.recorded_date)).limit(1))
@@ -422,6 +454,17 @@ async def run_autoregulation(
     profile = profile_result.scalar_one_or_none()
     sex = getattr(profile, "sex", "male") or "male"
     phase = rx.phase or "maintain"
+
+    # PPM override: when PPM is enabled, derive the phase from the unified
+    # resolver instead of trusting whatever was stamped on the rx record.
+    # Keeps autoregulation math tied to the actual cycle week, not stale data.
+    if profile and profile.ppm_enabled and profile.competition_date is None:
+        from app.engines.engine1.prep_timeline import get_current_phase
+        phase = get_current_phase(
+            competition_date=profile.competition_date,
+            ppm_enabled=profile.ppm_enabled,
+            cycle_start_date=profile.current_cycle_start_date,
+        )
 
     # EWMA weight tracking — compute smoothed rate of change from last 28 days
     from app.engines.engine3.kinetic import compute_rate_of_change_detailed

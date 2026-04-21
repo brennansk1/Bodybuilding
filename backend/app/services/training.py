@@ -1079,11 +1079,29 @@ async def generate_program_sessions(
         if isinstance(inj, dict) and inj.get("active", False)
     ]
 
-    # Phase-aware volume modifier (cross-engine: E3 → E2)
-    from app.engines.engine1.prep_timeline import prep_phase_for_date
+    # Phase-aware volume modifier (cross-engine: E3 → E2).
+    # Use the unified resolver so PPM sub-phases participate — PPM athletes
+    # otherwise landed in the default "offseason" branch regardless of which
+    # cycle week they were in. The _PHASE_VOLUME_MODIFIER table still keys
+    # off legacy phase names so we alias PPM sub-phases to their nearest
+    # legacy equivalent.
+    from app.engines.engine1.prep_timeline import get_current_phase
     comp_date = getattr(profile, "competition_date", None)
-    current_phase = prep_phase_for_date(comp_date)
-    phase_volume_mod = _PHASE_VOLUME_MODIFIER.get(current_phase, 1.0)
+    current_phase = get_current_phase(
+        competition_date=comp_date,
+        ppm_enabled=bool(getattr(profile, "ppm_enabled", False)),
+        cycle_start_date=getattr(profile, "current_cycle_start_date", None),
+    )
+    _PPM_TO_LEGACY_FOR_VOLUME = {
+        "ppm_assessment": "maintain",
+        "ppm_accumulation": "lean_bulk",
+        "ppm_intensification": "lean_bulk",
+        "ppm_deload": "maintain",
+        "ppm_checkpoint": "maintain",
+        "ppm_mini_cut": "cut",
+    }
+    legacy_phase_for_volume = _PPM_TO_LEGACY_FOR_VOLUME.get(current_phase, current_phase)
+    phase_volume_mod = _PHASE_VOLUME_MODIFIER.get(legacy_phase_for_volume, 1.0)
 
     # -----------------------------------------------------------------------
     # 2b. Design custom split based on gap profile, division, and recovery
