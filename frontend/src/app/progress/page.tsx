@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import { api } from "@/lib/api";
 import { showToast } from "@/components/Toast";
 import MiniLineChart from "@/components/MiniLineChart";
@@ -309,12 +310,7 @@ export default function ProgressPage() {
         <div className="max-w-3xl mx-auto space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">
-                <span className="text-jungle-accent">Progress</span> History
-              </h1>
-              <p className="text-jungle-muted text-sm mt-1">Trend tracking across all metrics</p>
-            </div>
+            <PageTitle text="Progress" subtitle="Trend tracking across all metrics" className="mb-0" />
             <a href="/dashboard" className="btn-secondary text-sm px-3 py-2">← Dashboard</a>
           </div>
 

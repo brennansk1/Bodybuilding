@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import CalendarMonth from "@/components/CalendarMonth";
 import { api } from "@/lib/api";
 
@@ -334,14 +335,15 @@ export default function ProgramPage() {
               </svg>
             </a>
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-bold">
-                <span className="text-jungle-accent">Program</span> Schedule
-              </h1>
-              {program && (
-                <p className="text-jungle-muted text-xs mt-0.5 truncate">
-                  {program.name} · {program.split_type} · {program.days_per_week}d/wk
-                </p>
-              )}
+              <PageTitle
+                text="Program"
+                subtitle={
+                  program ? (
+                    <span className="truncate">{program.name} · {program.split_type} · {program.days_per_week}d/wk</span>
+                  ) : undefined
+                }
+                className="mb-0"
+              />
             </div>
             
             <div className="flex gap-2">

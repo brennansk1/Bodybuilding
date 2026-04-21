@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import { api } from "@/lib/api";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -133,12 +134,7 @@ export default function TimelinePage() {
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">
-              <span className="text-jungle-accent">Timeline</span>
-            </h1>
-            <p className="text-jungle-muted text-xs mt-0.5">{entries.length} entries</p>
-          </div>
+          <PageTitle text="Timeline" subtitle={`${entries.length} entries`} className="mb-0" />
           <button
             onClick={() => {
               setCompareMode(!compareMode);

@@ -1,43 +1,85 @@
 "use client";
 
+import Image from "next/image";
+
+type LogoVariant = "mark" | "lockup" | "splash";
+type LogoSize = "sm" | "md" | "lg" | "xl";
+type LogoTone = "ink" | "light";
+
 interface LogoProps {
-  size?: "sm" | "md" | "lg" | "xl";
+  /**
+   * `mark` = icon only
+   * `lockup` = icon + VILTRUM wordmark (default)
+   * `splash` = icon + wordmark + "ALL IS OURS" tagline
+   */
+  variant?: LogoVariant;
+  size?: LogoSize;
+  /** `ink` (default) uses obsidian text on light bg. `light` uses white text — use on dark/accent surfaces. */
+  tone?: LogoTone;
+  /** Legacy alias for variant="splash". */
   showTagline?: boolean;
+  className?: string;
 }
 
-const sizes = {
-  sm: { icon: "text-xl", text: "text-lg" },
-  md: { icon: "text-2xl", text: "text-xl" },
-  lg: { icon: "text-4xl", text: "text-3xl" },
-  xl: { icon: "text-6xl", text: "text-5xl" },
+const ICON_PX: Record<LogoSize, number> = { sm: 28, md: 36, lg: 56, xl: 96 };
+const WORDMARK_SIZE: Record<LogoSize, string> = {
+  sm: "text-[18px] tracking-[4px]",
+  md: "text-[24px] tracking-[6px]",
+  lg: "text-[36px] tracking-[8px]",
+  xl: "text-[56px] tracking-[10px]",
 };
+const TAGLINE_SIZE: Record<LogoSize, string> = {
+  sm: "text-[9px] tracking-[4px]",
+  md: "text-[10px] tracking-[5px]",
+  lg: "text-[12px] tracking-[6px]",
+  xl: "text-[14px] tracking-[7px]",
+};
+const GAP: Record<LogoSize, string> = { sm: "gap-2", md: "gap-3", lg: "gap-4", xl: "gap-5" };
 
-export default function Logo({ size = "md", showTagline = false }: LogoProps) {
-  const s = sizes[size];
+export default function Logo({
+  variant,
+  size = "md",
+  tone = "ink",
+  showTagline,
+  className = "",
+}: LogoProps) {
+  // Resolve variant with legacy `showTagline` alias.
+  const resolvedVariant: LogoVariant = variant ?? (showTagline ? "splash" : "lockup");
+  const iconPx = ICON_PX[size];
+  const wordmark = WORDMARK_SIZE[size];
+  const tagline = TAGLINE_SIZE[size];
+  const inkClass = tone === "light" ? "text-white" : "text-viltrum-obsidian";
+  const taglineClass = tone === "light" ? "text-white/60" : "text-viltrum-travertine";
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="flex items-center gap-2">
-        <span className={`${s.icon}`}>
-          <svg
-            viewBox="0 0 32 32"
-            className="w-[1em] h-[1em]"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+    <div
+      className={`inline-flex flex-col items-center ${className}`.trim()}
+      aria-label="Viltrum"
+    >
+      <div className={`inline-flex items-center ${GAP[size]}`}>
+        <Image
+          src="/viltrum-logo.png"
+          alt=""
+          width={iconPx}
+          height={iconPx}
+          priority
+          className="block"
+        />
+        {resolvedVariant !== "mark" && (
+          <span
+            className={`font-display uppercase ${wordmark} ${inkClass}`}
+            style={{ lineHeight: 1 }}
           >
-            {/* Pine tree */}
-            <path d="M16 2L10 12H13L8 20H12L6 28H26L20 20H24L19 12H22L16 2Z" fill="#2d8a4e" />
-            <path d="M16 4L11.5 11H14L9.5 19H13L8 27H24L19 19H22.5L18 11H20.5L16 4Z" fill="#3aad5e" opacity="0.6" />
-            <rect x="14" y="27" width="4" height="4" rx="0.5" fill="#8B6914" />
-          </svg>
-        </span>
-        <h1 className={`${s.text} font-bold tracking-tight`}>
-          <span className="text-jungle-accent">Coronado</span>
-        </h1>
+            VILTRUM
+          </span>
+        )}
       </div>
-      {showTagline && (
-        <p className="text-jungle-muted text-sm mt-1 tracking-widest uppercase">
-          Physique Optimization System
+      {resolvedVariant === "splash" && (
+        <p
+          className={`font-display uppercase mt-2 ${tagline} ${taglineClass}`}
+          style={{ lineHeight: 1 }}
+        >
+          All Is Ours
         </p>
       )}
     </div>

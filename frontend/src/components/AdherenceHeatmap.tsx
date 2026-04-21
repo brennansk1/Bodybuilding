@@ -166,7 +166,7 @@ export default function AdherenceHeatmap({ data, type = "overall" }: AdherenceHe
                   width={CELL} height={CELL}
                   rx={3}
                   fill={color}
-                  stroke={isToday ? "#c8a84e" : "#0b1410"}
+                  stroke={isToday ? "var(--viltrum-accent)" : "var(--viltrum-bg)"}
                   strokeWidth={isToday ? 1.5 : 0.5}
                   style={{ cursor: entry ? "pointer" : "default" }}
                   onMouseEnter={(e) => {

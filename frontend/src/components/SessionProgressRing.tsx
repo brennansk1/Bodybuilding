@@ -20,18 +20,25 @@ export default function SessionProgressRing({
   const offset = circumference * (1 - pct);
 
   const isDone = completed === total && total > 0;
-  const strokeColor = isDone ? "#4ade80" : "#c8a84e";
+  // Read from CSS custom props so a theme swap flows through automatically.
+  const strokeColor = isDone ? "var(--viltrum-success)" : "var(--viltrum-accent)";
 
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <div
+      className="relative inline-flex items-center justify-center"
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label={`Session progress: ${completed} of ${total} sets completed`}
+    >
       <svg width={size} height={size} className="-rotate-90">
+        <title>{`${completed} / ${total} sets`}</title>
         {/* Track */}
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="#1a3328"
+          stroke="var(--viltrum-border)"
           strokeWidth="3"
         />
         {/* Progress */}
@@ -48,7 +55,12 @@ export default function SessionProgressRing({
           className="transition-all duration-500"
         />
       </svg>
-      <span className={`absolute text-[10px] font-bold ${isDone ? "text-green-400" : "text-jungle-accent"}`}>
+      <span
+        className="absolute text-[10px] font-bold"
+        style={{
+          color: isDone ? "var(--viltrum-success)" : "var(--viltrum-accent)",
+        }}
+      >
         {isDone ? "✓" : `${completed}`}
       </span>
     </div>

@@ -34,6 +34,7 @@ import {
 import OnboardingWizard, { shouldShowWizard } from "@/components/OnboardingWizard";
 import CoachingFeedbackCard, { type CoachingMessage } from "@/components/CoachingFeedbackCard";
 import TierReadinessCard from "@/components/TierReadinessCard";
+import PageTitle from "@/components/PageTitle";
 import {
   CycleProgressCard,
   ParityCheckCard,
@@ -477,7 +478,7 @@ export default function DashboardPage() {
   // Quick log weight state
   const [quickWeight, setQuickWeight] = useState("");
 
-  // Coronado onboarding wizard — only shows once per user account
+  // Viltrum onboarding wizard — only shows once per user account
   const [showWizard, setShowWizard] = useState(false);
   useEffect(() => {
     if (user && shouldShowWizard(user.id)) setShowWizard(true);
@@ -689,7 +690,7 @@ export default function DashboardPage() {
       <main className="flex min-h-screen items-center justify-center bg-jungle-dark">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-jungle-accent animate-pulse" />
-          <p className="text-jungle-muted">Loading Coronado...</p>
+          <p className="text-jungle-muted">Loading Viltrum...</p>
         </div>
       </main>
     );
@@ -835,13 +836,13 @@ export default function DashboardPage() {
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
       <main className="container-app py-6">
-        {/* Header */}
+        {/* Header — Tegaki-animated wordmark + greeting subtitle */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold">
-              Hello, <span className="text-jungle-accent">{user.display_name || user.username}</span>
-            </h1>
-            <p className="text-jungle-muted text-sm mt-1">Competitive physique dashboard</p>
+            <PageTitle
+              text="Dashboard"
+              subtitle={<><span className="text-viltrum-travertine uppercase tracking-[2px] text-[10px] mr-2">Hello,</span><span className="font-medium text-viltrum-obsidian">{user.display_name || user.username}</span></>}
+            />
           </div>
           <div className="flex items-center gap-2">
             <button

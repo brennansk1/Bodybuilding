@@ -103,7 +103,7 @@ export default function OnboardingWizard({ onDismiss, userId }: OnboardingWizard
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-jungle-accent font-black text-sm uppercase tracking-widest">Coronado</span>
+            <span className="text-jungle-accent font-black text-sm uppercase tracking-widest">Viltrum</span>
             <span className="text-jungle-dim text-xs">Quick Tour</span>
           </div>
           <button

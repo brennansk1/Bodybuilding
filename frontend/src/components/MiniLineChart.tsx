@@ -15,13 +15,16 @@ interface MiniLineChartProps {
 export default function MiniLineChart({
   data,
   height = 120,
-  color = "#c8a84e",
+  color = "var(--viltrum-accent)",
   domain,
   showPoints = true,
   bandMin,
   bandMax,
-  bandColor = "#c8a84e22",
+  bandColor,
 }: MiniLineChartProps) {
+  // Derive a default band color as a 13%-opacity tint of the line color.
+  const resolvedBandColor =
+    bandColor ?? `color-mix(in srgb, ${color} 13%, transparent)`;
   if (!data || data.length < 2) {
     return (
       <div
@@ -70,7 +73,7 @@ export default function MiniLineChart({
           y={yPos(bandMax)}
           width={plotW}
           height={yPos(bandMin) - yPos(bandMax)}
-          fill={bandColor}
+          fill={resolvedBandColor}
         />
       )}
 

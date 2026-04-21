@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import PlateLoadingSVG from "@/components/PlateLoadingSVG";
 import SessionProgressRing from "@/components/SessionProgressRing";
 import SessionSummary from "@/components/SessionSummary";
@@ -990,9 +991,7 @@ export default function TrainingPage() {
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold">
-                  <span className="text-jungle-accent">Training</span>
-                </h1>
+                <PageTitle text="Training" className="mb-0" />
                 <div className="flex items-center gap-1 ml-2">
                   <button
                     onClick={() => setViewOffset((o) => o - 1)}

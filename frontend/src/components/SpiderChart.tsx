@@ -7,7 +7,7 @@ interface SpiderChartProps {
   color?: string;
 }
 
-export default function SpiderChart({ data, size = 220, color = "#c8a84e" }: SpiderChartProps) {
+export default function SpiderChart({ data, size = 220, color = "var(--viltrum-accent)" }: SpiderChartProps) {
   if (!data || data.length < 3) return null;
 
   const cx = size / 2;
@@ -68,12 +68,19 @@ export default function SpiderChart({ data, size = 220, color = "#c8a84e" }: Spi
       {Array.from({ length: n }, (_, i) => {
         const p = toXY(i, 100);
         return (
-          <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#1a3328" strokeWidth="0.75" />
+          <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="var(--viltrum-border)" strokeWidth="0.75" />
         );
       })}
 
-      {/* Data fill */}
-      <path d={dataPath} fill={color + "28"} stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+      {/* Data fill. CSS custom props don't take alpha suffixes, so the fill
+          uses color-mix to derive a 16%-opacity tint that still theme-swaps. */}
+      <path
+        d={dataPath}
+        fill={`color-mix(in srgb, ${color} 16%, transparent)`}
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
 
       {/* Data points */}
       {data.map((d, i) => {
@@ -86,7 +93,10 @@ export default function SpiderChart({ data, size = 220, color = "#c8a84e" }: Spi
         const lp = outerXY(i);
         const textAnchor = lp.x < cx - 8 ? "end" : lp.x > cx + 8 ? "start" : "middle";
         const scoreColor =
-          d.value >= 95 ? "#4ade80" : d.value >= 80 ? "#a3e635" : d.value >= 60 ? "#c8a84e" : "#ef4444";
+          d.value >= 95 ? "var(--viltrum-success)" :
+          d.value >= 80 ? "var(--viltrum-success)" :
+          d.value >= 60 ? "var(--viltrum-accent)" :
+          "var(--viltrum-accent)";
 
         return (
           <g key={i}>
@@ -95,7 +105,7 @@ export default function SpiderChart({ data, size = 220, color = "#c8a84e" }: Spi
               y={lp.y - 4}
               textAnchor={textAnchor}
               dominantBaseline="auto"
-              fill="#8faa96"
+              fill="var(--viltrum-label)"
               fontSize="8.5"
               fontWeight="500"
             >

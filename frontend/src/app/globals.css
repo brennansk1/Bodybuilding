@@ -2,10 +2,348 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Gym mode — aggressively larger for mid-workout phone use */
-.gym-mode {
-  font-size: 1.25rem;
+/* ─── Viltrum theme — light mode ─────────────────────────────────────────── */
+:root {
+  /* Font stacks are bound to next/font CSS variables set on <html> in layout.tsx */
+  --font-display: "Contrail One", Impact, system-ui, sans-serif;
+  --font-serif:   "Crimson Pro", Georgia, serif;
+  --font-sans:    "Inter", system-ui, sans-serif;
+  /* Legacy aliases used by a handful of components that read CSS vars directly */
+  --font-body:    var(--font-sans);
+
+  /* Canonical color vars — charts and custom SVGs read these for auto theming */
+  --viltrum-bg:            #F5F4F1;
+  --viltrum-ink:           #1A1816;
+  --viltrum-ink-muted:     #5C5750;
+  --viltrum-label:         #8A857D;
+  --viltrum-border:        #E2E0DC;
+  --viltrum-accent:        #C44040;
+  --viltrum-accent-hover:  #B33838;
+  --viltrum-accent-soft:   #E8B4B4;
+  --viltrum-accent-bg:     #FAF0F0;
+  --viltrum-success:       #2D7A45;
+  --viltrum-warning:       #C48820;
+  --viltrum-info:          #2E6B9C;
 }
+
+html {
+  background-color: #F5F4F1;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  color: #2C2825;
+  font-family: var(--font-sans);
+  background-color: #F5F4F1;
+  letter-spacing: 0;
+}
+
+/* Background — Viltrumite city at low opacity, tinted onto marble.
+   The opacity is kept low (0.10) so the sci-fi skyline feels like an atmospheric
+   watermark rather than a photograph fighting card content. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: url("/viltrum-city-bg.webp");
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  opacity: 0.10;
+  pointer-events: none;
+  /* Desaturate slightly so the bright blues lean toward the marble palette */
+  filter: saturate(0.75);
+}
+@media (max-width: 767px) {
+  body::before {
+    background-attachment: scroll;
+    opacity: 0.08;
+  }
+}
+
+/* Scrollbar — neutral, in-palette */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D0CFC8; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #8A857D; }
+
+/* Focus — obsidian ring + soft shadow (replaces the gold focus outline) */
+*:focus-visible {
+  outline: 2px solid #1A1816;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(26, 24, 22, 0.08);
+}
+
+/* Selection — blush on obsidian */
+::selection {
+  background: #FAF0F0;
+  color: #1A1816;
+}
+
+/* ─── Animations ─────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes fadeScale {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Component layer ────────────────────────────────────────────────────── */
+@layer components {
+  .container-app {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Cards — white, 0.5px ash border, 6px radius, minimal shadow.
+     The `.card-hover` utility adds a pumice border + limestone bg on hover. */
+  .card {
+    background-color: #FFFFFF;
+    border: 0.5px solid #E2E0DC;
+    border-radius: 6px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 2px rgba(26, 24, 22, 0.04);
+  }
+  .card-hover {
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+  .card-hover:hover {
+    background-color: #F0EFEC;
+    border-color: #D0CFC8;
+  }
+  .card-inset {
+    background-color: #FAFAF8;
+    border: 0.5px solid #E2E0DC;
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+
+  /* Buttons — 4px radius, small shadow on primary, active micro-press */
+  .btn-primary {
+    background-color: #1A1816;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background-color 150ms ease, transform 100ms ease;
+  }
+  .btn-primary:hover { background-color: #2C2825; }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled {
+    background-color: #E2E0DC;
+    color: #8A857D;
+    cursor: not-allowed;
+  }
+
+  .btn-accent {
+    background-color: #C44040;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background-color 150ms ease, transform 100ms ease;
+  }
+  .btn-accent:hover { background-color: #B33838; }
+  .btn-accent:active { transform: scale(0.98); }
+
+  .btn-secondary {
+    background-color: #FFFFFF;
+    color: #1A1816;
+    border: 1px solid #D0CFC8;
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: border-color 150ms ease, transform 100ms ease;
+  }
+  .btn-secondary:hover { border-color: #1A1816; }
+  .btn-secondary:active { transform: scale(0.98); }
+
+  .btn-outline {
+    background-color: transparent;
+    color: #8B2B2B;
+    border: 1px solid #8B2B2B;
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+  .btn-outline:hover { background-color: #FAF0F0; }
+
+  .btn-text {
+    background: transparent;
+    color: #8B2B2B;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .btn-text:hover { color: #5C1A1A; }
+
+  /* Inputs */
+  .input-field {
+    width: 100%;
+    padding: 9px 14px;
+    background-color: #FFFFFF;
+    border: 1px solid #E2E0DC;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #1A1816;
+    font-family: var(--font-sans);
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .input-field::placeholder { color: #C4C0B9; }
+  .input-field:focus {
+    border-color: #1A1816;
+    box-shadow: 0 0 0 3px rgba(26, 24, 22, 0.08);
+  }
+
+  .label-field {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: #8A857D;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    font-family: var(--font-sans);
+  }
+
+  /* ─── Typography utilities ───────────────────────────────────────────── */
+  .h-display-xl {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 48px;
+    letter-spacing: 8px;
+    line-height: 1;
+    color: #1A1816;
+    text-transform: uppercase;
+  }
+  .h-display-lg {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 42px;
+    letter-spacing: 4px;
+    line-height: 1;
+    color: #1A1816;
+    text-transform: uppercase;
+  }
+  .h-display-md {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 32px;
+    letter-spacing: 2px;
+    line-height: 1.05;
+    color: #1A1816;
+    text-transform: uppercase;
+  }
+  .h-display-sm {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 24px;
+    letter-spacing: 2px;
+    line-height: 1.1;
+    color: #1A1816;
+    text-transform: uppercase;
+  }
+  .h-card {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 13px;
+    letter-spacing: 3px;
+    line-height: 1.2;
+    color: #1A1816;
+    text-transform: uppercase;
+  }
+  .h-section {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 11px;
+    letter-spacing: 5px;
+    line-height: 1.2;
+    color: #8A857D;
+    text-transform: uppercase;
+  }
+  .metric-xl {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 42px;
+    line-height: 1;
+    color: #1A1816;
+  }
+  .metric-lg {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 36px;
+    line-height: 1;
+    color: #1A1816;
+  }
+  .metric-md {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 28px;
+    line-height: 1;
+    color: #1A1816;
+  }
+  .body-serif {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    line-height: 1.75;
+    color: #2C2825;
+  }
+  .body-serif-sm {
+    font-family: var(--font-serif);
+    font-size: 14px;
+    line-height: 1.7;
+    color: #5C5750;
+  }
+
+  /* Page entry */
+  .page-enter { animation: fadeIn 0.3s ease-out; }
+}
+
+/* ─── Gym mode — mid-workout large-touch overrides ──────────────────────── */
+.gym-mode { font-size: 1.25rem; }
 .gym-mode .input-field {
   font-size: 1.375rem;
   padding-top: 0.875rem;
@@ -13,153 +351,12 @@
   font-weight: 600;
   text-align: center;
 }
-.gym-mode .text-sm {
-  font-size: 1.125rem;
-}
-.gym-mode .text-xs {
-  font-size: 1rem;
-}
-.gym-mode .text-base {
-  font-size: 1.375rem;
-}
-.gym-mode button {
-  min-height: 3rem;
-}
-.gym-mode .set-done-btn {
-  min-height: 3.5rem;
-  font-size: 1.25rem;
-}
+.gym-mode .text-sm  { font-size: 1.125rem; }
+.gym-mode .text-xs  { font-size: 1rem; }
+.gym-mode .text-base{ font-size: 1.375rem; }
+.gym-mode button    { min-height: 3rem; }
+.gym-mode .set-done-btn { min-height: 3.5rem; font-size: 1.25rem; }
 
-:root {
-  --font-display: "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
-}
-
-html {
-  background-color: #0b1410;
-  scroll-behavior: smooth;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-body {
-  color: #e8efe9;
-  font-feature-settings: "cv11", "ss01";
-  letter-spacing: 0.01em;
-}
-
-/* Background image — visible on desktop + mobile, low opacity.
-   WebP is served first (80 KB) with a 275 KB JPG fallback for legacy browsers.
-   Both files live in /public/. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background-image: image-set(
-    url("/bg.webp") type("image/webp"),
-    url("/bg.jpg") type("image/jpeg")
-  );
-  background-image: -webkit-image-set(
-    url("/bg.webp") type("image/webp"),
-    url("/bg.jpg") type("image/jpeg")
-  );
-  background-position: center center;
-  background-size: cover;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-  opacity: 0.22;
-  pointer-events: none;
-}
-@media (max-width: 767px) {
-  body::before {
-    background-attachment: scroll;
-  }
-}
-
-/* Scrollbar theming */
-::-webkit-scrollbar {
-  width: 5px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #1a3328;
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #245a3a;
-}
-
-/* Gold accent glow for focus states */
-*:focus-visible {
-  outline: 2px solid rgba(200, 168, 78, 0.6);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* Smooth page transitions */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-
-@keyframes fadeScale {
-  from { opacity: 0; transform: scale(0.97); }
-  to   { opacity: 1; transform: scale(1); }
-}
-
-/* Responsive breakpoints for desktop/mobile */
-@layer components {
-  .container-app {
-    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
-  }
-
-  .card {
-    @apply bg-jungle-card/80 backdrop-blur-sm border border-jungle-border/60 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20;
-  }
-
-  .card-hover {
-    @apply hover:bg-jungle-card-hover hover:border-jungle-border-hover hover:shadow-xl hover:shadow-black/30 transition-all duration-200 cursor-pointer;
-  }
-
-  .btn-primary {
-    @apply px-6 py-2.5 bg-jungle-accent hover:bg-jungle-accent-hover active:scale-[0.98]
-           text-jungle-dark font-semibold rounded-xl transition-all duration-150
-           shadow-md shadow-jungle-accent/20 hover:shadow-lg hover:shadow-jungle-accent/30;
-  }
-
-  .btn-secondary {
-    @apply px-6 py-2.5 bg-jungle-card/60 backdrop-blur-sm border border-jungle-border/60
-           hover:border-jungle-accent/50 hover:bg-jungle-card active:scale-[0.98]
-           text-jungle-text rounded-xl transition-all duration-150;
-  }
-
-  .input-field {
-    @apply w-full px-3.5 py-2.5 bg-jungle-deeper/80 border border-jungle-border/50
-           rounded-xl focus:border-jungle-accent/70 focus:ring-1 focus:ring-jungle-accent/20
-           focus:outline-none text-jungle-text placeholder:text-jungle-dim/60
-           transition-all duration-150;
-  }
-
-  .label-field {
-    @apply block text-sm text-jungle-muted mb-1.5 font-medium tracking-wide;
-  }
-
-  /* Page entry animation */
-  .page-enter {
-    animation: fadeIn 0.3s ease-out;
-  }
-}
-
-/* Selection styling */
-::selection {
-  background: rgba(200, 168, 78, 0.25);
-  color: #e8efe9;
-}
+/* Tegaki compatibility — hide the canvas target until the animation boots to
+   prevent a jarring "flash" before the first stroke is drawn. */
+.tegaki-prepared[data-tegaki-idle="true"] { visibility: hidden; }

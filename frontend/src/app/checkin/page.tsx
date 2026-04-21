@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import MeasurementInstructions from "@/components/MeasurementInstructions";
 import AppleWatchGuide from "@/components/AppleWatchGuide";
 import { api } from "@/lib/api";
@@ -501,12 +502,7 @@ export default function CheckinPage() {
           {/* Mode selector — shown when mode is null */}
           {mode === null && (
             <>
-              <div>
-                <h1 className="text-2xl font-bold">
-                  <span className="text-jungle-accent">Check-in</span>
-                </h1>
-                <p className="text-jungle-muted text-sm mt-1">Choose your check-in mode</p>
-              </div>
+              <PageTitle text="Check-in" subtitle="Choose your check-in mode" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <button
                   onClick={() => setMode("quick")}

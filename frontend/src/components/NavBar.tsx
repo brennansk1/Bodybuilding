@@ -9,6 +9,57 @@ interface NavBarProps {
   onLogout?: () => void;
 }
 
+// localStorage key migration — keep reading the old Coronado key once, then
+// move it forward under the Viltrum namespace and clean up.
+const VILTRUM_PROFILE_PIC_KEY = "viltrum_profile_pic_url";
+const LEGACY_PROFILE_PIC_KEY = "coronado_profile_pic_url";
+
+function loadProfilePic(): string | null {
+  if (typeof window === "undefined") return null;
+  const current = window.localStorage.getItem(VILTRUM_PROFILE_PIC_KEY);
+  if (current) return current;
+  const legacy = window.localStorage.getItem(LEGACY_PROFILE_PIC_KEY);
+  if (legacy) {
+    window.localStorage.setItem(VILTRUM_PROFILE_PIC_KEY, legacy);
+    window.localStorage.removeItem(LEGACY_PROFILE_PIC_KEY);
+    return legacy;
+  }
+  return null;
+}
+
+function saveProfilePic(dataUrl: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(VILTRUM_PROFILE_PIC_KEY, dataUrl);
+}
+
+// Build a breadcrumb trail from the current pathname. Returns up to two crumbs
+// so the nav stays compact — `Training › Program`, `Nutrition › Meal plan`.
+const PATH_LABEL_OVERRIDES: Record<string, string> = {
+  training: "Training",
+  program: "Program",
+  nutrition: "Nutrition",
+  checkin: "Check-in",
+  progress: "Progress",
+  timeline: "Timeline",
+  dashboard: "Dashboard",
+  settings: "Settings",
+  onboarding: "Onboarding",
+};
+function buildCrumbs(pathname: string): Array<{ href: string; label: string }> {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts.length <= 1) return [];
+  const crumbs: Array<{ href: string; label: string }> = [];
+  let acc = "";
+  for (const segment of parts) {
+    acc += `/${segment}`;
+    const pretty =
+      PATH_LABEL_OVERRIDES[segment] ??
+      segment.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    crumbs.push({ href: acc, label: pretty });
+  }
+  return crumbs;
+}
+
 export default function NavBar({ username, onLogout }: NavBarProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -17,9 +68,13 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("coronado_profile_pic_url");
-    if (saved) setProfilePicUrl(saved);
+    setProfilePicUrl(loadProfilePic());
   }, []);
+
+  // Close mobile menu on route change so nav taps don't leave the drawer open.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -27,7 +82,7 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result as string;
-      localStorage.setItem("coronado_profile_pic_url", base64);
+      saveProfilePic(base64);
       setProfilePicUrl(base64);
     };
     reader.readAsDataURL(file);
@@ -45,60 +100,70 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
   ];
 
   const firstLetter = username ? username.charAt(0).toUpperCase() : "?";
+  const crumbs = buildCrumbs(pathname || "");
+
+  const activeFor = (href: string) => {
+    const others = navLinks.filter((l) => l.href !== href);
+    const moreSpecific = others.some(
+      (l) => l.href.startsWith(href + "/") && (pathname === l.href || pathname?.startsWith(l.href + "/")),
+    );
+    return !moreSpecific && (pathname === href || pathname?.startsWith(href + "/"));
+  };
 
   return (
-    <nav className="sticky top-0 z-50 bg-jungle-deeper/80 backdrop-blur-xl border-b border-jungle-border/40 shadow-lg shadow-black/10">
+    <nav className="sticky top-0 z-50 bg-white border-b-[2.5px] border-viltrum-obsidian">
       <div className="container-app">
-        <div className="flex items-center justify-between h-14 sm:h-16">
-          {/* Logo */}
-          <button onClick={() => router.push("/dashboard")} className="flex items-center">
-            <Logo size="sm" />
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-4">
+          {/* Logo + desktop wordmark */}
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center group shrink-0"
+            aria-label="Viltrum — home"
+          >
+            <Logo variant="lockup" size="sm" />
           </button>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-0 flex-1 justify-center">
             {navLinks.map((link) => {
-              // Exact match or starts-with, but don't match parent if a more specific nav link exists
-              const otherLinks = navLinks.filter(l => l.href !== link.href);
-              const moreSpecificMatch = otherLinks.some(l => l.href.startsWith(link.href + "/") && (pathname === l.href || pathname.startsWith(l.href + "/")));
-              const active = !moreSpecificMatch && (pathname === link.href || pathname.startsWith(link.href + "/"));
+              const active = activeFor(link.href);
               return (
                 <a
                   key={link.href}
                   href={link.href}
-                  className={`px-3 py-1.5 text-[13px] rounded-lg transition-all duration-150 ${
-                    active
-                      ? "text-jungle-accent font-semibold bg-jungle-accent/10"
-                      : "text-jungle-muted hover:text-jungle-text hover:bg-jungle-card/50"
+                  className={`relative px-3 py-2 text-[12px] font-medium transition-colors ${
+                    active ? "text-viltrum-obsidian" : "text-viltrum-travertine hover:text-viltrum-obsidian"
                   }`}
                 >
                   {link.label}
+                  {active && (
+                    <span
+                      className="absolute left-3 right-3 -bottom-[17px] h-[2.5px] bg-viltrum-centurion"
+                      aria-hidden="true"
+                    />
+                  )}
                 </a>
               );
             })}
           </div>
 
           {/* User section */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-3 shrink-0">
             {username && (
-              <span className="text-jungle-muted text-sm">{username}</span>
+              <span className="text-viltrum-travertine text-[12px]">{username}</span>
             )}
 
-            {/* Avatar circle */}
             <button
               onClick={() => avatarInputRef.current?.click()}
-              title="Click to change profile picture"
-              className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-jungle-border hover:border-jungle-accent transition-colors focus:outline-none focus:ring-2 focus:ring-jungle-accent/40"
+              title="Change profile picture"
+              className="relative w-8 h-8 rounded-full overflow-hidden bg-viltrum-obsidian focus:outline-none focus-visible:ring-2 focus-visible:ring-viltrum-obsidian focus-visible:ring-offset-2"
+              aria-label="Change profile picture"
             >
               {profilePicUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={profilePicUrl}
-                  alt="Profile"
-                  className="w-full h-full object-cover"
-                />
+                <img src={profilePicUrl} alt="" className="w-full h-full object-cover" />
               ) : (
-                <span className="w-full h-full flex items-center justify-center bg-jungle-accent/20 text-jungle-accent text-sm font-bold">
+                <span className="w-full h-full flex items-center justify-center text-white text-[12px] font-semibold">
                   {firstLetter}
                 </span>
               )}
@@ -113,8 +178,10 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
 
             <a
               href="/settings"
-              className={`px-3 py-1.5 text-sm bg-jungle-card border rounded-lg transition-colors ${
-                pathname === "/settings" ? "border-jungle-accent text-jungle-accent" : "border-jungle-border hover:border-jungle-accent text-jungle-muted"
+              className={`text-[12px] transition-colors ${
+                pathname === "/settings"
+                  ? "text-viltrum-obsidian font-semibold"
+                  : "text-viltrum-travertine hover:text-viltrum-obsidian"
               }`}
             >
               Settings
@@ -122,7 +189,7 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
             {onLogout && (
               <button
                 onClick={onLogout}
-                className="px-3 py-1.5 text-sm bg-jungle-card border border-jungle-border rounded-lg hover:border-jungle-danger transition-colors"
+                className="text-[12px] text-viltrum-travertine hover:text-viltrum-legion transition-colors"
               >
                 Logout
               </button>
@@ -133,75 +200,98 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
           <div className="flex items-center gap-2 md:hidden">
             <button
               onClick={() => avatarInputRef.current?.click()}
-              className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-jungle-border hover:border-jungle-accent transition-colors"
+              className="relative w-8 h-8 rounded-full overflow-hidden bg-viltrum-obsidian"
+              aria-label="Change profile picture"
             >
               {profilePicUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={profilePicUrl} alt="Profile" className="w-full h-full object-cover" />
+                <img src={profilePicUrl} alt="" className="w-full h-full object-cover" />
               ) : (
-                <span className="w-full h-full flex items-center justify-center bg-jungle-accent/20 text-jungle-accent text-sm font-bold">
+                <span className="w-full h-full flex items-center justify-center text-white text-[12px] font-semibold">
                   {firstLetter}
                 </span>
               )}
             </button>
             <button
-              onClick={() => setMobileOpen(!mobileOpen)}
-              className="p-2 text-jungle-muted hover:text-jungle-accent"
+              onClick={() => setMobileOpen((o) => !o)}
+              className="p-2 text-viltrum-obsidian"
               aria-label="Toggle menu"
+              aria-expanded={mobileOpen}
             >
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 {mobileOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                 )}
               </svg>
             </button>
           </div>
         </div>
 
-        {/* Mobile menu */}
-        {mobileOpen && (
-          <div className="md:hidden pb-4 border-t border-jungle-border mt-2 pt-3 space-y-1">
+        {/* Breadcrumb strip — only on nested pages */}
+        {crumbs.length > 1 && (
+          <div className="hidden md:flex items-center gap-2 pb-2 text-[11px] text-viltrum-travertine">
+            {crumbs.map((c, i) => (
+              <span key={c.href} className="flex items-center gap-2">
+                {i > 0 && <span className="text-viltrum-pewter">›</span>}
+                <a
+                  href={c.href}
+                  className={`uppercase tracking-[2px] ${
+                    i === crumbs.length - 1 ? "text-viltrum-obsidian" : "hover:text-viltrum-obsidian"
+                  }`}
+                >
+                  {c.label}
+                </a>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Mobile menu — full-width slide-down */}
+      {mobileOpen && (
+        <div className="md:hidden border-t border-viltrum-ash bg-white">
+          <div className="container-app py-3 space-y-1">
             {navLinks.map((link) => {
-              const otherLinks = navLinks.filter(l => l.href !== link.href);
-              const moreSpecificMatch = otherLinks.some(l => l.href.startsWith(link.href + "/") && (pathname === l.href || pathname.startsWith(l.href + "/")));
-              const active = !moreSpecificMatch && (pathname === link.href || pathname.startsWith(link.href + "/"));
+              const active = activeFor(link.href);
               return (
                 <a
                   key={link.href}
                   href={link.href}
-                  className={`block px-3 py-2.5 hover:bg-jungle-card rounded-lg transition-colors text-base ${
-                    active ? "text-jungle-accent font-medium bg-jungle-accent/10" : "text-jungle-muted hover:text-jungle-accent"
+                  className={`block px-3 py-3 rounded-card transition-colors text-[14px] ${
+                    active
+                      ? "text-viltrum-obsidian bg-viltrum-limestone font-semibold"
+                      : "text-viltrum-iron hover:bg-viltrum-limestone"
                   }`}
-                  onClick={() => setMobileOpen(false)}
                 >
                   {link.label}
                 </a>
               );
             })}
-            <div className="border-t border-jungle-border mt-2 pt-3 px-3 space-y-2">
+            <div className="border-t border-viltrum-ash mt-3 pt-3 space-y-1">
               <a
                 href="/settings"
-                onClick={() => setMobileOpen(false)}
-                className={`block py-2.5 px-3 rounded-lg text-base transition-colors ${
-                  pathname === "/settings" ? "text-jungle-accent font-medium bg-jungle-accent/10" : "text-jungle-muted hover:text-jungle-accent hover:bg-jungle-card"
+                className={`block px-3 py-3 rounded-card text-[14px] transition-colors ${
+                  pathname === "/settings"
+                    ? "text-viltrum-obsidian bg-viltrum-limestone font-semibold"
+                    : "text-viltrum-iron hover:bg-viltrum-limestone"
                 }`}
               >
                 Settings
               </a>
               {onLogout && (
                 <button
-                  onClick={() => { setMobileOpen(false); onLogout(); }}
-                  className="w-full py-2.5 text-base text-jungle-danger bg-jungle-card border border-jungle-border rounded-lg"
+                  onClick={onLogout}
+                  className="w-full text-left px-3 py-3 text-[14px] text-viltrum-legion hover:bg-viltrum-blush rounded-card"
                 >
                   Logout
                 </button>
               )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </nav>
   );
 }

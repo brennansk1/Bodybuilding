@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import { showError, showSuccess } from "@/components/Toast";
 import CompetitionModeToggle from "@/components/CompetitionModeToggle";
 import { api } from "@/lib/api";
@@ -743,10 +744,7 @@ export default function SettingsPage() {
 
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold"><span className="text-jungle-accent">Settings</span></h1>
-              <p className="text-jungle-muted text-sm mt-1">Manage your profile, training, and nutrition preferences</p>
-            </div>
+            <PageTitle text="Settings" subtitle="Manage your profile, training, and nutrition preferences" className="mb-0" />
             <a href="/dashboard" className="btn-secondary text-sm px-3 py-2">Dashboard</a>
           </div>
 
@@ -1632,7 +1630,7 @@ export default function SettingsPage() {
                 {telegramStatus?.linked ? (
                   <>
                     <p className="text-xs text-jungle-dim">
-                      Your Coronado account is linked to <strong>@{telegramStatus.bot_username}</strong>.
+                      Your Viltrum account is linked to <strong>@{telegramStatus.bot_username}</strong>.
                       Adjust which reminders you receive below, or disconnect.
                     </p>
                     <div className="space-y-2">
@@ -1726,7 +1724,7 @@ export default function SettingsPage() {
                 <p className="text-xs text-jungle-dim">
                   Automate your morning check-in: an iPhone Shortcut reads body weight, HRV,
                   resting heart rate and sleep duration from Apple HealthKit and posts them
-                  to Coronado. Create an API key below and follow the setup guide.
+                  to Viltrum. Create an API key below and follow the setup guide.
                 </p>
 
                 {/* Existing keys */}
@@ -1963,7 +1961,7 @@ export default function SettingsPage() {
                 <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">What is this?</h4>
                 <p className="text-jungle-muted">
                   BotFather is Telegram&apos;s official bot for creating bots. You&apos;ll chat
-                  with it to create a brand-new private bot that belongs to you. Coronado
+                  with it to create a brand-new private bot that belongs to you. Viltrum
                   then uses that bot to send you coaching messages (workout previews,
                   readiness alerts, meal reminders). The bot is 100% yours — no one else
                   can see your chats or data.
@@ -1990,7 +1988,7 @@ export default function SettingsPage() {
                   </li>
                   <li>
                     BotFather asks for a <strong>name</strong> (displayed in chat).
-                    Pick whatever you like — e.g. <em>Coronado Coach</em>.
+                    Pick whatever you like — e.g. <em>Viltrum Coach</em>.
                   </li>
                   <li>
                     Next, BotFather asks for a <strong>username</strong>. It must end in
@@ -2019,7 +2017,7 @@ Keep your token secure and store it safely...`}</pre>
               </section>
 
               <section className="space-y-2">
-                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 4 — Paste it into Coronado</h4>
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 4 — Paste it into Viltrum</h4>
                 <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
                   <li>Close this guide.</li>
                   <li>
@@ -2027,13 +2025,13 @@ Keep your token secure and store it safely...`}</pre>
                     and tap <strong>Link Bot</strong>.
                   </li>
                   <li>
-                    If the token is valid, Coronado registers a webhook on your bot and
+                    If the token is valid, Viltrum registers a webhook on your bot and
                     the link is live immediately.
                   </li>
                   <li>
                     <strong>One more step:</strong> open your bot chat in Telegram and send
                     <code className="mx-1 bg-jungle-deeper px-1 rounded">/start</code>.
-                    This tells Coronado which chat ID to send messages to.
+                    This tells Viltrum which chat ID to send messages to.
                   </li>
                 </ol>
               </section>
@@ -2099,7 +2097,7 @@ Keep your token secure and store it safely...`}</pre>
                 <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">What this does</h4>
                 <p className="text-jungle-muted">
                   Runs every morning at 7 AM. Pulls last night&apos;s body weight, HRV, resting heart rate and sleep duration
-                  from Apple HealthKit and posts them to Coronado — your daily check-in is filled in automatically.
+                  from Apple HealthKit and posts them to Viltrum — your daily check-in is filled in automatically.
                 </p>
               </section>
 
@@ -2116,7 +2114,7 @@ Keep your token secure and store it safely...`}</pre>
                 <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
                   <li>Open the <strong>Shortcuts</strong> app on your iPhone.</li>
                   <li>Tap <strong>+</strong> (top right) to create a new shortcut.</li>
-                  <li>Name it <code className="bg-jungle-deeper px-1.5 py-0.5 rounded text-jungle-accent">Coronado Morning Sync</code>.</li>
+                  <li>Name it <code className="bg-jungle-deeper px-1.5 py-0.5 rounded text-jungle-accent">Viltrum Morning Sync</code>.</li>
                 </ol>
               </section>
 
@@ -2148,7 +2146,7 @@ Keep your token secure and store it safely...`}</pre>
               </section>
 
               <section className="space-y-2">
-                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 3 — POST to Coronado</h4>
+                <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Step 3 — POST to Viltrum</h4>
                 <ol className="list-decimal ml-5 space-y-1.5 text-jungle-muted">
                   <li>Add a <strong>Text</strong> action and paste this JSON body (keep the magic variables):</li>
                 </ol>
@@ -2182,7 +2180,7 @@ Keep your token secure and store it safely...`}</pre>
                   <li>In the Shortcuts app, tap the <strong>Automation</strong> tab.</li>
                   <li>Tap <strong>+</strong> → <em>Create Personal Automation</em>.</li>
                   <li>Pick <strong>Time of Day</strong> → set to <strong>7:00 AM</strong>, repeat <strong>Daily</strong>.</li>
-                  <li>Next → add action <strong>Run Shortcut</strong> → pick <em>Coronado Morning Sync</em>.</li>
+                  <li>Next → add action <strong>Run Shortcut</strong> → pick <em>Viltrum Morning Sync</em>.</li>
                   <li>Toggle <strong>Run Immediately</strong> ON (so it fires without a notification prompt).</li>
                   <li>Done. It&apos;ll fire every morning silently.</li>
                 </ol>
@@ -2191,7 +2189,7 @@ Keep your token secure and store it safely...`}</pre>
               <section className="space-y-2">
                 <h4 className="text-jungle-accent text-xs font-bold uppercase tracking-wider">Test it</h4>
                 <p className="text-jungle-muted">
-                  Run the shortcut manually from the Shortcuts app. If it succeeds, your Coronado daily check-in will show today&apos;s weight + HRV right away.
+                  Run the shortcut manually from the Shortcuts app. If it succeeds, your Viltrum daily check-in will show today&apos;s weight + HRV right away.
                   If it fails, open <strong>Show Result</strong> on the Get Contents of URL action to see the error message.
                 </p>
               </section>
@@ -2201,7 +2199,7 @@ Keep your token secure and store it safely...`}</pre>
                 <ul className="list-disc ml-5 space-y-1 text-jungle-muted">
                   <li><strong>401 Unauthorized</strong> — API key typo or revoked. Create a new one.</li>
                   <li><strong>422 Unprocessable Entity</strong> — one of the HealthKit values is missing. Make sure Apple Health has weight/HRV data for the last 24 hours.</li>
-                  <li><strong>SDNN vs rMSSD</strong> — Apple reports SDNN. Coronado auto-converts (SDNN × 0.8 ≈ rMSSD) and notes this on your check-in. No action needed.</li>
+                  <li><strong>SDNN vs rMSSD</strong> — Apple reports SDNN. Viltrum auto-converts (SDNN × 0.8 ≈ rMSSD) and notes this on your check-in. No action needed.</li>
                   <li><strong>No sleep data</strong> — the field is optional. The check-in still works without it.</li>
                 </ul>
               </section>

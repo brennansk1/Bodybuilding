@@ -634,7 +634,7 @@ export default function OnboardingPage() {
                 </div>
                 <h3 className="text-lg font-semibold">Ready to Launch</h3>
                 <p className="text-jungle-muted text-sm max-w-sm mx-auto">
-                  When you click Launch, Coronado will run all three engines and build your personalized system. This takes about 10 seconds.
+                  When you click Launch, Viltrum will run all three engines and build your personalized system. This takes about 10 seconds.
                 </p>
                 <div className="text-left max-w-sm mx-auto space-y-2">
                   {[
@@ -728,7 +728,7 @@ export default function OnboardingPage() {
               <div />
             )}
             <button onClick={submitStep} disabled={loading} className="btn-primary disabled:opacity-50">
-              {loading ? "Saving..." : step === 5 ? "Launch Coronado" : "Continue"}
+              {loading ? "Saving..." : step === 5 ? "Enter Viltrum" : "Continue"}
             </button>
           </div>
         </div>
