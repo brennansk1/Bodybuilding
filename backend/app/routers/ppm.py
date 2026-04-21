@@ -143,8 +143,8 @@ async def _latest_measurements(db: AsyncSession, user_id) -> tuple[dict, dict]:
     bw_dict: dict = {}
     if bw is not None:
         bw_dict["body_weight_kg"] = float(bw.weight_kg)
-        if bw.body_fat_pct is not None:
-            bw_dict["bf_pct"] = float(bw.body_fat_pct)
+        # BodyWeightLog has no body_fat_pct column — BF% lives on SkinfoldMeasurement
+        # or UserProfile.manual_body_fat_pct. Caller derives it downstream.
 
     return tape_dict, bw_dict
 

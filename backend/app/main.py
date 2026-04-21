@@ -60,6 +60,7 @@ def _run_schema_migrations(conn):
     _add_column_if_missing(conn, "user_profiles", "preferences", "JSONB")
     _add_column_if_missing(conn, "user_profiles", "manual_body_fat_pct", "DOUBLE PRECISION")
     _add_column_if_missing(conn, "hrv_log", "soreness_score", "DOUBLE PRECISION")
+    _add_column_if_missing(conn, "hrv_log", "notes", "TEXT")
     # Training session/set new fields
     _add_column_if_missing(conn, "training_sessions", "split_type", "VARCHAR(30)")
     _add_column_if_missing(conn, "training_sessions", "stale_baselines", "BOOLEAN DEFAULT FALSE")

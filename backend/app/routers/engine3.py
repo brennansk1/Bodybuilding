@@ -44,6 +44,11 @@ async def get_current_prescription(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Load the profile up front — both the auto-create and the auto-sync
+    # branches below dereference it.
+    profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
+    profile = profile_result.scalar_one_or_none()
+
     result = await db.execute(
         select(NutritionPrescription)
         .where(NutritionPrescription.user_id == user.id, NutritionPrescription.is_active == True)
@@ -53,8 +58,6 @@ async def get_current_prescription(
     rx = result.scalar_one_or_none()
     if not rx:
         # Generate initial prescription from profile + latest weight
-        profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
-        profile = profile_result.scalar_one_or_none()
         if not profile:
             raise HTTPException(status_code=404, detail="Complete onboarding first")
 
