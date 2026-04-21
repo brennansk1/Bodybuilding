@@ -41,8 +41,10 @@ body {
 }
 
 /* Background — Viltrumite city skyline.
-   Bumped opacity so the sci-fi backdrop actually reads through the marble
-   page. A soft radial vignette on top keeps card content readable. */
+   The image lives at full opacity on a transparent page background; a
+   marble-tinted overlay on top pulls it toward the light palette without
+   hiding the skyline entirely. This way the city actually reads through
+   the marble whitespace on every page. */
 body::before {
   content: "";
   position: fixed;
@@ -53,24 +55,25 @@ body::before {
   background-size: cover;
   background-repeat: no-repeat;
   background-attachment: fixed;
-  opacity: 0.32;
   pointer-events: none;
 }
-/* Vignette + marble tint so card content keeps its contrast without
-   killing the skyline entirely. */
+/* Marble tint layer — translucent so the skyline peeks through the empty
+   areas of the page. Cards still render on top of this and stay readable. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse at center, rgba(245,244,241,0.35) 0%, rgba(245,244,241,0.85) 70%, rgba(245,244,241,0.95) 100%);
+  background-color: rgba(245, 244, 241, 0.62);
 }
+html { background-color: transparent; }
 @media (max-width: 767px) {
   body::before {
     background-attachment: scroll;
-    opacity: 0.28;
+  }
+  body::after {
+    background-color: rgba(245, 244, 241, 0.72);
   }
 }
 

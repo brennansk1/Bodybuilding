@@ -131,48 +131,48 @@ const MESO_PHASES: Record<number, MesoPhase & { coachingDescription: string }> =
     name: "Minimum Effective Volume", 
     description: "3 working sets · 2 RIR · Moderate FST-7", 
     coachingDescription: "This phase targets the lowest volume needed to stimulate growth, typically 3 sets per muscle. We prioritize perfect execution and a 2 RIR (Reps In Reserve) buffer to solidify movement patterns and prime the CNS for the heavier loading to come. It's the foundation of the mesocycle.",
-    color: "bg-emerald-500/20 border-emerald-500/40", 
-    textColor: "text-emerald-400" 
+    color: "bg-viltrum-laurel-bg border-viltrum-laurel/30", 
+    textColor: "text-viltrum-laurel" 
   },
   2: { 
     label: "MEV", 
     name: "Minimum Effective Volume", 
     description: "3 working sets · 2 RIR · Moderate FST-7", 
     coachingDescription: "Maintaining MEV while increasing absolute intensity. We continue with 3 sets but focus on progressive overload via weight increases. The goal is maximum tension with zero systemic fatigue accumulation before we ramp volume in the MAV phase.",
-    color: "bg-emerald-500/20 border-emerald-500/40", 
-    textColor: "text-emerald-400" 
+    color: "bg-viltrum-laurel-bg border-viltrum-laurel/30", 
+    textColor: "text-viltrum-laurel" 
   },
   3: { 
     label: "MAV", 
     name: "Maximum Adaptive Volume", 
     description: "+1 set · Loads ↑ · 1 RIR · Aggressive FST-7 (45s rest)", 
     coachingDescription: "The 'Sweet Spot' of hypertrophy. Volume increments by 1 set as we drop the buffer to 1 RIR. We introduce aggressive FST-7 finishers with strict 45-second rests to maximize fascial stretch and blood flow. This is where the most significant tissue adaptation occurs.",
-    color: "bg-yellow-500/20 border-yellow-500/40", 
-    textColor: "text-yellow-400" 
+    color: "bg-viltrum-aureus-bg border-viltrum-aureus/30", 
+    textColor: "text-viltrum-aureus" 
   },
   4: { 
     label: "MAV", 
     name: "Maximum Adaptive Volume", 
     description: "+1 set · Loads ↑ · 1 RIR · Aggressive FST-7 (45s rest)", 
     coachingDescription: "Pushing the upper limit of adaptive volume. We maintain the +1 set increase and 1 RIR intensity. The training focus shifts to maintaining performance under higher metabolic stress, preparing the body for the final MRV push.",
-    color: "bg-yellow-500/20 border-yellow-500/40", 
-    textColor: "text-yellow-400" 
+    color: "bg-viltrum-aureus-bg border-viltrum-aureus/30", 
+    textColor: "text-viltrum-aureus" 
   },
   5: { 
     label: "MRV", 
     name: "Maximum Recoverable Volume", 
     description: "All sets to failure · 0 RIR · Forced reps + negatives", 
     coachingDescription: "The Overreach Phase. Every set is taken to absolute muscular failure (0 RIR) with advanced intensity techniques like forced repetitions and assisted negatives. This phase pushes your recovery capacity to its limit to trigger a massive supercompensation effect.",
-    color: "bg-red-500/20 border-red-500/40", 
-    textColor: "text-red-400" 
+    color: "bg-viltrum-blush border-viltrum-legion/30", 
+    textColor: "text-viltrum-legion" 
   },
   6: { 
     label: "DELOAD", 
     name: "Deload & Recovery", 
     description: "50% volume · 60% loads · No FST-7 · Supercompensation", 
     coachingDescription: "Strategic Recovery. Volume is slashed by 50% and intensity reduced to a RPE 6. We remove FST-7 and all failure-training to allow systemic fatigue and connective tissue inflammation to dissipate. This enables you to start the next mesocycle with a higher baseline.",
-    color: "bg-blue-500/20 border-blue-500/40", 
-    textColor: "text-blue-400" 
+    color: "bg-viltrum-adriatic-bg border-viltrum-adriatic/30", 
+    textColor: "text-viltrum-adriatic" 
   },
 };
 
@@ -1016,7 +1016,7 @@ export default function ProgramPage() {
                             <div className="w-20 h-1.5 bg-jungle-deeper rounded-full overflow-hidden border border-white/5">
                               <div className="h-full bg-red-500/80 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.4)]" style={{ width: `${Math.min(100, (g.gap_cm / 5) * 100)}%` }} />
                             </div>
-                            <span className="text-[10px] font-black text-red-400">+{g.gap_cm}cm</span>
+                            <span className="text-[10px] font-black text-viltrum-legion">+{g.gap_cm}cm</span>
                           </div>
                         </div>
                       ))}

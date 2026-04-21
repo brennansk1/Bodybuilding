@@ -36,7 +36,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6 relative z-10 page-enter">
         <div className="text-center">
           <Logo size="lg" />
-          <p className="text-jungle-dim text-xs mt-2 tracking-widest uppercase">Competitive Physique Optimization</p>
+          <p className="text-jungle-dim text-xs mt-2 tracking-widest uppercase">All Is Ours</p>
         </div>
 
         <form onSubmit={handleSubmit} className="card space-y-5">

@@ -48,7 +48,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <Logo size="lg" />
-          <p className="text-jungle-dim text-sm mt-2">Competitive Physique Optimization</p>
+          <p className="text-jungle-dim text-sm mt-2">All Is Ours</p>
         </div>
 
         <form onSubmit={handleSubmit} className="card space-y-4">
