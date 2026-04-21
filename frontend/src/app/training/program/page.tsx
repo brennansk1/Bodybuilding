@@ -92,7 +92,7 @@ function getPhaseColor(phase: string): string {
   }
 }
 
-function getPhaseLabel(phase: string): string {
+function getPhaseLabel(phase: string | null | undefined): string {
   switch (phase) {
     case "offseason": case "bulk": return "Bulk";
     case "lean_bulk": return "Lean Bulk";
@@ -101,7 +101,16 @@ function getPhaseLabel(phase: string): string {
     case "peak_week": case "peak": return "Peak";
     case "contest": return "Show";
     case "restoration": return "Restoration";
-    default: return phase.replace(/_/g, " ");
+    // Perpetual Progression Mode sub-phases
+    case "ppm_assessment": return "Assessment";
+    case "ppm_accumulation": return "Accumulation";
+    case "ppm_intensification": return "Intensification";
+    case "ppm_deload": return "Deload";
+    case "ppm_checkpoint": return "Checkpoint";
+    case "ppm_mini_cut": return "Mini Cut";
+    default:
+      // Defensive — an empty calendar can surface undefined here.
+      return typeof phase === "string" ? phase.replace(/_/g, " ") : "—";
   }
 }
 
@@ -281,10 +290,15 @@ export default function ProgramPage() {
   const currentWeek = program?.current_week ?? 1;
   const progressPct = totalWeeks > 0 ? Math.round((currentWeek / totalWeeks) * 100) : 0;
 
-  // Macro cycle weeks
-  const macroPhases = calendar?.calendar.flatMap(block =>
-    Array(block.weeks).fill(block.phase)
-  ) ?? Array(16).fill("offseason");
+  // Macro cycle weeks.
+  // For PPM users the backend returns `calendar: []` since there's no
+  // competition date — `??` would not fall through because `[]` is truthy,
+  // leaving macroPhases empty and macroPhases[0] undefined. Explicitly
+  // fall back when the array is empty to keep the macrocycle block rendering.
+  const _calBlocks = calendar?.calendar ?? [];
+  const macroPhases = _calBlocks.length > 0
+    ? _calBlocks.flatMap(block => Array(block.weeks).fill(block.phase))
+    : Array(16).fill("offseason");
 
   const startAnchor = calendar?.calendar[0]?.start_date;
   let macroCurrentWeek = 1;
