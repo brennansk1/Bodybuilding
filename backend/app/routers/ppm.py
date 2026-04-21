@@ -178,7 +178,7 @@ async def _compute_athlete_metrics(
         select(HQILog).where(HQILog.user_id == user.id).order_by(desc(HQILog.created_at)).limit(1)
     )
     hqi_row = hqi_q.scalar_one_or_none()
-    hqi_score = float(hqi_row.overall_score) if hqi_row and hqi_row.overall_score is not None else 0.0
+    hqi_score = float(hqi_row.overall_hqi) if hqi_row and hqi_row.overall_hqi is not None else 0.0
 
     return {
         "body_weight_kg": body_weight_kg,
