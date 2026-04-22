@@ -178,6 +178,7 @@ async def _compute_athlete_metrics(
     hqi_row = hqi_q.scalar_one_or_none()
     hqi_score = float(hqi_row.overall_hqi) if hqi_row and hqi_row.overall_hqi is not None else 0.0
     hqi_age_days: int | None = None
+    hqi_site_gaps: dict = {}
     if hqi_row is not None:
         created = getattr(hqi_row, "created_at", None) or getattr(hqi_row, "recorded_date", None)
         if created is not None:
@@ -186,6 +187,19 @@ async def _compute_athlete_metrics(
                 hqi_age_days = int((ref - created).days) if hasattr(created, "year") else None
             except (TypeError, ValueError):
                 hqi_age_days = None
+        # site_scores is {site: {current_lean_cm, ideal_lean_cm, gap_cm, gap_type, pct_of_ideal}}
+        # from the ghost/muscle_gaps pipeline. Pass through so readiness can build
+        # the mass_distribution metric and surface the worst lagging muscles.
+        if hqi_row.site_scores:
+            hqi_site_gaps = dict(hqi_row.site_scores)
+
+    # Bilateral L/R pairs — used by split designer for unilateral-bias detection.
+    tape_pairs = {
+        "bicep":   (tape.get("left_bicep"),   tape.get("right_bicep")),
+        "forearm": (tape.get("left_forearm"), tape.get("right_forearm")),
+        "thigh":   (tape.get("left_thigh"),   tape.get("right_thigh")),
+        "calf":    (tape.get("left_calf"),    tape.get("right_calf")),
+    }
 
     return {
         "body_weight_kg": body_weight_kg,
@@ -198,7 +212,10 @@ async def _compute_athlete_metrics(
         "arm_calf_neck_parity": parity,
         "hqi_score": hqi_score,
         "hqi_age_days": hqi_age_days,
+        "hqi_site_gaps": hqi_site_gaps,
+        "tape_pairs": tape_pairs,
         "training_years": float(profile.training_experience_years or 0),
+        "sex": profile.sex or "male",
     }
 
 
@@ -284,6 +301,7 @@ async def evaluate(
             weight_cap_kg=cap_kg,
             training_status=prof.training_status,
             division=prof.division,
+            sex=prof.sex or "male",
         )
         projection = estimate_cycles_to_tier(
             metrics,
@@ -384,7 +402,8 @@ async def start_cycle(
     metrics = await _compute_athlete_metrics(db, user, prof)
     cap_kg = lookup_weight_cap(prof.height_cm, prof.division)
     readiness = evaluate_readiness(
-        metrics, target, cap_kg, prof.training_status, prof.division
+        metrics, target, cap_kg, prof.training_status, prof.division,
+        sex=prof.sex or "male",
     )
     tape, _ = await _latest_measurements(db, user.id)
     auto_focus = _limiting_muscles_from_readiness(readiness, tape)
@@ -463,7 +482,8 @@ async def post_checkpoint(
     metrics = await _compute_athlete_metrics(db, user, prof)
     cap_kg = lookup_weight_cap(prof.height_cm, prof.division)
     readiness = evaluate_readiness(
-        metrics, prof.target_tier, cap_kg, prof.training_status, prof.division
+        metrics, prof.target_tier, cap_kg, prof.training_status, prof.division,
+        sex=prof.sex or "male",
     )
 
     # Persist the checkpoint row.
@@ -637,15 +657,36 @@ def _build_cycle_plan(
     from app.engines.engine2.split_designer import design_split
 
     days_per_week = prof.days_per_week or 5
-    hqi_gaps: dict[str, float] = {}   # empty gaps → division archetype fallback
+    # Pull real per-site gaps from the latest HQI diagnostic so design_split
+    # can weight need scores against the athlete's actual lagging muscles.
+    # An empty dict falls back to the division archetype (uniform distribution).
+    raw_site_gaps: dict = metrics.get("hqi_site_gaps") or {}
+    hqi_gaps: dict[str, float] = {}
+    for site, row in raw_site_gaps.items():
+        if not isinstance(row, dict):
+            continue
+        if row.get("gap_type") != "add_muscle":
+            continue
+        g = row.get("gap_cm")
+        if g is None:
+            continue
+        try:
+            g_f = float(g)
+        except (TypeError, ValueError):
+            continue
+        if g_f > 0:
+            hqi_gaps[site] = round(g_f, 1)
     design = design_split(
         hqi_gaps=hqi_gaps,
         division=prof.division,
         days_per_week=days_per_week,
+        height_cm=prof.height_cm,
+        tape_pairs=metrics.get("tape_pairs"),
     )
     split = "custom"
     day_rotation = design.get("template", [])
     split_reasoning = design.get("reasoning", "")
+    unilateral_bias = design.get("unilateral_bias", {})
 
     # ── Volume landmarks scaled to athlete (training_status aware) ──
     landmarks = get_all_landmarks(
@@ -705,6 +746,7 @@ def _build_cycle_plan(
     return {
         "split": split,
         "split_reasoning": split_reasoning,
+        "unilateral_bias": unilateral_bias,
         "focus_muscles": focus_muscles,
         "total_weeks": total_weeks,
         "weeks": weeks_out,

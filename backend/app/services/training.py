@@ -1106,8 +1106,30 @@ async def generate_program_sessions(
     # -----------------------------------------------------------------------
     # 2b. Design custom split based on gap profile, division, and recovery
     # -----------------------------------------------------------------------
-    custom_split_result = design_split(hqi_gaps, user_division, program.days_per_week)
+    # Load L/R tape pairs so the designer can emit a unilateral bias for any
+    # bilateral pair spread > ASYMMETRY_UNILATERAL_CM.
+    from app.models.measurement import TapeMeasurement as _Tape
+    _tape_q = await db.execute(
+        select(_Tape).where(_Tape.user_id == user_id)
+        .order_by(desc(_Tape.recorded_date)).limit(1)
+    )
+    _latest_tape = _tape_q.scalar_one_or_none()
+    tape_pairs: dict[str, tuple] | None = None
+    if _latest_tape is not None:
+        tape_pairs = {
+            "bicep":   (getattr(_latest_tape, "left_bicep", None),   getattr(_latest_tape, "right_bicep", None)),
+            "forearm": (getattr(_latest_tape, "left_forearm", None), getattr(_latest_tape, "right_forearm", None)),
+            "thigh":   (getattr(_latest_tape, "left_thigh", None),   getattr(_latest_tape, "right_thigh", None)),
+            "calf":    (getattr(_latest_tape, "left_calf", None),    getattr(_latest_tape, "right_calf", None)),
+        }
+
+    custom_split_result = design_split(
+        hqi_gaps, user_division, program.days_per_week,
+        height_cm=getattr(profile, "height_cm", None),
+        tape_pairs=tape_pairs,
+    )
     custom_template = custom_split_result["template"]
+    unilateral_bias = custom_split_result.get("unilateral_bias", {}) or {}
     selected_split = "custom"
     # Persist selected split back to the program record
     program.split_type = selected_split
@@ -1511,6 +1533,15 @@ async def generate_program_sessions(
                 if db_muscle in global_spillover and global_spillover[db_muscle] > 0:
                     total_sets += global_spillover[db_muscle]
                     global_spillover[db_muscle] = 0
+
+                # Unilateral-bias bonus — when the athlete's L/R spread on this
+                # muscle exceeds ASYMMETRY_UNILATERAL_CM, designer emits a bias
+                # record and we add its bonus_sets_per_session here. The extra
+                # volume is directed at the lagging side (see exercise-gen
+                # block below, which biases machine/dumbbell selections).
+                _bias = unilateral_bias.get(db_muscle)
+                if _bias:
+                    total_sets += int(_bias.get("bonus_sets_per_session", 0))
 
                 # -------------------------------------------------------------------
                 # Rule 1 C: Per-Muscle Session Cap & Dynamic Spillover Routing

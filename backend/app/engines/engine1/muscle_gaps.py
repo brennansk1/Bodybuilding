@@ -68,29 +68,11 @@ def compute_site_gap(
     }
 
 
-def compute_ideal_circumferences(
-    max_circumferences: dict[str, float],
-    ceiling_factors: dict[str, float],
-    division_vector: dict[str, float],
-    height_cm: float,
-) -> dict[str, float]:
-    """
-    Compute the ideal lean circumference for every site.
-
-    Muscle sites:  ideal = casey_butt_max × division_ceiling_factor
-    Stay-small sites (waist, hips): ideal = division_ratio × height
-    """
-    ideals: dict[str, float] = {}
-
-    for site in max_circumferences:
-        factor = ceiling_factors.get(site, 1.0)
-        ideals[site] = round(max_circumferences[site] * factor, 1)
-
-    for site in _RATIO_SITES:
-        if site in division_vector:
-            ideals[site] = round(division_vector[site] * height_cm, 1)
-
-    return ideals
+# Deprecated duplicate — the single source of truth is now
+# `engine1.hqi.compute_ideal_circumferences`. Keep a thin re-export so any
+# existing `from app.engines.engine1.muscle_gaps import compute_ideal_circumferences`
+# continues to work without touching every call site.
+from app.engines.engine1.hqi import compute_ideal_circumferences  # noqa: E402,F401
 
 
 def compute_all_gaps(

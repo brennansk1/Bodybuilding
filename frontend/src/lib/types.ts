@@ -46,6 +46,14 @@ export interface TierMetric {
   pct_progress: number;
 }
 
+export interface MassGap {
+  site: string;
+  current_lean_cm: number;
+  ideal_lean_cm: number;
+  gap_cm: number;
+  pct_of_ideal: number;
+}
+
 export interface TierReadiness {
   state: ReadinessState;
   tier: string;
@@ -56,6 +64,7 @@ export interface TierReadiness {
   per_metric: Record<string, TierMetric>;
   limiting_factor: string;
   limiting_detail: TierMetric;
+  mass_gaps?: MassGap[];
 }
 
 export interface PPMCheckpoint {

@@ -8,6 +8,13 @@ Estimates maximum competitive stage weight based on structural anchors
 """
 import math
 
+from app.constants.physio import (
+    stage_bf_pct as stage_bf_pct_for_sex,
+    OFFSEASON_BF_CEILING_MALE,
+    OFFSEASON_BF_CEILING_FEMALE,
+    fallback_offseason_bf_pct,
+)
+
 
 def compute_bf_threshold_from_weight_cap(
     height_cm: float,
@@ -41,7 +48,7 @@ def compute_bf_threshold_from_weight_cap(
         threshold_fat_mass = threshold_weight - lbm
         threshold_bf = (threshold_fat_mass / threshold_weight) * 100 if threshold_weight > 0 else 18.0
     else:
-        current_bf = 15.0
+        current_bf = fallback_offseason_bf_pct(sex)
         threshold_bf = 18.0
 
     return {
@@ -57,7 +64,7 @@ def compute_weight_cap(
     height_cm: float,
     wrist_cm: float | None = None,
     ankle_cm: float | None = None,
-    body_fat_pct: float = 5.0,
+    body_fat_pct: float | None = None,
     sex: str = "male",
 ) -> dict[str, float]:
     """
@@ -70,6 +77,11 @@ def compute_weight_cap(
             "offseason_weight_kg": float,
         }
     """
+    # Default to centralized stage BF so all engines converge on the same
+    # "at contest conditioning" assumption (see app.constants.physio).
+    if body_fat_pct is None:
+        body_fat_pct = stage_bf_pct_for_sex(sex)
+
     # Default structural anchors if not provided
     if wrist_cm is None:
         wrist_cm = 17.8 if sex == "male" else 15.2

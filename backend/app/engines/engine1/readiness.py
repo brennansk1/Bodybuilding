@@ -27,6 +27,12 @@ from app.constants.competitive_tiers import (
     coerce_tier,
     get_tier_thresholds,
 )
+from app.constants.physio import (
+    stage_bf_pct as stage_bf_pct_for_sex,
+    fallback_offseason_bf_pct,
+    project_lean_girth,
+    HQI_FRESHNESS_DAYS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +66,7 @@ def evaluate_readiness(
     weight_cap_kg: float,
     training_status: str = "natural",
     division: str = "classic_physique",
+    sex: str = "male",
 ) -> dict:
     """Compare athlete metrics to tier thresholds and classify readiness.
 
@@ -115,15 +122,12 @@ def evaluate_readiness(
     body_weight_kg = float(athlete_metrics.get("body_weight_kg", 0.0))
     _raw_bf = athlete_metrics.get("bf_pct")
     bf_pct: float | None = float(_raw_bf) if _raw_bf not in (None, 0, 0.0) else None
-    stage_bf_pct = 5.0  # Classic / Open target; tight enough for all tiers.
-    if bf_pct is not None and bf_pct > 0:
-        lbm_kg = body_weight_kg * (1.0 - bf_pct / 100.0)
-    else:
-        # No BF on file — fall back to a 15% offseason estimate so we don't
-        # silently use total weight (which is what produced the buggy 0.89
-        # reading for a user at 22.7% BF).
-        lbm_kg = body_weight_kg * (1.0 - 15.0 / 100.0)
-    projected_stage_kg = lbm_kg / (1.0 - stage_bf_pct / 100.0) if lbm_kg > 0 else 0.0
+    # Pull stage and fallback BF from the centralized physio module so every
+    # engine sees the same numbers.
+    stage_bf = stage_bf_pct_for_sex(sex)
+    bf_for_proj = bf_pct if bf_pct is not None and bf_pct > 0 else fallback_offseason_bf_pct(sex)
+    lbm_kg = body_weight_kg * (1.0 - bf_for_proj / 100.0)
+    projected_stage_kg = lbm_kg / (1.0 - stage_bf / 100.0) if lbm_kg > 0 else 0.0
     stage_weight_pct = projected_stage_kg / weight_cap_kg if weight_cap_kg > 0 else 0.0
 
     _record(
@@ -178,12 +182,11 @@ def evaluate_readiness(
         pct_progress=_parity_progress(parity, thresholds.arm_calf_neck_parity_max),
     )
 
-    # ── HQI — with a staleness guard so a 6-month-old diagnostic doesn't
-    #          silently satisfy the threshold. ≤90 days old counts; older
-    #          reports as 0 + a `stale` flag for the UI to surface. ──
+    # ── HQI — with a staleness guard so an old diagnostic doesn't silently
+    #          satisfy the threshold. See physio.HQI_FRESHNESS_DAYS. ──
     hqi = float(athlete_metrics.get("hqi_score", 0.0))
     hqi_age_days = athlete_metrics.get("hqi_age_days")
-    hqi_stale = hqi_age_days is not None and hqi_age_days > 90
+    hqi_stale = hqi_age_days is not None and hqi_age_days > HQI_FRESHNESS_DAYS
     hqi_effective = 0.0 if hqi_stale else hqi
     _record(
         "hqi",
@@ -210,6 +213,53 @@ def evaluate_readiness(
         pct_progress=(years / yr_req) if yr_req > 0 else 1.0,
     )
 
+    # ── Mass distribution — the top 3 lagging muscles by HQI lean gap.
+    #
+    # The seven threshold metrics above evaluate *shape* (proportions,
+    # weight cap %) but don't surface a per-muscle verdict. A user at 22%
+    # BF whose raw thigh measures 63 cm might pass the ratio check even
+    # though their lean thigh is 13 cm short of Classic ideal. This extra
+    # block reads HQI's per-site gap map (if present) and computes a
+    # "lean-projection gap" against the Casey-Butt × ceiling ideal, so
+    # the worst three lagging muscles surface at the tier-readiness level
+    # instead of being buried in the Muscle Gaps widget.
+    hqi_site_gaps: dict[str, dict] = athlete_metrics.get("hqi_site_gaps") or {}
+    mass_gaps: list[dict] = []
+    for site, row in hqi_site_gaps.items():
+        if not isinstance(row, dict):
+            continue
+        ideal = row.get("ideal_lean_cm")
+        current = row.get("current_lean_cm")
+        gap = row.get("gap_cm")
+        # Only interested in "add_muscle" sites — ignore waist/hips where
+        # gap_cm negative means fat to lose, not muscle to add.
+        gap_type = row.get("gap_type", "")
+        if gap_type != "add_muscle":
+            continue
+        if gap is None or ideal is None:
+            continue
+        mass_gaps.append({
+            "site": site,
+            "current_lean_cm": round(float(current or 0), 1),
+            "ideal_lean_cm": round(float(ideal), 1),
+            "gap_cm": round(float(gap), 1),
+            "pct_of_ideal": round((float(current or 0) / float(ideal)) * 100, 1) if ideal else 0,
+        })
+    mass_gaps.sort(key=lambda r: r["gap_cm"], reverse=True)
+    top_mass_gaps = mass_gaps[:3]
+    # Headline "mass distribution" verdict: fail if any top-3 site is <85%
+    # of ideal. Acts as the 8th readiness metric.
+    worst_pct = min((m["pct_of_ideal"] for m in top_mass_gaps), default=100.0) / 100.0
+    if top_mass_gaps:
+        _record(
+            "mass_distribution",
+            current=round(worst_pct, 3),
+            target=0.85,
+            met=worst_pct >= 0.85,
+            pct_progress=worst_pct / 0.85 if worst_pct < 0.85 else 1.0,
+            worst_sites=top_mass_gaps,
+        )
+
     total_count = len(results)
     pct_met = met_count / total_count if total_count else 0.0
 
@@ -234,6 +284,7 @@ def evaluate_readiness(
         "per_metric": results,
         "limiting_factor": limiting_name,
         "limiting_detail": limiting_detail,
+        "mass_gaps": top_mass_gaps,   # convenience top-level copy for UI
     }
 
 

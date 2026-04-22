@@ -486,6 +486,7 @@ def design_split(
     days_per_week: int,
     shoulder_width_cm: float | None = None,
     height_cm: float | None = None,
+    tape_pairs: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> dict[str, Any]:
     """
     Design an optimal custom weekly training split.
@@ -660,12 +661,52 @@ def design_split(
             f"Low-visibility muscles ({', '.join(hidden)}) get maintenance volume only."
         )
 
+    # Asymmetry-driven unilateral bias. When a bilateral pair spreads more than
+    # ASYMMETRY_UNILATERAL_CM between sides, the lagging side gets +2 sets per
+    # session on that muscle. Consumed by services/training when generating
+    # session exercises. See physio.ASYMMETRY_UNILATERAL_CM for the threshold.
+    from app.constants.physio import ASYMMETRY_UNILATERAL_CM
+
+    unilateral_bias: dict[str, dict] = {}
+    if tape_pairs:
+        # tape_pairs maps tape-site name → (left_cm, right_cm). Map tape site
+        # → training muscle name(s) used inside volume_budget/template.
+        _PAIR_TO_MUSCLE: dict[str, list[str]] = {
+            "bicep":   ["biceps"],
+            "forearm": ["forearms"],
+            "thigh":   ["quads", "hamstrings"],
+            "calf":    ["calves"],
+        }
+        for tape_site, (lv, rv) in tape_pairs.items():
+            if lv is None or rv is None:
+                continue
+            try:
+                diff = float(lv) - float(rv)
+            except (TypeError, ValueError):
+                continue
+            if abs(diff) < ASYMMETRY_UNILATERAL_CM:
+                continue
+            lagging = "right" if diff > 0 else "left"
+            for muscle in _PAIR_TO_MUSCLE.get(tape_site, []):
+                unilateral_bias[muscle] = {
+                    "lagging_side": lagging,
+                    "spread_cm": round(abs(diff), 1),
+                    "bonus_sets_per_session": 2,
+                }
+        if unilateral_bias:
+            sites = ", ".join(
+                f"{m} ({v['lagging_side']}, {v['spread_cm']} cm spread)"
+                for m, v in unilateral_bias.items()
+            )
+            parts.append(f"Unilateral bias applied: {sites}.")
+
     return {
         "template": template,
         "split_name": "custom",
         "need_scores": need_scores,
         "volume_budget": volume_budget,
         "desired_frequency": desired_freq,
+        "unilateral_bias": unilateral_bias,
         "reasoning": " ".join(parts),
     }
 

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from app.constants.physio import (
+    SYMMETRY_PENALTY_MULT as _SYMMETRY_PENALTY_MULT,
+    SYMMETRY_PENALTY_DEFAULT,
+)
+
 """
 Physique Development Score (PDS)
 
@@ -155,19 +160,14 @@ def compute_symmetry_score(tape_measurements: dict[str, float]) -> float:
         return 80.0
 
     avg_deviation = sum(deviations) / len(deviations)
-    score = max(0.0, 100.0 - avg_deviation * 500)
+    score = max(0.0, 100.0 - avg_deviation * SYMMETRY_PENALTY_DEFAULT)
     return round(score, 1)
 
 
-# Per-site symmetry penalty multipliers (used by compute_symmetry_details)
-# Arms and calves are heavily penalized (visible from front/back at every pose)
-# Thighs are lightly penalized (quad dominance is common and somewhat accepted)
-_SYMMETRY_PENALTY_MULT: dict[str, float] = {
-    "bicep":   600,   # heavily judged — every front double bi
-    "forearm": 600,   # visible in most poses
-    "calf":    550,   # extremely visible standing
-    "thigh":   300,   # quad dominance tolerated by most divisions
-}
+# Per-site symmetry penalty multipliers and scalar default are sourced from
+# app.constants.physio (imported at the top of this module) so the scalar
+# compute_symmetry_score and the per-site compute_symmetry_details never
+# disagree on the same athlete's scores.
 
 
 def compute_symmetry_details(tape_measurements: dict[str, float]) -> list[dict]:
@@ -187,7 +187,7 @@ def compute_symmetry_details(tape_measurements: dict[str, float]) -> list[dict]:
                 avg = (l_val + r_val) / 2
                 dev = abs(l_val - r_val) / avg
                 # Site-specific penalty: arms/calves penalized more than legs
-                penalty_mult = _SYMMETRY_PENALTY_MULT.get(name, 500)
+                penalty_mult = _SYMMETRY_PENALTY_MULT.get(name, SYMMETRY_PENALTY_DEFAULT)
                 site_score = max(0.0, 100.0 - dev * penalty_mult)
                 details.append({
                     "site": name,

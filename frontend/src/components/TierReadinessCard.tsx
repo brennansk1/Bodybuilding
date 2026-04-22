@@ -18,13 +18,27 @@ const METRIC_LABELS: Record<string, string> = {
   arm_calf_neck_parity: "Arm · Calf · Neck parity",
   hqi:                  "HQI (last diagnostic)",
   training_years:       "Training years",
+  mass_distribution:    "Mass distribution (worst site)",
 };
 
 const GROUPS: Array<{ title: string; keys: string[] }> = [
-  { title: "Mass",        keys: ["weight_cap_pct", "ffmi"] },
+  { title: "Mass",        keys: ["weight_cap_pct", "ffmi", "mass_distribution"] },
   { title: "Proportions", keys: ["shoulder_waist", "chest_waist", "arm_calf_neck_parity"] },
   { title: "Readiness",   keys: ["hqi", "training_years"] },
 ];
+
+const SITE_LABEL: Record<string, string> = {
+  bicep: "Biceps",
+  forearm: "Forearms",
+  calf: "Calves",
+  thigh: "Thighs",
+  chest: "Chest",
+  shoulders: "Shoulders",
+  neck: "Neck",
+  back_width: "Back width",
+  waist: "Waist",
+  hips: "Hips",
+};
 
 interface Props {
   readiness: TierReadiness;
@@ -51,6 +65,7 @@ function formatMetricValue(key: string, m: MetricShape): string {
   if (key === "arm_calf_neck_parity") return `${m.current.toFixed(2)}"`;
   if (key === "hqi") return m.current.toFixed(0);
   if (key === "training_years") return `${m.current.toFixed(0)} yr`;
+  if (key === "mass_distribution") return `${(m.current * 100).toFixed(0)}%`;
   return String(m.current);
 }
 
@@ -58,6 +73,7 @@ function formatTarget(key: string, m: MetricShape): string {
   if (key === "weight_cap_pct") return `${(m.target * 100).toFixed(0)}%`;
   if (key === "arm_calf_neck_parity") return `${m.target.toFixed(2)}"`;
   if (key === "training_years") return `${m.target.toFixed(0)} yr`;
+  if (key === "mass_distribution") return `${(m.target * 100).toFixed(0)}%`;
   return m.target.toFixed(2);
 }
 
@@ -158,6 +174,30 @@ export default function TierReadinessCard({
           </div>
         ))}
       </div>
+
+      {/* Lagging muscles — per-site lean-gap callout pulled from HQI diagnostic */}
+      {readiness.mass_gaps && readiness.mass_gaps.length > 0 && (
+        <div className="mt-2 p-3 rounded-card bg-viltrum-limestone border border-viltrum-ash">
+          <div className="text-[10px] uppercase tracking-[2px] text-viltrum-travertine mb-2">
+            Lagging muscles (lean gap)
+          </div>
+          <div className="space-y-1.5">
+            {readiness.mass_gaps.map((g) => (
+              <div key={g.site} className="flex items-baseline justify-between text-[11px]">
+                <span className="text-viltrum-iron">{SITE_LABEL[g.site] || g.site}</span>
+                <span className="text-viltrum-obsidian">
+                  <span className="font-mono">{g.current_lean_cm} cm</span>
+                  <span className="text-viltrum-pewter"> / </span>
+                  <span className="font-mono">{g.ideal_lean_cm} cm</span>
+                  <span className="text-viltrum-centurion font-semibold ml-2">
+                    −{g.gap_cm} cm
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Limiting factor callout */}
       {limiter && (
