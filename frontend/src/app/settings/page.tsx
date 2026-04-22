@@ -219,6 +219,10 @@ export default function SettingsPage() {
   const [acknowledgeGap, setAcknowledgeGap] = useState<boolean>(false);
   const [programStartDate, setProgramStartDate] = useState("");
   const [expYears, setExpYears] = useState("");
+  // V2.S4 — training-age factors. Empty string = use engine default (0.85/0.75/0.70).
+  const [consistencyFactor, setConsistencyFactor] = useState("");
+  const [intensityFactor,   setIntensityFactor]   = useState("");
+  const [programmingFactor, setProgrammingFactor] = useState("");
   const [wrist, setWrist] = useState("");
   const [ankle, setAnkle] = useState("");
   const [manualBF, setManualBF] = useState("");
@@ -322,6 +326,12 @@ export default function SettingsPage() {
         setTrainingStatus(p.training_status ?? "natural");
         setProgramStartDate(p.program_start_date ?? "");
         setExpYears(p.training_experience_years?.toString() ?? "");
+        // @ts-expect-error new v2 fields on Profile
+        setConsistencyFactor(p.training_consistency_factor?.toString() ?? "");
+        // @ts-expect-error new v2 fields on Profile
+        setIntensityFactor(p.training_intensity_factor?.toString() ?? "");
+        // @ts-expect-error new v2 fields on Profile
+        setProgrammingFactor(p.training_programming_factor?.toString() ?? "");
         setWrist(p.wrist_circumference_cm?.toString() ?? "");
         setAnkle(p.ankle_circumference_cm?.toString() ?? "");
         setManualBF(p.manual_body_fat_pct?.toString() ?? "");
@@ -535,6 +545,10 @@ export default function SettingsPage() {
         competition_date: ppmEnabled ? null : (compDate || null),
         program_start_date: programStartDate || null,
         training_experience_years: expYears ? parseInt(expYears) : 0,
+        // V2.S4 — training-age factors (null = engine uses documented priors)
+        training_consistency_factor: consistencyFactor ? parseFloat(consistencyFactor) : null,
+        training_intensity_factor:   intensityFactor   ? parseFloat(intensityFactor)   : null,
+        training_programming_factor: programmingFactor ? parseFloat(programmingFactor) : null,
         wrist_circumference_cm: wrist ? parseFloat(wrist) : null,
         ankle_circumference_cm: ankle ? parseFloat(ankle) : null,
         manual_body_fat_pct: manualBF ? parseFloat(manualBF) : null,
@@ -848,6 +862,64 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
+
+                {/* V2.S4 — Training-age correction factors.
+                    Converts chronological years into "effective" years so
+                    the gain projection reflects the real development state.
+                    Empty = engine uses documented priors (0.85/0.75/0.70). */}
+                <details className="mt-2">
+                  <summary className="text-xs uppercase tracking-[2px] text-viltrum-travertine cursor-pointer">
+                    Training-age correction (advanced)
+                  </summary>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                    <div>
+                      <label className="label-field">Consistency</label>
+                      <select
+                        value={consistencyFactor}
+                        onChange={(e) => setConsistencyFactor(e.target.value)}
+                        className="input-field mt-1"
+                      >
+                        <option value="">Use default (0.85)</option>
+                        <option value="1.0">1.0 — 4+ sessions/wk, 48+ wks/yr</option>
+                        <option value="0.85">0.85 — 4 sessions/wk (default)</option>
+                        <option value="0.7">0.7 — 3 sessions/wk</option>
+                        <option value="0.5">0.5 — 2 sessions/wk</option>
+                        <option value="0.2">0.2 — sporadic</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label-field">Intensity</label>
+                      <select
+                        value={intensityFactor}
+                        onChange={(e) => setIntensityFactor(e.target.value)}
+                        className="input-field mt-1"
+                      >
+                        <option value="">Use default (0.75)</option>
+                        <option value="1.0">1.0 — near-failure (RIR 0–2)</option>
+                        <option value="0.75">0.75 — RIR 2–3 (default)</option>
+                        <option value="0.7">0.7 — moderate (RIR 3–4)</option>
+                        <option value="0.4">0.4 — light (RIR 5+)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label-field">Programming</label>
+                      <select
+                        value={programmingFactor}
+                        onChange={(e) => setProgrammingFactor(e.target.value)}
+                        className="input-field mt-1"
+                      >
+                        <option value="">Use default (0.70)</option>
+                        <option value="1.0">1.0 — periodized w/ overload log</option>
+                        <option value="0.7">0.7 — linear progression (default)</option>
+                        <option value="0.4">0.4 — random / no structure</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-viltrum-travertine mt-2">
+                    Effective years = chronological × consistency × intensity × programming.
+                    A &quot;10 year lifter&quot; who trained 3×/wk with light weights has t_effective ≈ 3–4 yrs.
+                  </p>
+                </details>
               </div>
 
               <div className="card space-y-4">

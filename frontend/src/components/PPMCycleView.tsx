@@ -37,12 +37,21 @@ interface WeekPlan {
   day_rotation: { day: string; muscles: string[] }[];
 }
 
+interface UnilateralBiasEntry {
+  lagging_side: "left" | "right";
+  spread_cm: number;
+  spread_rel_pct?: number;
+  bonus_sets_per_session: number;
+  practitioner_review?: boolean;
+}
+
 interface CyclePlan {
   split: string;
   split_reasoning: string;
   focus_muscles: string[];
   total_weeks: number;
   weeks: WeekPlan[];
+  unilateral_bias?: Record<string, UnilateralBiasEntry>;
 }
 
 // Two forms per sub-phase:
@@ -67,7 +76,16 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
 
   useEffect(() => {
     Promise.all([
-      api.get<{ week_plan: WeekPlan; cycle_summary: { split: string; focus_muscles: string[]; total_weeks: number } }>(
+      api.get<{
+        week_plan: WeekPlan;
+        cycle_summary: {
+          split: string;
+          focus_muscles: string[];
+          total_weeks: number;
+          split_reasoning?: string;
+          unilateral_bias?: Record<string, UnilateralBiasEntry>;
+        };
+      }>(
         `/ppm/plan/${status.current_cycle_week || 1}`,
       ).catch(() => null),
       api.get<PPMCheckpoint[]>("/ppm/history?limit=10").catch(() => []),
@@ -97,10 +115,11 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
         }));
         setPlan({
           split: weekResp?.cycle_summary?.split ?? "custom",
-          split_reasoning: "",
+          split_reasoning: weekResp?.cycle_summary?.split_reasoning ?? "",
           focus_muscles: weekResp?.cycle_summary?.focus_muscles ?? status.cycle_focus_muscles ?? [],
           total_weeks: totalWeeks,
           weeks: generatedWeeks,
+          unilateral_bias: weekResp?.cycle_summary?.unilateral_bias,
         });
       })
       .finally(() => setLoading(false));
@@ -261,6 +280,46 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
               </tbody>
             </table>
           </div>
+        </section>
+      )}
+
+      {/* ── Split rationale + unilateral bias (V2.S9) ──────────────── */}
+      {plan && (plan.split_reasoning || (plan.unilateral_bias && Object.keys(plan.unilateral_bias).length > 0)) && (
+        <section className="card">
+          <div className="h-section mb-2">Split rationale</div>
+          {plan.split_reasoning && (
+            <p className="text-[12px] text-viltrum-iron leading-relaxed">
+              {plan.split_reasoning}
+            </p>
+          )}
+          {plan.unilateral_bias && Object.keys(plan.unilateral_bias).length > 0 && (
+            <div className="mt-3 p-3 rounded-card bg-viltrum-limestone border border-viltrum-ash">
+              <div className="text-[10px] uppercase tracking-[2px] text-viltrum-travertine mb-2">
+                Unilateral bias — lagging-side bonus sets
+              </div>
+              <div className="space-y-1">
+                {Object.entries(plan.unilateral_bias).map(([muscle, bias]) => (
+                  <div key={muscle} className="flex items-baseline justify-between text-[11px]">
+                    <span className="text-viltrum-iron capitalize">
+                      {muscle} · <span className="text-viltrum-travertine">{bias.lagging_side}</span>
+                      {bias.spread_rel_pct != null && (
+                        <span className="text-viltrum-pewter"> ({bias.spread_rel_pct}% spread)</span>
+                      )}
+                    </span>
+                    <span className="text-viltrum-obsidian font-mono">
+                      +{bias.bonus_sets_per_session} sets/session
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {Object.values(plan.unilateral_bias).some((b) => b.practitioner_review) && (
+                <p className="text-[10px] text-viltrum-centurion mt-2">
+                  ⚠ One or more asymmetries exceed 8% — consider a practitioner review
+                  (asymmetries this large often have joint/neural origins).
+                </p>
+              )}
+            </div>
+          )}
         </section>
       )}
 

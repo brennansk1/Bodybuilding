@@ -94,8 +94,36 @@ export default function TierReadinessCard({
   const canTransition = readiness.state === "approaching" || readiness.state === "stage_ready";
   const limiter = readiness.per_metric[readiness.limiting_factor] as MetricShape | undefined;
 
+  // V2 recalibration notice — shown once per browser session since the
+  // readiness metric count grew (8 → 10/11) and users need to know why
+  // their pct_met looks lower at first glance.
+  const showV2Notice =
+    typeof window !== "undefined" &&
+    readiness.per_metric.illusion_score &&
+    !window.localStorage.getItem("v2_readiness_recalibrated_seen");
+
   return (
     <div className="jungle-card">
+      {showV2Notice && (
+        <div className="mb-3 p-2 rounded-card bg-viltrum-blush/60 border border-viltrum-centurion/40 text-[11px] text-viltrum-obsidian flex items-start gap-2">
+          <span className="shrink-0 mt-0.5">ⓘ</span>
+          <div className="flex-1">
+            Recalibrated with v2 metrics — adds Illusion (X-frame) and
+            Conditioning %. Your readiness % may look different from the
+            previous version; the denominator is larger now.
+          </div>
+          <button
+            onClick={() => {
+              window.localStorage.setItem("v2_readiness_recalibrated_seen", "1");
+              // Force a re-render by using a no-op state update if needed —
+              // the notice disappears on next render anyway once localStorage is set.
+            }}
+            className="text-[10px] uppercase tracking-[2px] text-viltrum-travertine hover:text-viltrum-obsidian"
+          >
+            Got it
+          </button>
+        </div>
+      )}
       {/* Header row */}
       <header className="flex items-start justify-between gap-4 pb-4 border-b border-viltrum-ash">
         <div className="min-w-0">
@@ -215,6 +243,19 @@ export default function TierReadinessCard({
           {projection && (
             <div className="text-[11px] text-viltrum-iron mt-1">
               ~{projection.estimated_cycles} cycles · {projection.estimated_months} months · limited by {projection.limiting_dimension}
+              {/* V2.S4 — surface logistic-model inputs so the user can
+                  see why the projection landed where it did. */}
+              {projection.t_effective_years != null && (
+                <span className="block text-[10px] text-viltrum-travertine mt-0.5">
+                  t<sub>eff</sub> {projection.t_effective_years} yr
+                  {projection.ceiling_lbm_kg_used != null && (
+                    <> · ceiling {projection.ceiling_lbm_kg_used} kg LBM</>
+                  )}
+                  {projection.muscle_fraction_used != null && (
+                    <> · p-ratio {Math.round(projection.muscle_fraction_used * 100)}%</>
+                  )}
+                </span>
+              )}
             </div>
           )}
         </div>

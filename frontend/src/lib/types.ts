@@ -29,6 +29,10 @@ export interface UserProfile {
   current_cycle_start_date?: string;
   current_cycle_week?: number;
   cycle_focus_muscles?: string[];
+  // V2.S4 — training-age correction factors (nullable — engine applies priors)
+  training_consistency_factor?: number | null;
+  training_intensity_factor?: number | null;
+  training_programming_factor?: number | null;
 }
 
 export type CompetitiveTier = 1 | 2 | 3 | 4 | 5;
@@ -93,6 +97,10 @@ export interface TierProjection {
   proportion_cycles_needed: number;
   annual_lbm_projection_kg: number;
   per_cycle_lbm_kg: number;
+  // V2.S4 additions
+  t_effective_years?: number;
+  muscle_fraction_used?: number;
+  ceiling_lbm_kg_used?: number;
 }
 
 export interface FFMIBand {

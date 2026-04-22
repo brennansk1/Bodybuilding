@@ -493,6 +493,10 @@ async def get_week_plan(
             "focus_muscles": plan["focus_muscles"],
             "split": plan["split"],
             "total_weeks": len(plan["weeks"]),
+            # V2 Sprint 9 — surface split designer reasoning + unilateral bias
+            # so the frontend can explain *why* the split is shaped the way it is.
+            "split_reasoning": plan.get("split_reasoning", ""),
+            "unilateral_bias": plan.get("unilateral_bias", {}),
         },
     }
 
