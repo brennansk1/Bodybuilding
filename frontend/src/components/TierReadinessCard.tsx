@@ -16,15 +16,17 @@ const METRIC_LABELS: Record<string, string> = {
   shoulder_waist:       "Shoulder : Waist",
   chest_waist:          "Chest : Waist",
   arm_calf_neck_parity: "Arm · Calf · Neck parity",
+  illusion_score:       "Illusion (X-frame)",
   hqi:                  "HQI (last diagnostic)",
   training_years:       "Training years",
   mass_distribution:    "Mass distribution (worst site)",
+  conditioning_pct:     "Conditioning progress",
 };
 
 const GROUPS: Array<{ title: string; keys: string[] }> = [
   { title: "Mass",        keys: ["weight_cap_pct", "ffmi", "mass_distribution"] },
-  { title: "Proportions", keys: ["shoulder_waist", "chest_waist", "arm_calf_neck_parity"] },
-  { title: "Readiness",   keys: ["hqi", "training_years"] },
+  { title: "Proportions", keys: ["shoulder_waist", "chest_waist", "arm_calf_neck_parity", "illusion_score"] },
+  { title: "Readiness",   keys: ["conditioning_pct", "hqi", "training_years"] },
 ];
 
 const SITE_LABEL: Record<string, string> = {
@@ -66,6 +68,8 @@ function formatMetricValue(key: string, m: MetricShape): string {
   if (key === "hqi") return m.current.toFixed(0);
   if (key === "training_years") return `${m.current.toFixed(0)} yr`;
   if (key === "mass_distribution") return `${(m.current * 100).toFixed(0)}%`;
+  if (key === "illusion_score") return m.current.toFixed(2);
+  if (key === "conditioning_pct") return `${(m.current * 100).toFixed(0)}%`;
   return String(m.current);
 }
 
@@ -74,6 +78,8 @@ function formatTarget(key: string, m: MetricShape): string {
   if (key === "arm_calf_neck_parity") return `${m.target.toFixed(2)}"`;
   if (key === "training_years") return `${m.target.toFixed(0)} yr`;
   if (key === "mass_distribution") return `${(m.target * 100).toFixed(0)}%`;
+  if (key === "illusion_score") return m.target.toFixed(2);
+  if (key === "conditioning_pct") return `${(m.target * 100).toFixed(0)}%`;
   return m.target.toFixed(2);
 }
 

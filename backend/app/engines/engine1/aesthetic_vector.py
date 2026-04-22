@@ -12,64 +12,12 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# Division-specific site visibility weights
-# ---------------------------------------------------------------------------
-# Each value is a multiplier (0.0–1.0) applied to the raw priority score.
-# Sites hidden by stage attire are not judged — rerouting training volume to
-# those sites is a coaching error. 0.0 = not judged, 1.0 = fully judged.
-_DIVISION_SITE_VISIBILITY: dict[str, dict[str, float]] = {
-    "mens_open": {
-        # Full physique judged front and back — back_width fully scored
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
-        "back_width": 1.0,
-    },
-    "classic_physique": {
-        # Full physique judged — legs and back included
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
-        "back_width": 1.0,
-    },
-    "mens_physique": {
-        # Board shorts cover waist to mid-thigh; thighs fully hidden.
-        # Back pose IS judged — V-taper / back width is a primary criterion.
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0,
-        "hips": 0.15,      # creates waist contrast; not judged for size
-        "thigh": 0.0,      # completely hidden — do not route volume here
-        "calf": 0.25,      # potentially visible below shorts; not judged
-        "back_width": 1.0, # back pose fully judged — V-taper is the signature look
-    },
-    "womens_bikini": {
-        # Bikini bottoms expose glutes/hips heavily — primary judging criterion.
-        # Thighs partially visible; back pose judged but less emphasis.
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 0.6,
-        "forearm": 0.3, "waist": 1.0,
-        "hips": 1.0,       # glute development is a primary bikini criterion
-        "thigh": 0.5,      # visible and contributes to overall leg shape
-        "calf": 0.2,
-        "back_width": 0.7, # back pose judged; less emphasis than open
-    },
-    "womens_figure": {
-        # Full physique judged — legs and back included
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 0.8, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 0.8,
-        "back_width": 1.0,
-    },
-    "womens_physique": {
-        # Full physique — similar to men's open weighting
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
-        "back_width": 1.0,
-    },
-}
-
-# Default fallback — all sites weighted equally
-_DEFAULT_VISIBILITY: dict[str, float] = {
-    "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-    "forearm": 1.0, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
-    "back_width": 1.0,
-}
+# Division-specific site visibility — v2 Sprint 3 unified to
+# constants/divisions.py (closes M7 mismatch; MP.thigh 0.0→0.55 bug).
+from app.constants.divisions import (
+    DIVISION_VISIBILITY as _DIVISION_SITE_VISIBILITY,
+    DIVISION_VISIBILITY_DEFAULT as _DEFAULT_VISIBILITY,
+)
 
 
 def compute_proportion_vector(
@@ -210,6 +158,41 @@ def compute_chest_waist_ratio(chest_cm: float, waist_cm: float) -> float:
     if waist_cm is None or waist_cm <= 0:
         return 0.0
     return round(float(chest_cm) / float(waist_cm), 3)
+
+
+# ---------------------------------------------------------------------------
+# Illusion / V-taper metrics (v2 Sprint 9)
+# ---------------------------------------------------------------------------
+# Quantify the stage presentation of "smallness of waist relative to
+# shoulders / hips." Independent of absolute mass, so a smaller but
+# better-illusion athlete can still score well.
+#
+# - vtaper   = shoulders / waist          (Grecian 1.618; pro Classic ~1.50; top Open 1.55)
+# - xframe   = shoulders × hips / waist²  (pro 1.85–2.25 band)
+# - waist_h  = waist / height             (target 0.45 for male physique divisions)
+def compute_vtaper(shoulders_cm: float, waist_cm: float) -> float:
+    """Shoulder-to-waist ratio. Returns 0 when inputs are missing."""
+    if not shoulders_cm or not waist_cm or waist_cm <= 0:
+        return 0.0
+    return round(float(shoulders_cm) / float(waist_cm), 3)
+
+
+def compute_xframe(shoulders_cm: float, hips_cm: float, waist_cm: float) -> float:
+    """X-frame illusion score: (shoulders × hips) / waist².
+
+    Captures the ""hourglass"" that judges reward independent of
+    shoulder:waist. Pro Classic typically 2.30–2.55 at stage.
+    """
+    if not shoulders_cm or not hips_cm or not waist_cm or waist_cm <= 0:
+        return 0.0
+    return round((float(shoulders_cm) * float(hips_cm)) / (float(waist_cm) ** 2), 3)
+
+
+def compute_waist_height_ratio(waist_cm: float, height_cm: float) -> float:
+    """Waist as a fraction of height. Target ~0.45 for male physique divisions."""
+    if not waist_cm or not height_cm or height_cm <= 0:
+        return 0.0
+    return round(float(waist_cm) / float(height_cm), 3)
 
 
 def cosine_similarity(

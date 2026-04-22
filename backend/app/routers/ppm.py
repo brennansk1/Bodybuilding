@@ -168,6 +168,14 @@ async def _compute_athlete_metrics(
     parity = compute_arm_calf_neck_parity(tape)
     parity_diff_in = parity.get("max_diff_inches") or 99.0
 
+    # v2 Sprint 9 — illusion metric (X-frame)
+    from app.engines.engine1.aesthetic_vector import compute_xframe
+    xframe = compute_xframe(
+        shoulders_cm=tape.get("shoulders") or 0.0,
+        hips_cm=tape.get("hips") or 0.0,
+        waist_cm=tape.get("waist") or 0.0,
+    )
+
     # HQI — fetch latest diagnostic if present, with an age for the staleness
     # guard in readiness.evaluate_readiness.
     from datetime import datetime, timezone
@@ -216,6 +224,8 @@ async def _compute_athlete_metrics(
         "tape_pairs": tape_pairs,
         "training_years": float(profile.training_experience_years or 0),
         "sex": profile.sex or "male",
+        # v2 Sprint 9
+        "illusion_xframe": xframe,
     }
 
 
@@ -303,6 +313,19 @@ async def evaluate(
             division=prof.division,
             sex=prof.sex or "male",
         )
+        # v2 Sprint 4 — pass ensemble-median ceiling + training-age factors
+        # so the logistic curve uses the athlete's structural ceiling rather
+        # than a generic `cap × 0.95`.
+        from app.engines.engine1.ceiling_ensemble import ceiling_envelope
+        env = ceiling_envelope(
+            height_cm=prof.height_cm,
+            wrist_cm=prof.wrist_circumference_cm,
+            ankle_cm=prof.ankle_circumference_cm,
+            division=prof.division,
+            sex=prof.sex or "male",
+            body_fat_pct=5.0,
+        )
+        ceiling_lbm = env["model_estimates"]["kouri_25_lbm_kg"]
         projection = estimate_cycles_to_tier(
             metrics,
             target_tier=prof.target_tier,
@@ -310,6 +333,10 @@ async def evaluate(
             training_status=prof.training_status,
             weight_cap_kg=cap_kg,
             division=prof.division,
+            ceiling_lbm_kg=ceiling_lbm,
+            training_consistency=prof.training_consistency_factor,
+            training_intensity=prof.training_intensity_factor,
+            training_programming=prof.training_programming_factor,
         )
         tape, _ = await _latest_measurements(db, user.id)
         return {
@@ -418,11 +445,13 @@ async def start_cycle(
     prof.cycle_focus_muscles = focus_muscles
     await db.flush()
 
+    from app.constants.physio import offseason_bf_ceiling_for_division
+    _mini_cut_trigger = offseason_bf_ceiling_for_division(prof.division)
     plan = _build_cycle_plan(
         prof=prof,
         metrics=metrics,
         focus_muscles=focus_muscles,
-        mini_cut_active=(metrics["bf_pct"] > 15.0),
+        mini_cut_active=(metrics["bf_pct"] > _mini_cut_trigger),
     )
 
     return {
@@ -446,11 +475,13 @@ async def get_week_plan(
         raise HTTPException(404, "No active PPM cycle.")
 
     metrics = await _compute_athlete_metrics(db, user, prof)
+    from app.constants.physio import offseason_bf_ceiling_for_division
+    _mini_cut_trigger = offseason_bf_ceiling_for_division(prof.division)
     plan = _build_cycle_plan(
         prof=prof,
         metrics=metrics,
         focus_muscles=prof.cycle_focus_muscles or [],
-        mini_cut_active=(metrics["bf_pct"] > 15.0),
+        mini_cut_active=(metrics["bf_pct"] > _mini_cut_trigger),
     )
     week = max(1, min(week, len(plan["weeks"])))
     return {

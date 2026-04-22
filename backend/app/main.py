@@ -84,6 +84,10 @@ def _run_schema_migrations(conn):
     _add_column_if_missing(conn, "user_profiles", "current_cycle_start_date", "DATE")
     _add_column_if_missing(conn, "user_profiles", "current_cycle_week", "INTEGER NOT NULL DEFAULT 1")
     _add_column_if_missing(conn, "user_profiles", "cycle_focus_muscles", "JSONB")
+    # v2 Sprint 4 — training-age correction factors
+    _add_column_if_missing(conn, "user_profiles", "training_consistency_factor", "DOUBLE PRECISION")
+    _add_column_if_missing(conn, "user_profiles", "training_intensity_factor",   "DOUBLE PRECISION")
+    _add_column_if_missing(conn, "user_profiles", "training_programming_factor", "DOUBLE PRECISION")
     # Indexes for frequently queried columns
     _create_index_if_missing(conn, "ix_session_user_date", "training_sessions", "user_id, session_date")
     _create_index_if_missing(conn, "ix_sets_session", "training_sets", "session_id")

@@ -47,6 +47,9 @@ class TierThresholds:
     hqi_min: float                     # app-internal composite score
     training_years_natural: float      # soft gate
     training_years_enhanced: float
+    # v2 Sprint 9 — illusion + conditioning gates (defaulted for back-compat)
+    illusion_xframe_min: float = 0.0     # (shoulders × hips) / waist²; Classic T5 ≈ 2.55
+    conditioning_pct_min: float = 0.0    # 0..1; fraction of the way from offseason → stage BF
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +63,7 @@ CLASSIC_PHYSIQUE_TIERS: dict[CompetitiveTier, TierThresholds] = {
         shoulder_waist_min=1.40, chest_waist_min=1.30,
         arm_calf_neck_parity_max=1.5, hqi_min=40.0,
         training_years_natural=3.0, training_years_enhanced=3.0,
+        illusion_xframe_min=2.15, conditioning_pct_min=0.20,
     ),
     CompetitiveTier.REGIONAL_NPC: TierThresholds(
         weight_cap_pct_min=0.87, weight_cap_pct_max=0.92,
@@ -68,6 +72,7 @@ CLASSIC_PHYSIQUE_TIERS: dict[CompetitiveTier, TierThresholds] = {
         shoulder_waist_min=1.50, chest_waist_min=1.38,
         arm_calf_neck_parity_max=1.0, hqi_min=55.0,
         training_years_natural=5.0, training_years_enhanced=4.0,
+        illusion_xframe_min=2.25, conditioning_pct_min=0.50,
     ),
     CompetitiveTier.NATIONAL_NPC: TierThresholds(
         weight_cap_pct_min=0.92, weight_cap_pct_max=0.97,
@@ -76,6 +81,7 @@ CLASSIC_PHYSIQUE_TIERS: dict[CompetitiveTier, TierThresholds] = {
         shoulder_waist_min=1.55, chest_waist_min=1.42,
         arm_calf_neck_parity_max=0.5, hqi_min=70.0,
         training_years_natural=7.0, training_years_enhanced=6.0,
+        illusion_xframe_min=2.35, conditioning_pct_min=0.75,
     ),
     CompetitiveTier.PRO_QUALIFIER: TierThresholds(
         weight_cap_pct_min=0.97, weight_cap_pct_max=1.00,
@@ -84,6 +90,7 @@ CLASSIC_PHYSIQUE_TIERS: dict[CompetitiveTier, TierThresholds] = {
         shoulder_waist_min=1.60, chest_waist_min=1.46,
         arm_calf_neck_parity_max=0.25, hqi_min=82.0,
         training_years_natural=10.0, training_years_enhanced=7.0,
+        illusion_xframe_min=2.45, conditioning_pct_min=0.90,
     ),
     CompetitiveTier.OLYMPIA: TierThresholds(
         weight_cap_pct_min=1.00, weight_cap_pct_max=1.00,
@@ -93,6 +100,7 @@ CLASSIC_PHYSIQUE_TIERS: dict[CompetitiveTier, TierThresholds] = {
         arm_calf_neck_parity_max=0.0, hqi_min=90.0,
         training_years_natural=99.0,   # not naturally attainable
         training_years_enhanced=10.0,
+        illusion_xframe_min=2.55, conditioning_pct_min=0.95,
     ),
 }
 

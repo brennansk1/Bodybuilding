@@ -323,6 +323,9 @@ class TestReadiness:
             "arm_calf_neck_max_diff_inches": 1.0,
             "hqi_score": 60.0,
             "training_years": 5.0,
+            # v2 Sprint 9 — illusion + conditioning metrics
+            "illusion_xframe": 2.30,    # above T1 threshold 2.15
+            "bf_pct": 7.0,              # near Classic stage — conditioning ~0.75
         }
         base.update(overrides)
         return base

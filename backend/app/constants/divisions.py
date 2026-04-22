@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Division-specific ideal proportion vectors
 # Each division has 11 measurement sites with ideal proportions
 # relative to height. Values are circumference-to-height ratios.
@@ -206,3 +208,76 @@ GHOST_VECTORS = {
         "calf": 0.231, "back_width": 0.237,
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# DIVISION_VISIBILITY — master table (v2 Sprint 3)
+# ---------------------------------------------------------------------------
+# How much each muscle site contributes to the overall score in each
+# division, based on IFBB pose visibility and judging emphasis.
+# 1.0 = fully visible and judged; 0.0 = not judged.
+#
+# Historically the same weight table was duplicated in hqi.py,
+# muscle_gaps.py, and aesthetic_vector.py — with subtly different values
+# (M7 mismatch). This is the single source of truth; the three call sites
+# re-export.
+#
+# Corrections vs the pre-v2 tables (per v2 doc §6):
+#   - mens_physique.thigh: 0.0 → 0.55 (board shorts expose upper quad)
+#   - mens_physique.calf : 0.25 → 0.30 (visible in side-chest pose)
+#   - All divisions now have a `glutes` entry (first-class site)
+#   - forearm, hip, neck re-balanced per pose-visibility review
+#
+# Sources: IFBB Pro League rulebooks 2024–2025; Hulmi 2017; Chappell 2018;
+# pose-emphasis review from coach-interview corpus.
+DIVISION_VISIBILITY: dict[str, dict[str, float]] = {
+    "mens_open": {
+        "neck": 0.80, "shoulders": 1.00, "chest": 1.00, "back_width": 1.00,
+        "bicep": 1.00, "forearm": 0.85, "waist": 1.00, "hips": 0.85,
+        "thigh": 1.00, "calf": 1.00, "glutes": 0.85,
+    },
+    "classic_physique": {
+        "neck": 0.80, "shoulders": 1.00, "chest": 1.00, "back_width": 1.00,
+        "bicep": 1.00, "forearm": 0.85, "waist": 1.00, "hips": 0.85,
+        "thigh": 1.00, "calf": 1.00, "glutes": 0.85,
+    },
+    "mens_physique": {
+        "neck": 0.70, "shoulders": 1.00, "chest": 1.00, "back_width": 0.95,
+        "bicep": 0.95, "forearm": 0.80, "waist": 1.00, "hips": 0.70,
+        "thigh": 0.55,  # board shorts expose upper quad (was 0.0 — BUG)
+        "calf": 0.30,   # visible in side-chest (was 0.25)
+        "glutes": 0.50,
+    },
+    "womens_figure": {
+        "neck": 0.70, "shoulders": 1.00, "chest": 0.95, "back_width": 1.00,
+        "bicep": 0.90, "forearm": 0.75, "waist": 1.00, "hips": 0.90,
+        "thigh": 0.95, "calf": 0.90, "glutes": 0.95,
+    },
+    "womens_bikini": {
+        "neck": 0.60, "shoulders": 0.85, "chest": 0.75, "back_width": 0.80,
+        "bicep": 0.70, "forearm": 0.60, "waist": 1.00, "hips": 1.00,
+        "thigh": 0.85, "calf": 0.70, "glutes": 1.00,
+    },
+    "womens_physique": {
+        "neck": 0.75, "shoulders": 1.00, "chest": 1.00, "back_width": 1.00,
+        "bicep": 0.95, "forearm": 0.80, "waist": 1.00, "hips": 0.90,
+        "thigh": 0.95, "calf": 0.95, "glutes": 0.90,
+    },
+    "wellness": {
+        "neck": 0.50, "shoulders": 0.80, "chest": 0.75, "back_width": 0.80,
+        "bicep": 0.70, "forearm": 0.55, "waist": 1.00, "hips": 1.00,
+        "thigh": 1.00, "calf": 0.95, "glutes": 1.00,
+    },
+}
+
+DIVISION_VISIBILITY_DEFAULT: dict[str, float] = {
+    "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
+    "forearm": 1.0, "waist": 1.0, "hips": 1.0, "thigh": 1.0,
+    "calf": 1.0, "back_width": 1.0, "glutes": 1.0,
+}
+
+
+def get_division_visibility(division: str | None) -> dict[str, float]:
+    """Single-lookup accessor for the visibility table."""
+    key = (division or "").lower().replace(" ", "_")
+    return DIVISION_VISIBILITY.get(key, DIVISION_VISIBILITY_DEFAULT)

@@ -213,6 +213,47 @@ def evaluate_readiness(
         pct_progress=(years / yr_req) if yr_req > 0 else 1.0,
     )
 
+    # ── Illusion (X-frame) — v2 Sprint 9
+    # Quantifies the stage "hourglass" that judges reward independently of
+    # raw shoulder:waist. xframe = (shoulders × hips) / waist². Tiered
+    # thresholds: T1 2.15 → T5 2.55 (Classic Physique).
+    xframe = float(athlete_metrics.get("illusion_xframe", 0.0))
+    if thresholds.illusion_xframe_min > 0:
+        _record(
+            "illusion_score",
+            current=xframe,
+            target=thresholds.illusion_xframe_min,
+            met=xframe >= thresholds.illusion_xframe_min,
+            pct_progress=(xframe / thresholds.illusion_xframe_min) if thresholds.illusion_xframe_min > 0 else 1.0,
+        )
+
+    # ── Conditioning pct — v2 Sprint 9
+    # "How close to stage conditioning" independently of mass. Zero = at
+    # division offseason ceiling; one = at division stage target.
+    # conditioning_pct = (offseason_BF − current_BF) / (offseason_BF − stage_BF)
+    from app.constants.physio import (
+        offseason_bf_ceiling_for_division,
+        stage_bf_pct_for_division,
+    )
+    offseason_ceiling = offseason_bf_ceiling_for_division(division)
+    stage_target = stage_bf_pct_for_division(division)
+    if bf_pct is not None and offseason_ceiling > stage_target:
+        cond_pct = (offseason_ceiling - bf_pct) / (offseason_ceiling - stage_target)
+        cond_pct = max(0.0, min(1.1, cond_pct))  # allow slight over-lean
+    else:
+        cond_pct = 0.0
+    if thresholds.conditioning_pct_min > 0:
+        _record(
+            "conditioning_pct",
+            current=cond_pct,
+            target=thresholds.conditioning_pct_min,
+            met=cond_pct >= thresholds.conditioning_pct_min,
+            pct_progress=(cond_pct / thresholds.conditioning_pct_min) if thresholds.conditioning_pct_min > 0 else 1.0,
+            bf_pct=round(bf_pct, 1) if bf_pct is not None else None,
+            offseason_ceiling_pct=offseason_ceiling,
+            stage_target_pct=stage_target,
+        )
+
     # ── Mass distribution — the top 3 lagging muscles by HQI lean gap.
     #
     # The seven threshold metrics above evaluate *shape* (proportions,
@@ -247,9 +288,21 @@ def evaluate_readiness(
         })
     mass_gaps.sort(key=lambda r: r["gap_cm"], reverse=True)
     top_mass_gaps = mass_gaps[:3]
-    # Headline "mass distribution" verdict: fail if any top-3 site is <85%
-    # of ideal. Acts as the 8th readiness metric.
-    worst_pct = min((m["pct_of_ideal"] for m in top_mass_gaps), default=100.0) / 100.0
+    # Headline "mass distribution" verdict — v2 Sprint 3:
+    # use a soft-min (p=6 power-mean) instead of hard-min so the score
+    # degrades smoothly when multiple sites cluster near the bottom,
+    # avoiding jump discontinuities as worst-site ordering changes.
+    # Behaves like hard-min when one site is clearly worst.
+    if top_mass_gaps:
+        _pcts = [m["pct_of_ideal"] for m in top_mass_gaps if m["pct_of_ideal"] > 0]
+        if _pcts:
+            _p = 6.0
+            _soft_min = (sum(p ** (-_p) for p in _pcts) / len(_pcts)) ** (-1.0 / _p)
+            worst_pct = _soft_min / 100.0
+        else:
+            worst_pct = 0.0
+    else:
+        worst_pct = 1.0
     if top_mass_gaps:
         _record(
             "mass_distribution",
@@ -291,13 +344,17 @@ def evaluate_readiness(
 # ---------------------------------------------------------------------------
 # Cycle projection — estimated 14-week improvement cycles to reach tier
 # ---------------------------------------------------------------------------
-def _annual_lbm_gain_kg(training_years: float, training_status: str) -> float:
-    """Lyle McDonald / Aragon natural gain model (kg/yr), with enhancement bump."""
-    if training_status == "enhanced":
-        rate = 16.0 * (0.6 ** max(0.0, training_years - 1))
-        return max(1.0, rate)
-    rate = 11.0 * (0.5 ** max(0.0, training_years - 1))
-    return max(0.5, rate)
+# v2 Sprint 4 replaces the exponential-halving gain curve
+# (`11 × 0.5^(years−1)`) with a logistic `LBM(t) = ceiling × (1 − e^(−k·t))`
+# aligned with McDonald / Aragon / Helms. The old 5%/cycle diminishing
+# term is removed — the logistic already captures diminishing returns
+# physiologically, and the per-cycle tax was double-counting.
+#
+# Sources: engine1.training_age for the curve; v2 doc §9.
+from app.engines.engine1.training_age import (
+    logistic_annual_gain,
+    effective_training_years,
+)
 
 
 def estimate_cycles_to_tier(
@@ -307,38 +364,84 @@ def estimate_cycles_to_tier(
     training_status: str,
     weight_cap_kg: float,
     division: str = "classic_physique",
+    ceiling_lbm_kg: float | None = None,
+    surplus_pct_per_week: float | None = None,
+    training_consistency: float | None = None,
+    training_intensity: float | None = None,
+    training_programming: float | None = None,
 ) -> dict:
     """Project how many 14-week improvement cycles are needed to hit tier.
 
-    Mass gap is modeled with compounding diminishing returns (5% decay/cycle).
-    Proportion metrics are correctable in 2–4 cycles of specialization.
+    v2 Sprint 4 — logistic gain curve with training-age correction:
+      * `LBM(t) = ceiling × (1 − e^(−k × t_effective))` per training_age.py
+      * Effective training years apply consistency × intensity × programming
+        discount (defaulted when the user hasn't supplied inputs).
+      * `muscle_fraction`: `0.85 − 0.015 × surplus_pct_per_week` (default 0.70).
+      * `proportion_cycles` scales with deficit magnitude, not fixed 3.
     """
     tier = coerce_tier(target_tier)
     thresholds = get_tier_thresholds(division, tier)
 
-    annual_lbm = _annual_lbm_gain_kg(training_years, training_status)
-    per_cycle_lbm = annual_lbm * (14.0 / 52.0)
+    # Effective training age — factors default to conservative priors.
+    t_eff = effective_training_years(
+        chronological_years=training_years,
+        consistency=training_consistency,
+        intensity=training_intensity,
+        programming=training_programming,
+    )
+
+    # LBM ceiling — use passed-in estimate from ceiling_ensemble if available,
+    # otherwise fall back to the IFBB class cap × (1 − stage_bf).
+    body_weight_kg = float(current_metrics.get("body_weight_kg", 0.0))
+    _raw_bf = current_metrics.get("bf_pct")
+    bf_for_lbm = float(_raw_bf) if _raw_bf not in (None, 0, 0.0) else 15.0
+    current_lbm_kg = body_weight_kg * (1.0 - bf_for_lbm / 100.0)
+    if ceiling_lbm_kg is None:
+        ceiling_lbm_kg = weight_cap_kg * 0.95  # 5% stage BF implied
+
+    annual_lbm = logistic_annual_gain(
+        ceiling_lbm_kg=ceiling_lbm_kg,
+        current_lbm_kg=current_lbm_kg,
+        training_status=training_status,
+    )
+    per_cycle_lbm = round(annual_lbm * (14.0 / 52.0), 2)
+
+    # Muscle fraction — how much of the scale-weight gain is actually LBM.
+    # Garthe 2011 / Helms 2014: 0.5–0.8 depending on surplus size.
+    muscle_fraction = 0.70
+    if surplus_pct_per_week is not None:
+        muscle_fraction = max(0.50, min(0.85, 0.85 - 0.015 * surplus_pct_per_week))
 
     target_weight = thresholds.weight_cap_pct_min * weight_cap_kg
-    weight_gap = target_weight - float(current_metrics.get("body_weight_kg", 0.0))
-    lbm_gap = max(0.0, weight_gap * 0.7)  # assume 70% of needed weight is LBM
+    weight_gap = target_weight - body_weight_kg
+    lbm_gap = max(0.0, weight_gap * muscle_fraction)
 
+    # Mass cycles: walk the logistic curve forward until we've closed the gap.
+    # No per-cycle 5% tax — the curve already slows as current approaches ceiling.
     mass_cycles = 0
-    if lbm_gap > 0:
-        cycles = 0
-        accumulated = 0.0
-        rate = per_cycle_lbm
-        while accumulated < lbm_gap and cycles < 50:
-            accumulated += rate
-            rate *= 0.95
-            cycles += 1
-        mass_cycles = cycles
+    if lbm_gap > 0 and per_cycle_lbm > 0:
+        import math
+        # Closed-form: t_needed_years = −ln(1 − lbm_gap/remaining) / (k × 12)
+        from app.engines.engine1.training_age import (
+            K_MONTHLY_NATURAL, K_MONTHLY_ENHANCED,
+        )
+        k = K_MONTHLY_ENHANCED if training_status == "enhanced" else K_MONTHLY_NATURAL
+        remaining = max(0.01, ceiling_lbm_kg - current_lbm_kg)
+        frac = min(0.99, lbm_gap / remaining)
+        t_years = -math.log(1.0 - frac) / (k * 12.0)
+        mass_cycles = max(0, int(math.ceil(t_years * 52.0 / 14.0)))
 
-    # Proportion metrics — 2-4 cycles of specialization.
+    # Proportion metrics — cycles scale with deficit magnitude
+    # (v2 doc §9(d)). Each 5% ratio deficit costs one specialization cycle.
     proportion_cycles = 0
-    for metric_name in ("shoulder_waist", "chest_waist", "arm_calf_neck_parity"):
-        if current_metrics.get(f"{metric_name}_met", True) is False:
-            proportion_cycles = max(proportion_cycles, 3)
+    for metric_name in ("shoulder_waist", "chest_waist"):
+        m = current_metrics.get(f"{metric_name}_met")
+        deficit = current_metrics.get(f"{metric_name}_deficit_pct", 0.0)
+        if m is False or (deficit and deficit > 0):
+            cycles_for_metric = max(1, int(round(float(deficit) / 0.05))) if deficit else 2
+            proportion_cycles = max(proportion_cycles, cycles_for_metric)
+    if current_metrics.get("arm_calf_neck_parity_met") is False:
+        proportion_cycles = max(proportion_cycles, 2)
 
     total_cycles = max(mass_cycles, proportion_cycles)
 
@@ -350,5 +453,8 @@ def estimate_cycles_to_tier(
         "mass_cycles_needed": mass_cycles,
         "proportion_cycles_needed": proportion_cycles,
         "annual_lbm_projection_kg": round(annual_lbm, 2),
-        "per_cycle_lbm_kg": round(per_cycle_lbm, 2),
+        "per_cycle_lbm_kg": per_cycle_lbm,
+        "t_effective_years": t_eff,
+        "muscle_fraction_used": muscle_fraction,
+        "ceiling_lbm_kg_used": round(ceiling_lbm_kg, 1),
     }

@@ -168,56 +168,10 @@ def rank_sites_by_gap(
 
 
 # ---------------------------------------------------------------------------
-# Division visibility weights — sites hidden by stage attire are down-weighted
+# Division visibility weights — v2 Sprint 3 moved to constants/divisions.py
+# as the single source of truth (closes M7 mismatch).
 # ---------------------------------------------------------------------------
-_DIVISION_VISIBILITY: dict[str, dict[str, float]] = {
-    "mens_open": {
-        # All muscle groups visible and judged equally — no hiding anything
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0, "hips": 0.9, "thigh": 1.0, "calf": 1.0,
-        "back_width": 1.0,
-    },
-    "classic_physique": {
-        # Same full body as open; waist judged critically (vacuum)
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0, "hips": 0.9, "thigh": 1.0, "calf": 1.0,
-        "back_width": 1.0,
-    },
-    "mens_physique": {
-        # Board shorts — thighs hidden, calves barely visible
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0,
-        "hips": 0.15, "thigh": 0.0, "calf": 0.25,
-        "back_width": 1.0,  # back pose is judged — V-taper is a primary criterion
-    },
-    "womens_bikini": {
-        # Glutes primary; upper body secondary; calves rarely judged
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 0.6,
-        "forearm": 0.3, "waist": 1.0,
-        "hips": 1.0, "thigh": 0.5, "calf": 0.2,
-        "back_width": 0.7,  # back pose judged but less emphasis than open
-    },
-    "womens_figure": {
-        # Full body; shoulder-to-waist ratio is primary criterion
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 0.8, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 0.8,
-        "back_width": 1.0,
-    },
-    "womens_physique": {
-        # Similar to figure; fuller development expected; calves judged
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 0.9, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
-        "back_width": 1.0,
-    },
-    "wellness": {
-        # Glutes and thighs dominate; upper body secondary
-        "neck": 0.8, "shoulders": 1.0, "chest": 0.6, "bicep": 0.5,
-        "forearm": 0.3, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 0.4,
-        "back_width": 0.8,
-    },
-}
-_DEFAULT_VISIBILITY: dict[str, float] = {
-    "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-    "forearm": 1.0, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
-    "back_width": 1.0,
-}
+from app.constants.divisions import (
+    DIVISION_VISIBILITY as _DIVISION_VISIBILITY,
+    DIVISION_VISIBILITY_DEFAULT as _DEFAULT_VISIBILITY,
+)

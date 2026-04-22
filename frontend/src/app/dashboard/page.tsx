@@ -1916,6 +1916,8 @@ export default function DashboardPage() {
                   attainable={ppmAttain.overall_attainable}
                   ffmiPredicted={ppmAttain.predicted_natural_ffmi}
                   ffmiRequired={ppmAttain.tier_ffmi_requirement}
+                  envelope={ppmAttain.ceiling_envelope?.envelope_stage_kg ?? null}
+                  ffmiBand={ppmAttain.ffmi_band ?? null}
                 />
               </ChartCard>
             );

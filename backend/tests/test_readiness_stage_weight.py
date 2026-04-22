@@ -60,18 +60,19 @@ class TestStageProjectedWeight:
         assert m["met"] is True, "Near-stage athlete should pass T4 weight threshold"
         assert m["current"] >= 0.97
 
-    def test_missing_bf_falls_back_to_15_percent(self):
+    def test_missing_bf_falls_back_to_offseason_estimate(self):
         """When BF isn't logged, we shouldn't silently use body weight as LBM.
-        Fallback estimate is 15% offseason BF, which lowers the projected stage
-        weight and prevents false positives."""
+        v2 Sprint 0: fallback bumped from 15%→12% (Helms 2014 / Iraki 2019
+        central estimate). Projected stage weight rises accordingly —
+        93.5 × 0.88 / 0.95 = 86.6 kg → 0.866 of 100 kg cap.
+        """
         m = _base_metrics(bf_pct=None)
         r = evaluate_readiness(
             m, CompetitiveTier.LOCAL_NPC, weight_cap_kg=100.0,
             training_status="natural",
         )
         w = r["per_metric"]["weight_cap_pct"]
-        # body_weight 93.5, 15% BF fallback → LBM 79.5, stage 83.7 → pct 0.84
-        assert 0.82 <= w["current"] <= 0.86
+        assert 0.85 <= w["current"] <= 0.88
 
 
 class TestHQIStalenessGuard:

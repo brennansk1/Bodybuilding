@@ -347,7 +347,23 @@ interface NaturalCeilingProps {
   attainable: boolean;
   ffmiPredicted?: number | null;
   ffmiRequired?: number | null;
+  // V2 Sprint 1 — ensemble envelope + FFMI probability band
+  envelope?: {
+    pessimistic: number;
+    median: number;
+    ambitious: number;
+  } | null;
+  ffmiBand?: { band: string; p_natural: number } | null;
 }
+
+const _FFMI_BAND_LABELS: Record<string, string> = {
+  common_natural: "Common natural",
+  above_average_natural: "Above-average natural",
+  elite_natural: "Elite natural",
+  rare_elite_natural: "Rare elite natural",
+  enhanced_likely: "Enhanced-likely",
+  enhanced_very_likely: "Enhanced-very-likely",
+};
 
 export function NaturalCeilingCard({
   predictedStageKg,
@@ -356,6 +372,8 @@ export function NaturalCeilingCard({
   attainable,
   ffmiPredicted,
   ffmiRequired,
+  envelope,
+  ffmiBand,
 }: NaturalCeilingProps) {
   if (!predictedStageKg || !divisionCapKg) {
     return (
@@ -410,10 +428,48 @@ export function NaturalCeilingCard({
                 {ffmiPredicted.toFixed(1)}
               </span>
               <span className="text-jungle-dim"> / {ffmiRequired?.toFixed(1)}</span>
+              {ffmiBand && (
+                <span className="ml-2 text-[9px] uppercase tracking-wide text-jungle-dim">
+                  {_FFMI_BAND_LABELS[ffmiBand.band] || ffmiBand.band}
+                  {" · "}
+                  p(natural) {Math.round(ffmiBand.p_natural * 100)}%
+                </span>
+              )}
             </div>
           </>
         )}
       </div>
+
+      {/* Multi-model envelope (v2 Sprint 1) — three stacked markers */}
+      {envelope && divisionCapKg && (
+        <div className="mt-2 pt-2 border-t border-viltrum-ash/60">
+          <div className="text-[9px] uppercase tracking-wide text-viltrum-travertine mb-1">
+            Ensemble envelope (Butt · Kouri · Berkhan)
+          </div>
+          <div className="relative h-2 rounded bg-viltrum-limestone">
+            <div
+              className="absolute top-0 h-2 w-0.5 bg-viltrum-pewter"
+              style={{ left: `${Math.min(100, (envelope.pessimistic / divisionCapKg) * 100)}%` }}
+              title={`Pessimistic: ${envelope.pessimistic.toFixed(1)} kg`}
+            />
+            <div
+              className="absolute top-0 h-2 w-1 bg-viltrum-obsidian"
+              style={{ left: `${Math.min(100, (envelope.median / divisionCapKg) * 100)}%` }}
+              title={`Median: ${envelope.median.toFixed(1)} kg`}
+            />
+            <div
+              className="absolute top-0 h-2 w-0.5 bg-viltrum-pewter"
+              style={{ left: `${Math.min(100, (envelope.ambitious / divisionCapKg) * 100)}%` }}
+              title={`Ambitious: ${envelope.ambitious.toFixed(1)} kg`}
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-1 text-[9px] text-viltrum-travertine mt-0.5">
+            <div className="text-left font-mono">{envelope.pessimistic.toFixed(1)}</div>
+            <div className="text-center font-mono text-viltrum-obsidian font-semibold">{envelope.median.toFixed(1)}</div>
+            <div className="text-right font-mono">{envelope.ambitious.toFixed(1)}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

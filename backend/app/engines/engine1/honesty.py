@@ -17,6 +17,7 @@ from app.constants.competitive_tiers import CompetitiveTier, coerce_tier, get_ti
 from app.constants.weight_caps import lookup_weight_cap
 from app.engines.engine1.weight_cap import compute_weight_cap
 from app.engines.engine1.readiness import compute_normalized_ffmi
+from app.engines.engine1.ceiling_ensemble import ceiling_envelope, ffmi_band
 
 
 def check_natural_attainability(
@@ -70,6 +71,17 @@ def check_natural_attainability(
         tier=tier,
     )
 
+    # Multi-model envelope (v2 Sprint 1) — surfaces range, not a single number.
+    envelope = ceiling_envelope(
+        height_cm=height_cm,
+        wrist_cm=wrist_cm,
+        ankle_cm=ankle_cm,
+        division=division,
+        sex="male",  # honesty is called with explicit division; sex param added in follow-up
+        body_fat_pct=stage_bf_pct,
+    )
+    band = ffmi_band(predicted_ffmi)
+
     return {
         "predicted_natural_max_stage_kg": round(predicted_stage_kg, 1),
         "predicted_natural_max_lbm_kg": round(predicted_lbm_kg, 1),
@@ -77,12 +89,14 @@ def check_natural_attainability(
         "gap_kg": round(gap_kg, 1),
         "weight_attainable": weight_attainable,
         "predicted_natural_ffmi": predicted_ffmi,
+        "ffmi_band": band,
         "tier_ffmi_requirement": thresholds.ffmi_min,
         "ffmi_attainable": ffmi_attainable,
         "overall_attainable": overall_attainable,
         "tier": tier.name,
         "tier_value": tier.value,
         "recommendation": recommendation,
+        "ceiling_envelope": envelope,
     }
 
 

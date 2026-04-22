@@ -95,6 +95,24 @@ export interface TierProjection {
   per_cycle_lbm_kg: number;
 }
 
+export interface FFMIBand {
+  band: string;
+  p_natural: number;
+  ffmi: number;
+}
+
+export interface CeilingEnvelope {
+  model_estimates: Record<string, number | Record<string, number | string>>;
+  envelope_stage_kg: {
+    pessimistic: number;
+    median: number;
+    ambitious: number;
+  };
+  effective_ceiling_stage_kg: number;
+  division: string;
+  model_note: string;
+}
+
 export interface NaturalAttainability {
   predicted_natural_max_stage_kg: number;
   predicted_natural_max_lbm_kg: number;
@@ -102,12 +120,14 @@ export interface NaturalAttainability {
   gap_kg: number;
   weight_attainable: boolean;
   predicted_natural_ffmi: number;
+  ffmi_band?: FFMIBand;
   tier_ffmi_requirement: number;
   ffmi_attainable: boolean;
   overall_attainable: boolean;
   tier: string;
   tier_value: number;
   recommendation: string;
+  ceiling_envelope?: CeilingEnvelope;
 }
 
 export type Division =

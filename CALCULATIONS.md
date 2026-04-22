@@ -472,6 +472,165 @@ Kouri's natural-ceiling interpretation:
 
 ---
 
+## v2 Sprint 1 — Ceiling ensemble
+
+**File:** `backend/app/engines/engine1/ceiling_ensemble.py`
+
+Previous: single-source Butt 1st-ed ceiling. New: ensemble envelope across
+four independent models, reported as (pessimistic / median / ambitious):
+
+```
+butt_1st_ceiling        — Casey Butt 1st-ed regression (existing)
+butt_4th_ceiling        — 1st-ed × 1.04 (Nuckols 4th-ed conservatism correction)
+kouri_ceiling_lbm(24|25|26)   — invert Kouri normalized FFMI for 3 bands
+  lbm = (ffmi_target − 6.3 × (1.8 − h_m)) × h_m²
+  female × 0.82 (Chappell 2018, Schutz 2002)
+berkhan_ceiling_stage   — (height_cm − 100) ± offset; sanity-check
+ifbb_class_cap          — existing piecewise table from constants/weight_caps.py
+
+effective_ceiling_stage_kg = min(model_min, ifbb_class_cap)
+```
+
+**FFMI probability bands:** instead of a binary "Kouri 25 wall," report a
+continuous band with an estimated p(natural):
+
+| FFMI | Band | p(natural) |
+|---|---|---|
+| < 22 | common_natural | 0.999 |
+| 22–24 | above_average_natural | 0.97 |
+| 24–25 | elite_natural | 0.90 |
+| 25–26 | rare_elite_natural | 0.40 |
+| 26–27 | enhanced_likely | 0.10 |
+| ≥ 27 | enhanced_very_likely | 0.02 |
+
+Sources: Kouri 1995, Nuckols 2016, Henselmans 2019.
+
+## v2 Sprint 2 — ISAK-anchored girth projection
+
+**File:** `backend/app/engines/engine1/girth_projection.py`
+
+Replaces the heuristic per-site k-coefficient stripping with a
+peer-referenceable two-path model:
+
+```
+# Primary (skinfold-anchored — ISAK manual / Heymsfield 1982):
+lean_cm = raw_cm − π × (skinfold_mm / 10)
+
+# Fallback (JP-derived from total BF%):
+est_site_skinfold_mm = total_bf_pct × jp_distribution_weight_site × 4.5
+lean_cm = raw_cm − π × (est_site_skinfold_mm / 10)
+
+# Floor (physiological): lean_cm ≥ raw × 0.85
+```
+
+Per-tape-site → skinfold-site map (TAPE_TO_SKINFOLD_MAP) uses anatomical
+neighbors with scaling when no direct skinfold exists (neck ← subscapular ×
+0.6, forearm ← tricep × 0.7, etc.). Legacy `physio.project_lean_girth`
+becomes a thin shim dispatching to `project_lean_bf_only`.
+
+**Verification:** 40 cm bicep @ 22% BF with 6 mm skinfold →
+`40 − π × 0.6 = 38.12 cm`. Old BF-linear: `40 × (1 − 0.40 × 17/100) = 37.28 cm`.
+Within 1 cm; ISAK is closer to DEXA-reconciled measurements in published studies.
+
+## v2 Sprint 3 — HQI visibility recalibration
+
+**File:** `backend/app/constants/divisions.py::DIVISION_VISIBILITY` (new)
+
+Single source of truth for visibility weights. Previously duplicated in
+three places with subtly different values (M7). The three call sites
+(`hqi.py`, `muscle_gaps.py`, `aesthetic_vector.py`) now re-export.
+
+Corrections vs prior table:
+- `mens_physique.thigh`: **0.0 → 0.55** (bug — board shorts expose upper quad)
+- `mens_physique.calf`: 0.25 → 0.30
+- All seven divisions gained a `glutes` entry (first-class site)
+- Forearm / hip / neck rebalanced per pose-visibility review
+
+**Soft-min for `mass_distribution`:** previously hard-min across top 3
+lagging sites; now a power-mean (p=6) avoiding jump discontinuities.
+Behaves like hard-min when one site dominates.
+
+## v2 Sprint 4 — Logistic LBM trajectory + training-age correction
+
+**File:** `backend/app/engines/engine1/training_age.py`,
+`readiness.estimate_cycles_to_tier`
+
+Replaces the exponential-halving curve `11 × 0.5^(years−1)` (which
+under-predicted year-1 gains by ~50% vs McDonald/Aragon) with:
+
+```
+k_natural  = 0.020 / month
+k_enhanced = 0.036 / month
+LBM(t_eff) = ceiling × (1 − e^(−k × 12 × t_eff_years))
+annual_gain(current) = (ceiling − current) × (1 − e^(−k × 12))
+```
+
+**Training-age correction** (doc §30):
+
+```
+t_effective = chronological_years × consistency × intensity × programming
+```
+
+Defaults (0.85 / 0.75 / 0.70) apply when the user hasn't set the three
+new `user_profiles` columns. New migration: `m1b2c3d4e5f6`.
+
+**Also changed in `estimate_cycles_to_tier`:**
+- Dropped the `rate *= 0.95` per-cycle decay — the logistic already models
+  diminishing returns physiologically.
+- `muscle_fraction = 0.85 − 0.015 × surplus_pct_per_week` (default 0.70).
+- `proportion_cycles` scales with deficit magnitude:
+  `ceil(max_ratio_deficit / 0.05)` not fixed-3.
+
+**Verification:** a year-1 novice at 60 kg LBM toward an 80 kg ceiling
+gets ~4.3 kg gain year-1 via logistic. A year-6 advanced at 78 kg →
+0.4 kg. Aligned with McDonald / Aragon / Helms pyramid.
+
+## v2 Sprint 9 — Illusion metrics + conditioning_pct + relative asymmetry
+
+**File:** `backend/app/engines/engine1/aesthetic_vector.py`,
+`readiness.evaluate_readiness`, `pds.py`, `split_designer.py`
+
+### Illusion (X-frame)
+```
+vtaper             = shoulders / waist
+xframe             = (shoulders × hips) / waist²
+waist_height_ratio = waist / height
+```
+
+Added as a 10th readiness metric (`illusion_score`). Classic Physique
+tier thresholds: T1 2.15 → T5 2.55 (v2 doc §8).
+
+### Conditioning percentage
+```
+conditioning_pct = (offseason_BF_ceiling − current_BF)
+                   ÷ (offseason_BF_ceiling − stage_BF_target)
+```
+
+Surfaces "how close to stage conditioning" independently of mass.
+T1 0.20 → T5 0.95. Added as 11th readiness metric.
+
+### Symmetry multipliers (recalibrated from v2 doc §10)
+| Site | v1 | v2 |
+|---|---|---|
+| bicep | 600 | 650 |
+| forearm | 600 | 500 |
+| calf | 550 | 600 |
+| thigh | 300 | 450 |
+| chest | default 500 | 550 |
+| shoulders | default 500 | 600 |
+| back | default 500 | 500 |
+
+### Relative asymmetry (replaces flat 1.5 cm)
+```
+spread_rel = |L − R| / mean
+threshold  = 0.035 for non-arm/calf sites
+             0.025 for arms/calves (eye trained for asymmetry)
+bonus      = round(100 × (spread_rel − 0.02))   clamped 0..6
+practitioner_review = spread_rel > 0.08
+```
+
+A 4% bicep spread now emits bonus 2 (was flat +2 for any spread > 1.5 cm).
+
 ## Changelog
 
 - **R4.A** — Unified `compute_ideal_circumferences` (was duplicated in
@@ -490,6 +649,18 @@ Kouri's natural-ceiling interpretation:
   lagging-side muscle.
 - **R4.F** — `pds.py` symmetry multipliers pulled from `physio.py`;
   `weight_cap.py` default BF now sourced from `physio.stage_bf_pct`.
+- **V2.S0** — Per-division stage BF + offseason ceiling with provenance;
+  `ValueWithUncertainty` type; `PhaseState` enum; `PROVENANCE_REGISTRY`.
+- **V2.S1** — Ceiling ensemble (Butt1/4 + Kouri bands + Berkhan + IFBB);
+  FFMI probability bands replace binary Kouri-25 wall.
+- **V2.S2** — ISAK skinfold-anchored girth projection; JP-derived
+  fallback; legacy `project_lean_girth` becomes dispatching shim.
+- **V2.S3** — `DIVISION_VISIBILITY` unified; MP.thigh bug fixed; glutes
+  first-class; mass_distribution soft-min.
+- **V2.S4** — Logistic LBM gain replaces exponential halving; drops
+  5%/cycle tax; training-age correction with 3 new profile columns.
+- **V2.S9** — `illusion_score` + `conditioning_pct` readiness metrics;
+  symmetry multipliers recalibrated; relative asymmetry with graded bonus.
 
 ## Mismatch tracker
 

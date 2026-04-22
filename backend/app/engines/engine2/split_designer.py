@@ -661,41 +661,65 @@ def design_split(
             f"Low-visibility muscles ({', '.join(hidden)}) get maintenance volume only."
         )
 
-    # Asymmetry-driven unilateral bias. When a bilateral pair spreads more than
-    # ASYMMETRY_UNILATERAL_CM between sides, the lagging side gets +2 sets per
-    # session on that muscle. Consumed by services/training when generating
-    # session exercises. See physio.ASYMMETRY_UNILATERAL_CM for the threshold.
-    from app.constants.physio import ASYMMETRY_UNILATERAL_CM
+    # Asymmetry-driven unilateral bias — v2 Sprint 9.
+    # Threshold is RELATIVE (|L−R| / mean), not a flat 1.5 cm. A 1.5 cm
+    # spread on a 70 cm thigh is normal variation; on a 32 cm bicep it's
+    # 5%. Bonus sets scale with the spread instead of a step function:
+    #     bonus = round(100 × (spread_rel − 0.02)), clamped 0..6
+    # At 2% spread bonus is 0; at 8% bonus reaches 6. Spreads > 8% clamp
+    # at 6 and flag for practitioner referral (often neural/joint origin).
+    # Arm/calf asymmetries use a tighter threshold (2.5%) because the
+    # eye is trained to spot them in every pose.
+    from app.constants.physio import (
+        ASYMMETRY_UNILATERAL_REL,
+        ASYMMETRY_UNILATERAL_REL_ARMS_CALVES,
+    )
 
     unilateral_bias: dict[str, dict] = {}
     if tape_pairs:
-        # tape_pairs maps tape-site name → (left_cm, right_cm). Map tape site
-        # → training muscle name(s) used inside volume_budget/template.
         _PAIR_TO_MUSCLE: dict[str, list[str]] = {
             "bicep":   ["biceps"],
             "forearm": ["forearms"],
             "thigh":   ["quads", "hamstrings"],
             "calf":    ["calves"],
         }
+        _TIGHT_SITES = {"bicep", "forearm", "calf"}
         for tape_site, (lv, rv) in tape_pairs.items():
             if lv is None or rv is None:
                 continue
             try:
-                diff = float(lv) - float(rv)
+                lvf, rvf = float(lv), float(rv)
             except (TypeError, ValueError):
                 continue
-            if abs(diff) < ASYMMETRY_UNILATERAL_CM:
+            mean = (lvf + rvf) / 2.0
+            if mean <= 0:
                 continue
+            diff = lvf - rvf
+            spread_rel = abs(diff) / mean
+            thresh = (ASYMMETRY_UNILATERAL_REL_ARMS_CALVES
+                      if tape_site in _TIGHT_SITES
+                      else ASYMMETRY_UNILATERAL_REL)
+            if spread_rel < thresh:
+                continue
+            # Graded bonus — scales with spread instead of step function.
+            # 100× is calibrated to produce 0 at 2% spread and 6 at 8%.
+            # Above 8% we clamp and flag for practitioner review.
+            bonus = max(0, min(6, round(100.0 * (spread_rel - 0.02))))
+            if bonus <= 0:
+                continue
+            practitioner_flag = spread_rel > 0.08
             lagging = "right" if diff > 0 else "left"
             for muscle in _PAIR_TO_MUSCLE.get(tape_site, []):
                 unilateral_bias[muscle] = {
                     "lagging_side": lagging,
                     "spread_cm": round(abs(diff), 1),
-                    "bonus_sets_per_session": 2,
+                    "spread_rel_pct": round(spread_rel * 100, 2),
+                    "bonus_sets_per_session": bonus,
+                    "practitioner_review": practitioner_flag,
                 }
         if unilateral_bias:
             sites = ", ".join(
-                f"{m} ({v['lagging_side']}, {v['spread_cm']} cm spread)"
+                f"{m} ({v['lagging_side']}, {v['spread_rel_pct']}%, +{v['bonus_sets_per_session']} sets)"
                 for m, v in unilateral_bias.items()
             )
             parts.append(f"Unilateral bias applied: {sites}.")

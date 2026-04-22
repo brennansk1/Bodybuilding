@@ -42,6 +42,14 @@ class UserProfile(Base):
     # in volume_landmarks and tier-threshold year requirements in readiness.py.
     training_status: Mapped[str] = mapped_column(String(16), nullable=False, default="natural")
 
+    # Training-age factors (v2 Sprint 4) — discount chronological years into
+    # effective training years. See engine1/training_age.py. Nullable so
+    # existing profiles keep working; engine applies documented priors when
+    # null. Settings UI for manual tuning is a follow-up session deliverable.
+    training_consistency_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    training_intensity_factor:   Mapped[float | None] = mapped_column(Float, nullable=True)
+    training_programming_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     # Perpetual Progression Mode (PPM). Mutually exclusive with competition_date
     # — validated at the /profile API layer.
     ppm_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

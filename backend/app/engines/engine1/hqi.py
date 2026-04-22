@@ -38,24 +38,12 @@ import math
 # Sites where waist/hips use ratio × height (stay-small targets)
 _RATIO_SITES = {"waist", "hips"}
 
-# Division visibility weights for overall HQI (mirrors aesthetic_vector.py)
-# Sites hidden by stage attire should not dilute the overall score.
-_DIVISION_VISIBILITY: dict[str, dict[str, float]] = {
-    "mens_physique": {
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-        "forearm": 1.0, "waist": 1.0,
-        "hips": 0.15, "thigh": 0.0, "calf": 0.25,
-    },
-    "womens_bikini": {
-        "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 0.6,
-        "forearm": 0.3, "waist": 1.0,
-        "hips": 1.0, "thigh": 0.5, "calf": 0.2,
-    },
-}
-_DEFAULT_VISIBILITY: dict[str, float] = {
-    "neck": 1.0, "shoulders": 1.0, "chest": 1.0, "bicep": 1.0,
-    "forearm": 1.0, "waist": 1.0, "hips": 1.0, "thigh": 1.0, "calf": 1.0,
-}
+# Division visibility weights — v2 Sprint 3 moved to constants/divisions.py
+# as the single source of truth (closes M7 mismatch).
+from app.constants.divisions import (
+    DIVISION_VISIBILITY as _DIVISION_VISIBILITY,
+    DIVISION_VISIBILITY_DEFAULT as _DEFAULT_VISIBILITY,
+)
 
 # Exponential decay constant — calibrated for weight-cap-based gaps.
 # Gaps are larger with weight-cap ideals so k is gentler than before.
