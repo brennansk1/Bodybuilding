@@ -113,7 +113,7 @@ async def _latest_measurements(db: AsyncSession, user_id) -> tuple[dict, dict]:
             "neck", "shoulders", "chest",
             "left_bicep", "right_bicep",
             "left_forearm", "right_forearm",
-            "waist", "hips",
+            "waist", "hips", "glutes",
             "left_thigh", "right_thigh",
             "left_calf", "right_calf",
         ):
@@ -348,11 +348,15 @@ async def evaluate(
                 if k != "arm_calf_neck_parity"  # nested dict omitted
             },
             "tape": {
-                "bicep":  tape.get("bicep"),
-                "calf":   tape.get("calf"),
-                "neck":   tape.get("neck"),
-                "chest":  tape.get("chest"),
-                "waist":  tape.get("waist"),
+                "bicep":     tape.get("bicep"),
+                "calf":      tape.get("calf"),
+                "neck":      tape.get("neck"),
+                "chest":     tape.get("chest"),
+                "waist":     tape.get("waist"),
+                # V2.P3 — Illusion card consumes these
+                "shoulders": tape.get("shoulders"),
+                "hips":      tape.get("hips"),
+                "glutes":    tape.get("glutes"),
             },
         }
     except NotImplementedError as e:
@@ -592,8 +596,29 @@ async def history(
         .limit(limit)
     )
     rows = q.scalars().all()
-    return [
-        {
+
+    def _extract_v2_metrics(row: PPMCheckpoint) -> tuple[float | None, float | None]:
+        """Pull illusion_xframe + conditioning_pct from measurements_json.
+
+        These metrics were added in V2.S9; pre-V2 checkpoints don't have them.
+        Both nested locations are checked to stay robust across schema pivots.
+        """
+        mj = row.measurements_json or {}
+        metrics = mj.get("metrics") or {}
+        illusion = metrics.get("illusion_xframe")
+        # conditioning_pct lives on the per_metric row (current value 0..1)
+        per_metric = metrics.get("per_metric") or {}
+        cond_entry = per_metric.get("conditioning_pct") or {}
+        conditioning = cond_entry.get("current") if isinstance(cond_entry, dict) else None
+        return (
+            float(illusion) if illusion is not None else None,
+            float(conditioning) if conditioning is not None else None,
+        )
+
+    out = []
+    for r in rows:
+        illusion_xframe, conditioning_pct = _extract_v2_metrics(r)
+        out.append({
             "id": str(r.id),
             "cycle_number": r.cycle_number,
             "checkpoint_date": r.checkpoint_date.isoformat(),
@@ -608,9 +633,11 @@ async def history(
             "readiness_state": r.readiness_state,
             "limiting_factor": r.limiting_factor,
             "cycle_focus": r.cycle_focus,
-        }
-        for r in rows
-    ]
+            # V2.S9 metrics — null on pre-V2 checkpoints
+            "illusion_xframe": illusion_xframe,
+            "conditioning_pct": conditioning_pct,
+        })
+    return out
 
 
 @router.post("/transition-to-comp")

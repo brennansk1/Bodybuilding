@@ -38,6 +38,7 @@ const CORE_LIFTS = [
 const TAPE_SITES = [
   "neck", "shoulders", "chest", "left_bicep", "right_bicep",
   "left_forearm", "right_forearm", "waist", "hips",
+  "glutes",
   "left_thigh", "right_thigh", "left_calf", "right_calf",
 ];
 
@@ -59,6 +60,10 @@ export default function OnboardingPage() {
   const [heightCm, setHeightCm] = useState("");
   const [division, setDivision] = useState("mens_open");
   const [experience, setExperience] = useState("");
+  // V2.P1 — training-age factors. Empty = engine applies 0.85/0.75/0.70 priors.
+  const [consistencyFactor, setConsistencyFactor] = useState("");
+  const [intensityFactor, setIntensityFactor] = useState("");
+  const [programmingFactor, setProgrammingFactor] = useState("");
   const [competitionDate, setCompetitionDate] = useState("");
   const [ppmEnabled, setPpmEnabled] = useState<boolean>(false);
   const [targetTier, setTargetTier] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
@@ -180,6 +185,10 @@ export default function OnboardingPage() {
           division,
           competition_date: ppmEnabled ? null : (competitionDate || null),
           training_experience_years: parseInt(experience) || 0,
+          // V2.P1 — training-age factors
+          training_consistency_factor: consistencyFactor ? parseFloat(consistencyFactor) : null,
+          training_intensity_factor: intensityFactor ? parseFloat(intensityFactor) : null,
+          training_programming_factor: programmingFactor ? parseFloat(programmingFactor) : null,
           wrist_circumference_cm: wrist ? parseFloat(wrist) : null,
           ankle_circumference_cm: ankle ? parseFloat(ankle) : null,
           manual_body_fat_pct: manualBodyFatPct ? parseFloat(manualBodyFatPct) : null,
@@ -334,6 +343,61 @@ export default function OnboardingPage() {
                   <div>
                     <label className="label-field">Training Experience (years)</label>
                     <input type="number" value={experience} onChange={(e) => setExperience(e.target.value)} className="input-field" placeholder="5" />
+                    <p className="text-[10px] text-jungle-dim mt-1">
+                      Chronological years. We&apos;ll discount this by how
+                      you&apos;ve trained below to get your effective training age.
+                    </p>
+                  </div>
+                  {/* V2.P1 — training-age correction factors. Open by default
+                      for new users so projections start accurate; collapsible
+                      in settings for later tweaks. */}
+                  <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-card bg-jungle-dim/10 border border-jungle-dim/20">
+                    <div>
+                      <label className="label-field">Consistency</label>
+                      <select
+                        value={consistencyFactor}
+                        onChange={(e) => setConsistencyFactor(e.target.value)}
+                        className="input-field"
+                      >
+                        <option value="">Typical (0.85)</option>
+                        <option value="1.0">1.0 — 4+ sessions/wk, 48+ wks/yr</option>
+                        <option value="0.85">0.85 — 4 sessions/wk</option>
+                        <option value="0.7">0.7 — 3 sessions/wk</option>
+                        <option value="0.5">0.5 — 2 sessions/wk</option>
+                        <option value="0.2">0.2 — sporadic</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label-field">Intensity</label>
+                      <select
+                        value={intensityFactor}
+                        onChange={(e) => setIntensityFactor(e.target.value)}
+                        className="input-field"
+                      >
+                        <option value="">Typical (0.75)</option>
+                        <option value="1.0">1.0 — near-failure (RIR 0–2)</option>
+                        <option value="0.75">0.75 — RIR 2–3</option>
+                        <option value="0.7">0.7 — moderate (RIR 3–4)</option>
+                        <option value="0.4">0.4 — light (RIR 5+)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label-field">Programming</label>
+                      <select
+                        value={programmingFactor}
+                        onChange={(e) => setProgrammingFactor(e.target.value)}
+                        className="input-field"
+                      >
+                        <option value="">Typical (0.70)</option>
+                        <option value="1.0">1.0 — periodized + overload log</option>
+                        <option value="0.7">0.7 — linear progression</option>
+                        <option value="0.4">0.4 — random / no structure</option>
+                      </select>
+                    </div>
+                    <p className="sm:col-span-3 text-[10px] text-jungle-dim">
+                      Leave blank to use the average-lifter default. These shape
+                      your projected gain curve — not a judgment, just calibration.
+                    </p>
                   </div>
                   <div className="sm:col-span-2">
                     <label className="label-field">Competition Mode</label>
@@ -390,7 +454,12 @@ export default function OnboardingPage() {
                   </div>
                   <div>
                     <label className="label-field">Body Fat %</label>
-                    <input type="number" step="0.5" min="3" max="50" value={manualBodyFatPct} onChange={(e) => setManualBodyFatPct(e.target.value)} className="input-field" placeholder="e.g. 15" />
+                    <input type="number" step="0.5" min="3" max="50" value={manualBodyFatPct} onChange={(e) => setManualBodyFatPct(e.target.value)} className="input-field" placeholder="leave blank to skip" />
+                    <p className="text-[10px] text-jungle-dim mt-1">
+                      Optional. If blank, we use a division-specific offseason
+                      estimate (≈12% male / 20% female) so projected stage
+                      weight doesn&apos;t overstate readiness.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -419,10 +488,15 @@ export default function OnboardingPage() {
 
               <p className="text-[10px] text-jungle-muted font-semibold uppercase tracking-wider mb-1">Lower Body</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {["waist", "hips", "left_thigh", "right_thigh", "left_calf", "right_calf"].map((site) => (
+                {["waist", "hips", "glutes", "left_thigh", "right_thigh", "left_calf", "right_calf"].map((site) => (
                   <div key={site}>
                     <label className="block text-xs text-jungle-muted mb-1 capitalize">{site.replace(/_/g, " ")}</label>
                     <input type="number" step="0.1" value={tape[site] || ""} onChange={(e) => setTape({ ...tape, [site]: e.target.value })} className="input-field text-sm" placeholder="cm" />
+                    {site === "glutes" && (
+                      <p className="text-[9px] text-jungle-dim mt-0.5 leading-tight">
+                        Single tape, widest point standing relaxed.
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

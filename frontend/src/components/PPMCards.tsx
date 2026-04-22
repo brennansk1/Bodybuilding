@@ -476,6 +476,302 @@ export function NaturalCeilingCard({
 
 
 // ---------------------------------------------------------------------------
+// V2.P3 — Illusion card (V-taper / X-frame / waist:height)
+// ---------------------------------------------------------------------------
+interface IllusionCardProps {
+  shouldersCm: number | null;
+  waistCm: number | null;
+  hipsCm: number | null;
+  heightCm: number | null;
+  // Optional tier context for target markers.
+  tierXframeTarget?: number | null;
+}
+
+export function IllusionCard({
+  shouldersCm, waistCm, hipsCm, heightCm, tierXframeTarget,
+}: IllusionCardProps) {
+  if (!shouldersCm || !waistCm) {
+    return (
+      <div className="text-[11px] text-jungle-dim italic">
+        Log shoulders + waist to see your V-taper ratios.
+      </div>
+    );
+  }
+  const vtaper = shouldersCm / waistCm;
+  const xframe = hipsCm ? (shouldersCm * hipsCm) / (waistCm * waistCm) : null;
+  const waistH = heightCm ? waistCm / heightCm : null;
+
+  // Tone helper — within 2% of target is green, ±5% amber, below red.
+  const tone = (val: number, target: number): string => {
+    if (val >= target * 0.98) return "text-viltrum-laurel";
+    if (val >= target * 0.95) return "text-viltrum-aureus";
+    return "text-viltrum-centurion";
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* V-taper */}
+      <div>
+        <div className="flex justify-between items-baseline text-[11px]">
+          <span className="text-jungle-muted">V-Taper (shoulders ÷ waist)</span>
+          <span className={`font-mono font-semibold ${tone(vtaper, 1.50)}`}>
+            {vtaper.toFixed(2)}
+          </span>
+        </div>
+        <div className="relative h-1.5 bg-jungle-dim/20 rounded mt-1">
+          <div
+            className="absolute top-0 h-1.5 bg-jungle-accent/70 rounded"
+            style={{ width: `${Math.min(100, (vtaper / 1.75) * 100)}%` }}
+          />
+          {/* Reeves / Grecian markers */}
+          <div className="absolute top-0 h-1.5 w-px bg-jungle-dim" style={{ left: `${(1.50 / 1.75) * 100}%` }} title="Classic ideal 1.50" />
+          <div className="absolute top-0 h-1.5 w-px bg-viltrum-obsidian" style={{ left: `${(1.618 / 1.75) * 100}%` }} title="Grecian 1.618" />
+        </div>
+        <div className="text-[9px] text-jungle-dim mt-0.5">
+          Classic 1.50 · Grecian 1.618 · Top Open ~1.75
+        </div>
+      </div>
+
+      {/* X-frame */}
+      {xframe !== null && (
+        <div>
+          <div className="flex justify-between items-baseline text-[11px]">
+            <span className="text-jungle-muted">X-Frame (sh × hips ÷ waist²)</span>
+            <span className={`font-mono font-semibold ${tone(xframe, tierXframeTarget || 2.35)}`}>
+              {xframe.toFixed(2)}
+            </span>
+          </div>
+          <div className="relative h-1.5 bg-jungle-dim/20 rounded mt-1">
+            <div
+              className="absolute top-0 h-1.5 bg-jungle-accent/70 rounded"
+              style={{ width: `${Math.min(100, (xframe / 2.6) * 100)}%` }}
+            />
+            {tierXframeTarget && (
+              <div className="absolute top-0 h-1.5 w-0.5 bg-viltrum-centurion"
+                style={{ left: `${(tierXframeTarget / 2.6) * 100}%` }}
+                title={`Target ${tierXframeTarget}`}
+              />
+            )}
+          </div>
+          <div className="text-[9px] text-jungle-dim mt-0.5">
+            T1 2.15 · T3 2.35 · T5 2.55 (Classic Physique)
+          </div>
+        </div>
+      )}
+
+      {/* Waist : Height */}
+      {waistH !== null && (
+        <div>
+          <div className="flex justify-between items-baseline text-[11px]">
+            <span className="text-jungle-muted">Waist : Height</span>
+            <span className={`font-mono font-semibold ${waistH <= 0.46 ? "text-viltrum-laurel" : "text-viltrum-aureus"}`}>
+              {waistH.toFixed(3)}
+            </span>
+          </div>
+          <div className="text-[9px] text-jungle-dim mt-0.5">
+            Target ≤ 0.45 · physique-division ideal
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// V2.P3 — Unilateral Priority card
+// ---------------------------------------------------------------------------
+interface UnilateralBiasRow {
+  site: string;           // "bicep" | "forearm" | "thigh" | "calf"
+  left_cm: number;
+  right_cm: number;
+  diff_cm: number;
+  deviation_pct: number;  // 2.5 means 2.5%
+  site_symmetry_score?: number;   // optional — populated by some endpoints
+  dominant_side: "left" | "right" | "even";
+}
+
+interface UnilateralPriorityCardProps {
+  /** Rows from `/engine1/symmetry` (per-pair details). */
+  rows: UnilateralBiasRow[] | null;
+}
+
+export function UnilateralPriorityCard({ rows }: UnilateralPriorityCardProps) {
+  if (!rows || rows.length === 0) {
+    return (
+      <div className="text-[11px] text-jungle-dim italic">
+        Log bilateral tape (L/R) to detect unilateral priorities.
+      </div>
+    );
+  }
+  const TIGHT = new Set(["bicep", "forearm", "calf"]);
+  const flagged = rows.filter((r) => {
+    const rel = r.deviation_pct / 100;
+    const thresh = TIGHT.has(r.site) ? 0.025 : 0.035;
+    return rel >= thresh;
+  });
+
+  if (flagged.length === 0) {
+    return (
+      <div className="space-y-1.5">
+        <div className="text-[11px] text-viltrum-laurel font-semibold">Balanced ✓</div>
+        <div className="text-[10px] text-jungle-dim">
+          All L/R pairs within normal variation. No unilateral bias prescribed.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] uppercase tracking-[2px] text-jungle-dim">
+        Asymmetries {"> 2.5%"} (arms/calves) / {"> 3.5%"} (legs)
+      </div>
+      {flagged.map((r) => {
+        const rel = r.deviation_pct / 100;
+        const bonus = Math.max(0, Math.min(6, Math.round(100 * (rel - 0.02))));
+        const practitioner = rel > 0.08;
+        const lagging = r.dominant_side === "even" ? "—" : (r.dominant_side === "left" ? "right" : "left");
+        return (
+          <div key={r.site} className="p-2 rounded-card bg-viltrum-limestone border border-viltrum-ash">
+            <div className="flex justify-between items-baseline text-[11px]">
+              <span className="capitalize text-jungle-muted">
+                {r.site} · lagging <span className="text-viltrum-iron">{lagging}</span>
+              </span>
+              <span className="font-mono text-viltrum-obsidian">
+                {r.deviation_pct.toFixed(1)}% · +{bonus} sets
+              </span>
+            </div>
+            <div className="text-[9px] text-jungle-dim mt-0.5">
+              L {r.left_cm.toFixed(1)} · R {r.right_cm.toFixed(1)} · Δ {r.diff_cm.toFixed(1)} cm
+            </div>
+            {practitioner && (
+              <div className="text-[10px] text-viltrum-centurion mt-1">
+                ⚠ Spread {">"} 8% — consider a practitioner review.
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// V2.P3 — Conditioning Score card (non-PPM path)
+// ---------------------------------------------------------------------------
+interface ConditioningCardProps {
+  currentBfPct: number | null;
+  offseasonCeilingPct: number;   // per-division; e.g. 13 for Classic male
+  stageBfTargetPct: number;      // per-division; e.g. 5 for Classic male
+}
+
+export function ConditioningCard({
+  currentBfPct, offseasonCeilingPct, stageBfTargetPct,
+}: ConditioningCardProps) {
+  if (currentBfPct == null) {
+    return (
+      <div className="text-[11px] text-jungle-dim italic">
+        Log a skinfold or manual body-fat to see conditioning progress.
+      </div>
+    );
+  }
+  const span = offseasonCeilingPct - stageBfTargetPct;
+  const pct = span > 0 ? (offseasonCeilingPct - currentBfPct) / span : 0;
+  const clamped = Math.max(0, Math.min(1, pct));
+  const tone = clamped >= 0.95 ? "text-viltrum-laurel"
+             : clamped >= 0.70 ? "text-viltrum-aureus"
+             : "text-viltrum-centurion";
+  return (
+    <div className="space-y-2">
+      <div className="flex items-end gap-2">
+        <span className={`text-4xl font-bold leading-none ${tone}`}>
+          {Math.round(clamped * 100)}%
+        </span>
+        <span className="text-[11px] text-jungle-dim pb-1">
+          conditioned
+        </span>
+      </div>
+      <div className="relative h-2 bg-jungle-dim/20 rounded">
+        <div
+          className="absolute top-0 h-2 bg-viltrum-obsidian rounded"
+          style={{ width: `${clamped * 100}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-[9px] text-jungle-dim">
+        <span>Offseason ceiling {offseasonCeilingPct}%</span>
+        <span>Stage {stageBfTargetPct}%</span>
+      </div>
+      <div className="text-[10px] text-jungle-muted mt-1">
+        Current BF: <span className="font-mono text-viltrum-obsidian">{currentBfPct.toFixed(1)}%</span>
+      </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// V2.P3 — BF Measurement Confidence micro-card
+// ---------------------------------------------------------------------------
+interface BFConfidenceProps {
+  bfPct: number | null;
+  confidenceLevel?: "high" | "medium" | "low" | null;
+  confidenceRange?: [number, number] | null;
+  methodsUsed?: string[] | null;
+  source?: string;  // "skinfold" | "manual" | ...
+}
+
+export function BFConfidenceCard({
+  bfPct, confidenceLevel, confidenceRange, methodsUsed, source,
+}: BFConfidenceProps) {
+  if (bfPct == null) {
+    return (
+      <div className="text-[11px] text-jungle-dim italic">
+        No body-fat estimate yet.
+      </div>
+    );
+  }
+  const levelTone = confidenceLevel === "high"   ? "text-viltrum-laurel bg-viltrum-laurel-bg"
+                  : confidenceLevel === "medium" ? "text-viltrum-aureus bg-viltrum-aureus-bg"
+                  : confidenceLevel === "low"    ? "text-viltrum-centurion bg-viltrum-blush"
+                  : "text-jungle-dim bg-jungle-dim/15";
+  const levelLabel = confidenceLevel ? confidenceLevel.toUpperCase() : "—";
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <span className="text-3xl font-bold text-viltrum-obsidian leading-none">
+            {bfPct.toFixed(1)}
+          </span>
+          <span className="text-xs text-jungle-muted ml-1">%</span>
+        </div>
+        <span className={`text-[9px] uppercase tracking-[2px] font-semibold px-2 py-0.5 rounded-pill ${levelTone}`}>
+          {levelLabel}
+        </span>
+      </div>
+      {confidenceRange && (
+        <div className="text-[10px] text-jungle-dim">
+          95% CI: <span className="font-mono">{confidenceRange[0].toFixed(1)}–{confidenceRange[1].toFixed(1)}%</span>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1 text-[9px]">
+        {methodsUsed && methodsUsed.length > 0 ? methodsUsed.map((m) => (
+          <span key={m} className="px-1.5 py-0.5 rounded-pill bg-viltrum-limestone text-viltrum-iron">
+            {m.replace(/_/g, " ")}
+          </span>
+        )) : (
+          <span className="px-1.5 py-0.5 rounded-pill bg-viltrum-limestone text-viltrum-iron">
+            {source || "single-source"}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
 // Small wrapper — re-export TierReadinessCard under one name for dashboard use
 // ---------------------------------------------------------------------------
 export function TierReadinessSummary({ readiness }: { readiness: TierReadiness }) {

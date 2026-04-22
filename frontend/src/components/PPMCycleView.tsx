@@ -263,6 +263,8 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
                   <th className="text-right py-1 px-2">BF%</th>
                   <th className="text-right py-1 px-2">FFMI</th>
                   <th className="text-right py-1 px-2">HQI</th>
+                  <th className="text-right py-1 px-2">X-frame</th>
+                  <th className="text-right py-1 px-2">Cond%</th>
                   <th className="text-right py-1 px-2">Cycle</th>
                 </tr>
               </thead>
@@ -274,6 +276,10 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
                     <td className="py-1.5 px-2 text-right font-mono">{c.bf_pct?.toFixed(1) ?? "—"}</td>
                     <td className="py-1.5 px-2 text-right font-mono">{c.ffmi?.toFixed(1) ?? "—"}</td>
                     <td className="py-1.5 px-2 text-right font-mono">{c.hqi_score?.toFixed(0) ?? "—"}</td>
+                    <td className="py-1.5 px-2 text-right font-mono">{c.illusion_xframe?.toFixed(2) ?? "—"}</td>
+                    <td className="py-1.5 px-2 text-right font-mono">
+                      {c.conditioning_pct != null ? `${Math.round(c.conditioning_pct * 100)}%` : "—"}
+                    </td>
                     <td className="py-1.5 px-2 text-right">#{c.cycle_number}</td>
                   </tr>
                 ))}

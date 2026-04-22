@@ -42,6 +42,10 @@ import {
   CarbCycleCard,
   ConditioningStyleCard,
   NaturalCeilingCard,
+  IllusionCard,
+  UnilateralPriorityCard,
+  ConditioningCard,
+  BFConfidenceCard,
 } from "@/components/PPMCards";
 import type { TierReadiness, TierProjection, NaturalAttainability } from "@/lib/types";
 import { getQuoteForToday } from "@/lib/quotes";
@@ -232,7 +236,7 @@ interface DashboardContext {
   has_program: boolean;
   has_rx: boolean;                    // active nutrition prescription
   has_strength_logs: boolean;
-  has_tape: { chest?: boolean; waist?: boolean; neck?: boolean; bicep?: boolean; calf?: boolean };
+  has_tape: { chest?: boolean; waist?: boolean; neck?: boolean; bicep?: boolean; calf?: boolean; shoulders?: boolean; hips?: boolean };
 }
 
 type VisiblePredicate = (ctx: DashboardContext) => boolean;
@@ -259,10 +263,12 @@ const CARD_REGISTRY: CardMeta[] = [
   { key: "symmetry", label: "Bilateral Symmetry", visibleWhen: (c) => !!c.has_tape.bicep, unlockHint: "Log bilateral tape" },
   { key: "phase_rec", label: "Phase Recommendation" },
   { key: "comp_class", label: "Competition Class", visibleWhen: (c) => c.competition_date != null || c.ppm_enabled },
-  { key: "growth_projection", label: "Growth Projection", visibleWhen: (c) => c.has_hqi },
-  { key: "detail_metrics", label: "Detail Metrics", visibleWhen: (c) => c.has_hqi },
+  // V2.P2 — removed `growth_projection` (duplicate of muscle_gaps + heatmap)
+  // and `adherence` (duplicate of macro_adherence). Users with these toggled
+  // on in their saved layout will silently stop seeing them; the data still
+  // renders in the equivalent cards.
+  { key: "detail_metrics", label: "Advanced Anthropometry", visibleWhen: (c) => c.has_hqi },
   { key: "ari", label: "Autonomic Fuel Gauge" },
-  { key: "adherence", label: "Adherence Grid", visibleWhen: (c) => c.has_rx },
   { key: "prep_timeline", label: "Competition Countdown", visibleWhen: (c) => c.competition_date != null, unlockHint: "Set a competition date" },
   { key: "strength_progression", label: "Strength Progression", visibleWhen: (c) => c.has_strength_logs, unlockHint: "Log a working set" },
   { key: "body_weight_trend", label: "Body Weight Trend" },
@@ -273,11 +279,19 @@ const CARD_REGISTRY: CardMeta[] = [
   // PPM (Perpetual Progression Mode) widgets — only render when PPM is active.
   { key: "tier_readiness",     label: "Tier Readiness",        visibleWhen: (c) => c.ppm_enabled && c.target_tier != null, unlockHint: "Enable PPM" },
   { key: "cycle_progress",     label: "Improvement Cycle",     visibleWhen: (c) => c.ppm_enabled && c.current_cycle_start_date != null, unlockHint: "Start a cycle" },
-  { key: "parity_check",       label: "Arm-Calf-Neck Parity",  visibleWhen: (c) => c.ppm_enabled && !!(c.has_tape.neck && c.has_tape.bicep && c.has_tape.calf), unlockHint: "Log neck + arm + calf" },
+  // V2.P2 — parity is a Reeves-classical standard; only Classic Physique
+  // judges it as a primary criterion. Tightened predicate.
+  { key: "parity_check",       label: "Arm-Calf-Neck Parity",  visibleWhen: (c) => c.ppm_enabled && c.division === "classic_physique" && !!(c.has_tape.neck && c.has_tape.bicep && c.has_tape.calf), unlockHint: "Classic Physique + tape" },
   { key: "chest_waist",        label: "Chest : Waist Ratio",   visibleWhen: (c) => !!(c.has_tape.chest && c.has_tape.waist), unlockHint: "Log chest + waist" },
   { key: "carb_cycle",         label: "Carb Cycle",            visibleWhen: (c) => c.has_rx, unlockHint: "Generate macros" },
-  { key: "conditioning_style", label: "Conditioning Style",    visibleWhen: (c) => c.division === "classic_physique", unlockHint: "Classic Physique only" },
+  // V2.P2 — broadened so non-PPM Classic-prep users see it too.
+  { key: "conditioning_style", label: "Conditioning Style",    visibleWhen: (c) => c.division === "classic_physique" && (c.competition_date != null || c.ppm_enabled), unlockHint: "Classic Physique prep" },
   { key: "natural_ceiling",    label: "Natural Ceiling",       visibleWhen: (c) => c.ppm_enabled && !!(c.wrist_circumference_cm && c.ankle_circumference_cm), unlockHint: "Log wrist + ankle" },
+  // V2.P3 — four new widgets for V2 engine outputs that had no dashboard home
+  { key: "illusion",            label: "Illusion & V-Taper",    visibleWhen: (c) => !!(c.has_tape.shoulders && c.has_tape.waist), unlockHint: "Log shoulders + waist" },
+  { key: "unilateral_priority", label: "Unilateral Priority",   visibleWhen: (c) => !!c.has_tape.bicep, unlockHint: "Log bilateral tape" },
+  { key: "conditioning_score",  label: "Conditioning Score",    visibleWhen: (c) => c.competition_date != null, unlockHint: "Set competition date" },
+  { key: "bf_confidence",       label: "BF Estimate Confidence",visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
 ];
 const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
 
@@ -465,6 +479,8 @@ export default function DashboardPage() {
     neck: number | null;
     chest: number | null;
     waist: number | null;
+    shoulders?: number | null;
+    hips?: number | null;
   }
   const [ppmTape, setPpmTape] = useState<PPMTape | null>(null);
   interface CarbCycleData {
@@ -501,11 +517,14 @@ export default function DashboardPage() {
     has_rx: Boolean(todayMacros),
     has_strength_logs: false,         // future: wire strength-log fetch
     has_tape: {
-      chest: Boolean(ppmTape?.chest),
-      waist: Boolean(ppmTape?.waist),
-      neck:  Boolean(ppmTape?.neck),
-      bicep: Boolean(ppmTape?.bicep),
-      calf:  Boolean(ppmTape?.calf),
+      chest:     Boolean(ppmTape?.chest),
+      waist:     Boolean(ppmTape?.waist),
+      neck:      Boolean(ppmTape?.neck),
+      bicep:     Boolean(ppmTape?.bicep),
+      calf:      Boolean(ppmTape?.calf),
+      // V2.P3 — Illusion card needs shoulders+waist; X-frame uses hips too.
+      shoulders: Boolean(ppmTape?.shoulders),
+      hips:      Boolean(ppmTape?.hips),
     },
   };
   const isWidgetAllowed = (key: string): boolean => {
@@ -1589,52 +1608,11 @@ export default function DashboardPage() {
             </ChartCard>
             );
 
-            if (isVizOn("growth_projection") && muscleGaps) bodies.growth_projection = (
-            <ChartCard
-              title="Growth Projection"
-              subtitle="Where You Are vs. Where You Need To Be"
-              tooltip="Shows your current lean measurements as a percentage of your division-ideal target. Based on your gap analysis and current rate of progress."
-            >
-              <div className="mt-2 space-y-1.5">
-                {muscleGaps.ranked_gaps?.length > 0 ? (
-                  <>
-                    <div className="flex items-center justify-between text-[10px] text-jungle-dim mb-1">
-                      <span>Muscle Site</span>
-                      <span>% of Ideal</span>
-                    </div>
-                    {Object.entries(muscleGaps.sites || {})
-                      .filter(([site]) => !["waist", "hips"].includes(site))
-                      .sort(([, a]: [string, any], [, b]: [string, any]) => (a.pct_of_ideal || 0) - (b.pct_of_ideal || 0))
-                      .map(([site, data]: [string, any]) => {
-                        const pct = data.pct_of_ideal || 0;
-                        const color = pct >= 98 ? "var(--viltrum-success)" : pct >= 90 ? "var(--viltrum-accent)" : pct >= 80 ? "var(--viltrum-warning)" : "var(--viltrum-accent)";
-                        return (
-                          <div key={site} className="flex items-center gap-2">
-                            <span className="text-[10px] text-jungle-muted w-20 capitalize truncate">{site.replace(/_/g, " ")}</span>
-                            <div className="flex-1 h-3 bg-jungle-deeper rounded-full overflow-hidden">
-                              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }} />
-                            </div>
-                            <span className="text-[10px] font-bold w-10 text-right" style={{ color }}>
-                              {pct.toFixed(0)}%
-                            </span>
-                          </div>
-                        );
-                      })}
-                    <div className="border-t border-jungle-border pt-2 mt-2 flex items-center justify-between">
-                      <span className="text-[10px] text-jungle-dim">Overall</span>
-                      <span className="text-sm font-bold text-jungle-accent">{muscleGaps.avg_pct_of_ideal?.toFixed(0) || "—"}% of ideal</span>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-jungle-dim text-xs text-center py-4">Run diagnostics to see growth projections</p>
-                )}
-              </div>
-            </ChartCard>
-            );
+            // V2.P2 — `growth_projection` removed; data equivalent to muscle_gaps + heatmap.
 
             if (isVizOn("detail_metrics") && diagnostic?.advanced_measurements) bodies.detail_metrics = (
             <ChartCard
-              title="Detail Metrics"
+              title="Advanced Anthropometry"
               subtitle="Lat Spread & Quad VMO"
               tooltip="Advanced measurements for lat activation and quad development."
             >
@@ -1740,21 +1718,7 @@ export default function DashboardPage() {
           </ChartCard>
             );
 
-            if (isVizOn("adherence")) bodies.adherence = (
-          <ChartCard
-            title="Adherence Grid"
-            subtitle="12-Week Compliance"
-            tooltip="Daily training and nutrition compliance over the last 12 weeks. Darker green = better adherence. Adherence < 85% locks autoregulation adjustments."
-          >
-            {adherence.length > 0 ? (
-              <div className="mt-3">
-                <AdherenceHeatmap data={adherence} type="overall" />
-              </div>
-            ) : (
-              <EmptyState label="Log adherence during check-in to see compliance grid" />
-            )}
-          </ChartCard>
-            );
+            // V2.P2 — `adherence` card removed; same data shown by Macro Adherence.
 
             if (isVizOn("prep_timeline")) bodies.prep_timeline = (
           <ChartCard title="Competition Countdown" subtitle="Prep Timeline">
@@ -1918,6 +1882,62 @@ export default function DashboardPage() {
                   ffmiRequired={ppmAttain.tier_ffmi_requirement}
                   envelope={ppmAttain.ceiling_envelope?.envelope_stage_kg ?? null}
                   ffmiBand={ppmAttain.ffmi_band ?? null}
+                />
+              </ChartCard>
+            );
+
+            // ── V2.P3 — Illusion & V-Taper ──
+            if (isVizOn("illusion")) bodies.illusion = (
+              <ChartCard title="Illusion & V-Taper" subtitle="Shape independent of mass">
+                <IllusionCard
+                  shouldersCm={ppmTape?.shoulders ?? null}
+                  waistCm={ppmTape?.waist ?? null}
+                  hipsCm={ppmTape?.hips ?? null}
+                  /* dashCtx doesn't expose height; use tier-target proxy only */
+                  heightCm={null}
+                  tierXframeTarget={
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    ((ppmReadiness as unknown as any)?.per_metric?.illusion_score?.target) ?? null
+                  }
+                />
+              </ChartCard>
+            );
+
+            // ── V2.P3 — Unilateral Priority ──
+            if (isVizOn("unilateral_priority")) bodies.unilateral_priority = (
+              <ChartCard title="Unilateral Priority" subtitle="Lagging-side bonus sets">
+                <UnilateralPriorityCard rows={symmetry?.details ?? null} />
+              </ChartCard>
+            );
+
+            // ── V2.P3 — Conditioning Score (non-PPM) ──
+            // Thresholds match physio.py for Classic Physique (current
+            // dashboard default division); female + other-division paths
+            // will ship with Phase-5 when profile + sex hit dashboard ctx.
+            if (isVizOn("conditioning_score")) bodies.conditioning_score = (
+              <ChartCard title="Conditioning Score" subtitle="Offseason → Stage">
+                <ConditioningCard
+                  currentBfPct={diagnostic?.body_fat?.body_fat_pct ?? null}
+                  offseasonCeilingPct={dashCtx.division === "mens_physique" ? 12 : 13}
+                  stageBfTargetPct={
+                    dashCtx.division === "mens_physique" ? 6.5
+                      : dashCtx.division === "classic_physique" ? 5 : 4
+                  }
+                />
+              </ChartCard>
+            );
+
+            // ── V2.P3 — BF Estimate Confidence ──
+            if (isVizOn("bf_confidence")) bodies.bf_confidence = (
+              <ChartCard title="BF Estimate" subtitle="Measurement confidence">
+                <BFConfidenceCard
+                  bfPct={diagnostic?.body_fat?.body_fat_pct ?? null}
+                  confidenceLevel={
+                    (diagnostic?.body_fat?.confidence as "high" | "medium" | "low" | undefined) ?? null
+                  }
+                  confidenceRange={diagnostic?.body_fat?.confidence_interval ?? null}
+                  methodsUsed={diagnostic?.body_fat?.methods ?? null}
+                  source={diagnostic?.body_fat?.source ?? undefined}
                 />
               </ChartCard>
             );

@@ -86,6 +86,9 @@ export interface PPMCheckpoint {
   readiness_state: ReadinessState;
   limiting_factor: string | null;
   cycle_focus: string | null;
+  // V2.S9 — populated on post-V2 checkpoints only; null for historical rows
+  illusion_xframe?: number | null;
+  conditioning_pct?: number | null;
 }
 
 export interface TierProjection {

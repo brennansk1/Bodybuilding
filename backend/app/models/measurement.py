@@ -44,6 +44,10 @@ class TapeMeasurement(Base):
     right_thigh: Mapped[float | None] = mapped_column(Float, nullable=True)
     left_calf: Mapped[float | None] = mapped_column(Float, nullable=True)
     right_calf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Glutes — single measurement at widest point (v2 Sprint — first-class
+    # visibility site for Bikini/Wellness/Womens Physique + secondary weight
+    # for Open/Classic). Source: DIVISION_VISIBILITY table.
+    glutes: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Advanced / isolation sites (cm)
     chest_relaxed: Mapped[float | None] = mapped_column(Float, nullable=True)
     chest_lat_spread: Mapped[float | None] = mapped_column(Float, nullable=True)
