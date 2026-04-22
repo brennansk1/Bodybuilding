@@ -242,21 +242,22 @@ class TestArnoldSplit:
         assert "arnold_split" in _SPLIT_TEMPLATES
         assert len(_SPLIT_TEMPLATES["arnold_split"]) == 3
 
-    def test_classic_bias_for_6_days(self):
-        from app.engines.engine2.periodization import auto_select_split
+    def test_classic_design_split_returns_custom_template(self):
+        """auto_select_split was removed (it only picked from a template list);
+        the real strategic designer is design_split. For Classic at 6 days
+        with no gaps it should still return a usable custom template with one
+        day per major body region."""
+        from app.engines.engine2.split_designer import design_split
 
-        # With uniformly average HQI, Classic at 6 days should bias toward arnold/bro.
-        hqi = {m: 75 for m in [
-            "chest", "back", "shoulders", "bicep", "tricep",
-            "thigh", "calf", "glutes", "forearm", "neck",
-        ]}
-        pick = auto_select_split(
-            hqi_scores=hqi,
-            days_per_week=6,
+        result = design_split(
+            hqi_gaps={},
             division="classic_physique",
-            training_status="intermediate",
+            days_per_week=6,
         )
-        assert pick in ("arnold_split", "bro_split")
+        assert result["split_name"] == "custom"
+        assert isinstance(result["template"], list)
+        assert len(result["template"]) == 6
+        assert "reasoning" in result
 
 
 # ─── Volume landmarks: enhancement modifier ──────────────────────────────────

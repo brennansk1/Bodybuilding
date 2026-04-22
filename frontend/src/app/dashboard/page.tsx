@@ -213,41 +213,71 @@ const HEATMAP_FLOOR_LABELS: Record<number, string> = {
 };
 
 // Single source of truth for dashboard card metadata. Drives edit mode
-// (labels, default order) and the Settings visibility list.
-const CARD_REGISTRY: Array<{ key: string; label: string }> = [
-  { key: "workout_tomorrow", label: "Tomorrow's Workout" },
-  { key: "macro_adherence", label: "Macro Adherence" },
-  { key: "mesocycle_progress", label: "Mesocycle Progress" },
-  { key: "tomorrow_split", label: "Tomorrow's Split" },
+// (labels, default order) and the Settings visibility list. Each entry may
+// declare a `visibleWhen` predicate — the dashboard will *not* render the
+// widget (and the edit-mode toggle will flip to a "Log X to unlock" hint) if
+// the predicate returns false. This keeps PPM-only widgets out of a comp-date
+// user's view, and hides "Natural Ceiling" until wrist + ankle have been
+// measured, etc.
+interface DashboardContext {
+  ppm_enabled: boolean;
+  competition_date: string | null;
+  target_tier: number | null;
+  current_cycle_start_date: string | null;
+  division: string;
+  wrist_circumference_cm: number | null;
+  ankle_circumference_cm: number | null;
+  has_hqi: boolean;
+  has_pds_history: boolean;           // >=2 PDS entries
+  has_program: boolean;
+  has_rx: boolean;                    // active nutrition prescription
+  has_strength_logs: boolean;
+  has_tape: { chest?: boolean; waist?: boolean; neck?: boolean; bicep?: boolean; calf?: boolean };
+}
+
+type VisiblePredicate = (ctx: DashboardContext) => boolean;
+
+interface CardMeta {
+  key: string;
+  label: string;
+  visibleWhen?: VisiblePredicate;
+  unlockHint?: string;
+}
+
+const CARD_REGISTRY: CardMeta[] = [
+  { key: "workout_tomorrow", label: "Tomorrow's Workout", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program" },
+  { key: "macro_adherence", label: "Macro Adherence", visibleWhen: (c) => c.has_rx, unlockHint: "Start a check-in" },
+  { key: "mesocycle_progress", label: "Mesocycle Progress", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program" },
+  { key: "tomorrow_split", label: "Tomorrow's Split", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program" },
   { key: "daily_quote", label: "Daily Fire" },
   { key: "goal_photo", label: "Your Goal" },
   { key: "sleep_quality_week", label: "Sleep Quality Week" },
-  { key: "spider", label: "Proportion Spider" },
-  { key: "muscle_gaps", label: "Muscle Gaps" },
-  { key: "pds_trajectory", label: "PDS Trajectory" },
-  { key: "heatmap", label: "Hypertrophy Heatmap" },
-  { key: "symmetry", label: "Bilateral Symmetry" },
+  { key: "spider", label: "Proportion Spider", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
+  { key: "muscle_gaps", label: "Muscle Gaps", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
+  { key: "pds_trajectory", label: "PDS Trajectory", visibleWhen: (c) => c.has_pds_history, unlockHint: "Log a second check-in" },
+  { key: "heatmap", label: "Hypertrophy Heatmap", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
+  { key: "symmetry", label: "Bilateral Symmetry", visibleWhen: (c) => !!c.has_tape.bicep, unlockHint: "Log bilateral tape" },
   { key: "phase_rec", label: "Phase Recommendation" },
-  { key: "comp_class", label: "Competition Class" },
-  { key: "growth_projection", label: "Growth Projection" },
-  { key: "detail_metrics", label: "Detail Metrics" },
+  { key: "comp_class", label: "Competition Class", visibleWhen: (c) => c.competition_date != null || c.ppm_enabled },
+  { key: "growth_projection", label: "Growth Projection", visibleWhen: (c) => c.has_hqi },
+  { key: "detail_metrics", label: "Detail Metrics", visibleWhen: (c) => c.has_hqi },
   { key: "ari", label: "Autonomic Fuel Gauge" },
-  { key: "adherence", label: "Adherence Grid" },
-  { key: "prep_timeline", label: "Prep Timeline" },
-  { key: "strength_progression", label: "Strength Progression" },
+  { key: "adherence", label: "Adherence Grid", visibleWhen: (c) => c.has_rx },
+  { key: "prep_timeline", label: "Competition Countdown", visibleWhen: (c) => c.competition_date != null, unlockHint: "Set a competition date" },
+  { key: "strength_progression", label: "Strength Progression", visibleWhen: (c) => c.has_strength_logs, unlockHint: "Log a working set" },
   { key: "body_weight_trend", label: "Body Weight Trend" },
-  { key: "weekly_volume", label: "Weekly Volume" },
+  { key: "weekly_volume", label: "Weekly Volume", visibleWhen: (c) => c.has_program },
   { key: "recovery_trend", label: "Recovery Trend" },
-  { key: "energy_availability", label: "Energy Availability" },
+  { key: "energy_availability", label: "Energy Availability", visibleWhen: (c) => c.has_rx },
   { key: "training_time", label: "Weekly Training Time" },
-  // PPM (Perpetual Progression Mode) widgets — active when profile.ppm_enabled.
-  { key: "tier_readiness", label: "Tier Readiness" },
-  { key: "cycle_progress", label: "Improvement Cycle" },
-  { key: "parity_check", label: "Arm-Calf-Neck Parity" },
-  { key: "chest_waist", label: "Chest : Waist Ratio" },
-  { key: "carb_cycle", label: "Carb Cycle" },
-  { key: "conditioning_style", label: "Conditioning Style" },
-  { key: "natural_ceiling", label: "Natural Ceiling" },
+  // PPM (Perpetual Progression Mode) widgets — only render when PPM is active.
+  { key: "tier_readiness",     label: "Tier Readiness",        visibleWhen: (c) => c.ppm_enabled && c.target_tier != null, unlockHint: "Enable PPM" },
+  { key: "cycle_progress",     label: "Improvement Cycle",     visibleWhen: (c) => c.ppm_enabled && c.current_cycle_start_date != null, unlockHint: "Start a cycle" },
+  { key: "parity_check",       label: "Arm-Calf-Neck Parity",  visibleWhen: (c) => c.ppm_enabled && !!(c.has_tape.neck && c.has_tape.bicep && c.has_tape.calf), unlockHint: "Log neck + arm + calf" },
+  { key: "chest_waist",        label: "Chest : Waist Ratio",   visibleWhen: (c) => !!(c.has_tape.chest && c.has_tape.waist), unlockHint: "Log chest + waist" },
+  { key: "carb_cycle",         label: "Carb Cycle",            visibleWhen: (c) => c.has_rx, unlockHint: "Generate macros" },
+  { key: "conditioning_style", label: "Conditioning Style",    visibleWhen: (c) => c.division === "classic_physique", unlockHint: "Classic Physique only" },
+  { key: "natural_ceiling",    label: "Natural Ceiling",       visibleWhen: (c) => c.ppm_enabled && !!(c.wrist_circumference_cm && c.ankle_circumference_cm), unlockHint: "Log wrist + ankle" },
 ];
 const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
 
@@ -300,7 +330,7 @@ export default function DashboardPage() {
   const [adherence, setAdherence] = useState<AdherenceEntry[]>([]);
   // dashboard_viz toggle map: visKey -> show/hide. Undefined = show.
   const [vizVisibility, setVizVisibility] = useState<Record<string, boolean>>({});
-  const isVizOn = (key: string) => vizVisibility[key] !== false;
+  // isVizOn / dashCtx are defined further down, after all state declarations.
 
   // Heatmap color-scale floor — user-selectable via slider on the heatmap card.
   const [heatmapFloor, setHeatmapFloor] = useState<number>(75);
@@ -450,6 +480,39 @@ export default function DashboardPage() {
   // Today's session preview
   const [todaySession, setTodaySession] = useState<{ session_type: string; sets: { exercise_name: string }[] } | null>(null);
   const [todayMacros, setTodayMacros] = useState<{ target_calories: number; protein_g: number; carbs_g: number; fat_g: number; phase: string } | null>(null);
+
+  // ── Widget visibility context ─────────────────────────────────────────
+  // Each CARD_REGISTRY entry may declare a `visibleWhen(ctx)` predicate; the
+  // dashboard only renders a widget when BOTH the user hasn't toggled it off
+  // AND the predicate returns true. Keeps the PPM-only widgets out of a
+  // competition-date user's view (and vice versa), and hides data-dependent
+  // widgets until the data actually exists.
+  const dashCtx: DashboardContext = {
+    ppm_enabled: Boolean(ppmStatus?.ppm_enabled),
+    competition_date: ppmStatus?.competition_date ?? null,
+    target_tier: ppmStatus?.target_tier ?? null,
+    current_cycle_start_date: ppmStatus?.current_cycle_start_date ?? null,
+    division: "classic_physique",     // TODO: source from profile once the dashboard loads it
+    wrist_circumference_cm: null,
+    ankle_circumference_cm: null,
+    has_hqi: Boolean(diagnostic),
+    has_pds_history: Boolean(pds && pds.history && pds.history.length >= 2),
+    has_program: true,                // the program endpoint is always hit
+    has_rx: Boolean(todayMacros),
+    has_strength_logs: false,         // future: wire strength-log fetch
+    has_tape: {
+      chest: Boolean(ppmTape?.chest),
+      waist: Boolean(ppmTape?.waist),
+      neck:  Boolean(ppmTape?.neck),
+      bicep: Boolean(ppmTape?.bicep),
+      calf:  Boolean(ppmTape?.calf),
+    },
+  };
+  const isWidgetAllowed = (key: string): boolean => {
+    const meta = CARD_REGISTRY.find((c) => c.key === key);
+    return meta?.visibleWhen ? meta.visibleWhen(dashCtx) : true;
+  };
+  const isVizOn = (key: string) => vizVisibility[key] !== false && isWidgetAllowed(key);
 
   // Tomorrow's session for the Tomorrow's Split + Tomorrow's Workout widgets
   interface TomorrowSession {
@@ -862,7 +925,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
           {/* Today's Training */}
           <a href="/training" className="card card-hover flex items-center gap-3 py-3">
-            <div className="w-10 h-10 rounded-xl bg-jungle-accent/15 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-jungle-accent/25 flex items-center justify-center shrink-0">
               <svg className="w-5 h-5 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
@@ -889,7 +952,7 @@ export default function DashboardPage() {
 
           {/* Today's Nutrition */}
           <a href="/nutrition" className="card card-hover flex items-center gap-3 py-3">
-            <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-viltrum-laurel-bg flex items-center justify-center shrink-0">
               <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
               </svg>

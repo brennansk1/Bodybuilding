@@ -99,12 +99,35 @@ export default function TimelinePage() {
 
   const filtered = filter === "all" ? entries : entries.filter(e => e.type === filter);
 
-  // Group entries by date
+  // Group entries by date — and collapse duplicates within the same date+type.
+  // Multiple weekly-checkin rows on the same day, or two PDS scores from the
+  // same diagnostic run, were rendering as visible duplicates. Keep the most
+  // useful representative per (date, type): highest PDS, latest weight, first
+  // weekly, latest daily.
   const grouped: Record<string, TimelineEntry[]> = {};
   for (const entry of filtered) {
     if (!grouped[entry.date]) grouped[entry.date] = [];
     grouped[entry.date].push(entry);
   }
+  const dedupe = (rows: TimelineEntry[]): TimelineEntry[] => {
+    const byKey = new Map<string, TimelineEntry>();
+    for (const r of rows) {
+      const key = `${r.date}|${r.type}`;
+      const prev = byKey.get(key);
+      if (!prev) { byKey.set(key, r); continue; }
+      if (r.type === "pds") {
+        if ((r.pds_score ?? 0) > (prev.pds_score ?? 0)) byKey.set(key, r);
+      } else if (r.type === "weight") {
+        if ((r.weight_kg ?? 0) !== (prev.weight_kg ?? 0)) byKey.set(key, r);
+      } else {
+        // weekly / daily checkin — keep the one with more data populated.
+        const score = (x: TimelineEntry) => Object.values(x).filter(v => v != null && v !== "").length;
+        if (score(r) > score(prev)) byKey.set(key, r);
+      }
+    }
+    return Array.from(byKey.values());
+  };
+  for (const d of Object.keys(grouped)) grouped[d] = dedupe(grouped[d]);
   const dates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
   const weeklyWithPhotos = entries.filter(

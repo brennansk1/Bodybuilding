@@ -93,26 +93,49 @@ def evaluate_readiness(
     results: dict[str, dict] = {}
     met_count = 0
 
-    def _record(name: str, current: float, target: float, met: bool, pct_progress: float):
+    def _record(name: str, current: float, target: float, met: bool, pct_progress: float, **extra):
         nonlocal met_count
-        results[name] = {
+        entry = {
             "current": round(float(current), 3),
             "target": round(float(target), 3),
             "met": bool(met),
             "pct_progress": round(max(0.0, min(1.0, float(pct_progress))), 3),
         }
+        entry.update(extra)
+        results[name] = entry
         if met:
             met_count += 1
 
-    # ── Weight % of cap ──
+    # ── Weight % of cap — STAGE-projected, not raw ──
+    # The readiness question is "if you cut to stage conditioning today, would
+    # your weight land at the tier target?". That's driven by your current
+    # lean mass, not your current total weight. Projecting LBM up to 5% BF
+    # avoids the false-positive where someone heavy-and-soft reports 0.89 of
+    # cap but is actually nowhere near contest weight.
     body_weight_kg = float(athlete_metrics.get("body_weight_kg", 0.0))
-    weight_pct = body_weight_kg / weight_cap_kg if weight_cap_kg > 0 else 0.0
+    _raw_bf = athlete_metrics.get("bf_pct")
+    bf_pct: float | None = float(_raw_bf) if _raw_bf not in (None, 0, 0.0) else None
+    stage_bf_pct = 5.0  # Classic / Open target; tight enough for all tiers.
+    if bf_pct is not None and bf_pct > 0:
+        lbm_kg = body_weight_kg * (1.0 - bf_pct / 100.0)
+    else:
+        # No BF on file — fall back to a 15% offseason estimate so we don't
+        # silently use total weight (which is what produced the buggy 0.89
+        # reading for a user at 22.7% BF).
+        lbm_kg = body_weight_kg * (1.0 - 15.0 / 100.0)
+    projected_stage_kg = lbm_kg / (1.0 - stage_bf_pct / 100.0) if lbm_kg > 0 else 0.0
+    stage_weight_pct = projected_stage_kg / weight_cap_kg if weight_cap_kg > 0 else 0.0
+
     _record(
         "weight_cap_pct",
-        current=weight_pct,
+        current=stage_weight_pct,
         target=thresholds.weight_cap_pct_min,
-        met=weight_pct >= thresholds.weight_cap_pct_min,
-        pct_progress=(weight_pct / thresholds.weight_cap_pct_min) if thresholds.weight_cap_pct_min > 0 else 1.0,
+        met=stage_weight_pct >= thresholds.weight_cap_pct_min,
+        pct_progress=(stage_weight_pct / thresholds.weight_cap_pct_min) if thresholds.weight_cap_pct_min > 0 else 1.0,
+        current_weight_kg=round(body_weight_kg, 1),
+        projected_stage_kg=round(projected_stage_kg, 1),
+        weight_cap_kg=round(weight_cap_kg, 1),
+        bf_pct=round(bf_pct, 1) if bf_pct is not None else None,
     )
 
     # ── FFMI ──
@@ -155,14 +178,22 @@ def evaluate_readiness(
         pct_progress=_parity_progress(parity, thresholds.arm_calf_neck_parity_max),
     )
 
-    # ── HQI ──
+    # ── HQI — with a staleness guard so a 6-month-old diagnostic doesn't
+    #          silently satisfy the threshold. ≤90 days old counts; older
+    #          reports as 0 + a `stale` flag for the UI to surface. ──
     hqi = float(athlete_metrics.get("hqi_score", 0.0))
+    hqi_age_days = athlete_metrics.get("hqi_age_days")
+    hqi_stale = hqi_age_days is not None and hqi_age_days > 90
+    hqi_effective = 0.0 if hqi_stale else hqi
     _record(
         "hqi",
-        current=hqi,
+        current=hqi_effective,
         target=thresholds.hqi_min,
-        met=hqi >= thresholds.hqi_min,
-        pct_progress=(hqi / thresholds.hqi_min) if thresholds.hqi_min > 0 else 1.0,
+        met=hqi_effective >= thresholds.hqi_min,
+        pct_progress=(hqi_effective / thresholds.hqi_min) if thresholds.hqi_min > 0 else 1.0,
+        raw=hqi,
+        stale=bool(hqi_stale),
+        age_days=hqi_age_days,
     )
 
     # ── Training years (soft gate) ──

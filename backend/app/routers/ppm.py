@@ -53,11 +53,7 @@ from app.engines.engine1.prep_timeline import (
     get_current_phase,
     ppm_phase_for_week,
 )
-from app.engines.engine2.periodization import (
-    compute_cycle_mesocycle,
-    auto_select_split,
-    _SPLIT_TEMPLATES,
-)
+from app.engines.engine2.periodization import compute_cycle_mesocycle
 from app.engines.engine2.volume_landmarks import get_all_landmarks
 from app.engines.engine3.macros import (
     compute_tdee,
@@ -172,13 +168,24 @@ async def _compute_athlete_metrics(
     parity = compute_arm_calf_neck_parity(tape)
     parity_diff_in = parity.get("max_diff_inches") or 99.0
 
-    # HQI — fetch latest diagnostic if present
+    # HQI — fetch latest diagnostic if present, with an age for the staleness
+    # guard in readiness.evaluate_readiness.
+    from datetime import datetime, timezone
     from app.models.diagnostic import HQILog
     hqi_q = await db.execute(
         select(HQILog).where(HQILog.user_id == user.id).order_by(desc(HQILog.created_at)).limit(1)
     )
     hqi_row = hqi_q.scalar_one_or_none()
     hqi_score = float(hqi_row.overall_hqi) if hqi_row and hqi_row.overall_hqi is not None else 0.0
+    hqi_age_days: int | None = None
+    if hqi_row is not None:
+        created = getattr(hqi_row, "created_at", None) or getattr(hqi_row, "recorded_date", None)
+        if created is not None:
+            ref = datetime.now(timezone.utc) if hasattr(created, "tzinfo") else datetime.utcnow()
+            try:
+                hqi_age_days = int((ref - created).days) if hasattr(created, "year") else None
+            except (TypeError, ValueError):
+                hqi_age_days = None
 
     return {
         "body_weight_kg": body_weight_kg,
@@ -190,6 +197,7 @@ async def _compute_athlete_metrics(
         "arm_calf_neck_max_diff_inches": parity_diff_in,
         "arm_calf_neck_parity": parity,
         "hqi_score": hqi_score,
+        "hqi_age_days": hqi_age_days,
         "training_years": float(profile.training_experience_years or 0),
     }
 
@@ -622,17 +630,22 @@ def _build_cycle_plan(
         }
     """
     # ── Split selection ──
-    # Use HQI score breakdowns if available (fallback: all 70s). The existing
-    # auto_select_split already takes HQI dict, days_per_week, division.
+    # design_split() is the real strategic designer — it builds a custom
+    # template from the athlete's gap profile, division archetype, recovery
+    # windows, and equipment constraints. auto_select_split() was a shallow
+    # template-picker and has been removed.
+    from app.engines.engine2.split_designer import design_split
+
     days_per_week = prof.days_per_week or 5
-    hqi_flat = {}   # placeholder — real HQI sourced from engine1 cache.
-    split = auto_select_split(
-        hqi_scores=hqi_flat,
-        days_per_week=days_per_week,
+    hqi_gaps: dict[str, float] = {}   # empty gaps → division archetype fallback
+    design = design_split(
+        hqi_gaps=hqi_gaps,
         division=prof.division,
-        training_status=prof.training_status,
+        days_per_week=days_per_week,
     )
-    day_rotation = _SPLIT_TEMPLATES.get(split, _SPLIT_TEMPLATES["ppl"])
+    split = "custom"
+    day_rotation = design.get("template", [])
+    split_reasoning = design.get("reasoning", "")
 
     # ── Volume landmarks scaled to athlete (training_status aware) ──
     landmarks = get_all_landmarks(
@@ -691,6 +704,7 @@ def _build_cycle_plan(
 
     return {
         "split": split,
+        "split_reasoning": split_reasoning,
         "focus_muscles": focus_muscles,
         "total_weeks": total_weeks,
         "weeks": weeks_out,

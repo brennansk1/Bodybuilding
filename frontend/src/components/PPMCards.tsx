@@ -75,7 +75,7 @@ export function CycleProgressCard({
           focusMuscles.map((m) => (
             <span
               key={m}
-              className="text-[10px] px-2 py-0.5 rounded bg-jungle-accent/15 text-jungle-accent border border-jungle-accent/40"
+              className="text-[10px] px-2 py-0.5 rounded bg-jungle-accent/25 text-jungle-accent border border-jungle-accent/40"
             >
               {m}
             </span>

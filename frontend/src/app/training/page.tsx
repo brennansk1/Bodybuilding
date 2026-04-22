@@ -987,67 +987,76 @@ export default function TrainingPage() {
       <main className="px-3 py-4 pb-24">
         <div className="max-w-lg mx-auto space-y-4">
 
-          {/* Header */}
-          <div className="flex items-start justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <PageTitle text="Training" className="mb-0" />
-                <div className="flex items-center gap-1 ml-2">
-                  <button
-                    onClick={() => setViewOffset((o) => o - 1)}
-                    className="w-7 h-7 rounded-lg bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent hover:border-jungle-accent flex items-center justify-center text-sm transition-colors"
-                    aria-label="Previous day"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    onClick={() => setViewOffset(0)}
-                    className={`px-2 h-7 rounded-lg text-[11px] font-medium transition-colors ${
-                      isToday
-                        ? "bg-jungle-accent/20 text-jungle-accent border border-jungle-accent/30"
-                        : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent"
-                    }`}
-                  >
-                    {viewLabel}
-                  </button>
-                  <button
-                    onClick={() => setViewOffset((o) => o + 1)}
-                    className="w-7 h-7 rounded-lg bg-jungle-deeper border border-jungle-border text-jungle-muted hover:text-jungle-accent hover:border-jungle-accent flex items-center justify-center text-sm transition-colors"
-                    aria-label="Next day"
-                  >
-                    ›
-                  </button>
-                </div>
+          {/* Header — title on its own row, toolbar (day nav + unit toggles)
+              on a second row so the Contrail title has breathing room. */}
+          <div className="space-y-3 mb-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <PageTitle
+                  text="Training"
+                  subtitle={
+                    program ? (
+                      <span className="truncate">
+                        {program.name} — Wk {program.current_week}/{program.mesocycle_weeks} · {program.split_type} · {program.days_per_week}d/wk
+                      </span>
+                    ) : (
+                      <span>No active program</span>
+                    )
+                  }
+                  className="mb-0"
+                />
               </div>
-              {program ? (
-                <p className="text-jungle-muted text-xs mt-0.5 truncate">
-                  {program.name} — Wk {program.current_week}/{program.mesocycle_weeks} · {program.split_type} · {program.days_per_week}d/wk
-                </p>
-              ) : (
-                <p className="text-jungle-muted text-xs mt-0.5">No active program</p>
-              )}
             </div>
-            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
-              <button
-                onClick={toggleUnit}
-                className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-colors ${
-                  useLbs
-                    ? "bg-jungle-accent text-white"
-                    : "bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent"
-                }`}
-              >
-                {useLbs ? "LBS" : "KG"}
-              </button>
-              <button
-                onClick={toggleGymMode}
-                className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold tracking-wide transition-colors ${
-                  gymMode
-                    ? "bg-jungle-accent text-white"
-                    : "bg-jungle-deeper border border-jungle-border text-jungle-dim hover:border-jungle-accent"
-                }`}
-              >
-                {gymMode ? "GYM ✓" : "GYM"}
-              </button>
+            {/* Toolbar row — day nav on the left, unit + gym-mode toggles on the right */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setViewOffset((o) => o - 1)}
+                  className="w-7 h-7 rounded-lg bg-white border border-viltrum-ash text-viltrum-iron hover:text-viltrum-obsidian hover:border-viltrum-obsidian flex items-center justify-center text-sm transition-colors"
+                  aria-label="Previous day"
+                >
+                  ‹
+                </button>
+                <button
+                  onClick={() => setViewOffset(0)}
+                  className={`px-2 h-7 rounded-lg text-[11px] font-medium transition-colors ${
+                    isToday
+                      ? "bg-viltrum-blush text-viltrum-centurion border border-viltrum-legion/30"
+                      : "bg-white border border-viltrum-ash text-viltrum-iron hover:text-viltrum-obsidian hover:border-viltrum-obsidian"
+                  }`}
+                >
+                  {viewLabel}
+                </button>
+                <button
+                  onClick={() => setViewOffset((o) => o + 1)}
+                  className="w-7 h-7 rounded-lg bg-white border border-viltrum-ash text-viltrum-iron hover:text-viltrum-obsidian hover:border-viltrum-obsidian flex items-center justify-center text-sm transition-colors"
+                  aria-label="Next day"
+                >
+                  ›
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  onClick={toggleUnit}
+                  className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-colors ${
+                    useLbs
+                      ? "bg-viltrum-obsidian text-white"
+                      : "bg-white border border-viltrum-ash text-viltrum-iron hover:border-viltrum-obsidian"
+                  }`}
+                >
+                  {useLbs ? "LBS" : "KG"}
+                </button>
+                <button
+                  onClick={toggleGymMode}
+                  className={`px-2 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold tracking-wide transition-colors ${
+                    gymMode
+                      ? "bg-viltrum-obsidian text-white"
+                      : "bg-white border border-viltrum-ash text-viltrum-iron hover:border-viltrum-obsidian"
+                  }`}
+                >
+                  {gymMode ? "GYM ✓" : "GYM"}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1780,7 +1789,7 @@ export default function TrainingPage() {
                               {showWarmups && (
                                 <div className="mt-1 space-y-1">
                                   {warmupSets.map((ws) => (
-                                    <div key={ws.id} className="text-[11px] text-jungle-dim bg-jungle-deeper/40 rounded-lg px-3 py-1 flex justify-between">
+                                    <div key={ws.id} className="text-[11px] text-viltrum-iron bg-viltrum-limestone border border-viltrum-ash rounded-lg px-3 py-1 flex justify-between">
                                       <span>Warm-up</span>
                                       <span>{ws.prescribed_weight_kg ? (ws.prescribed_weight_kg * m).toFixed(1) : "—"} {unit} × {ws.prescribed_reps}</span>
                                     </div>
@@ -1804,8 +1813,8 @@ export default function TrainingPage() {
                                 key={set.id}
                                 className={`rounded-lg border p-3 transition-all ${
                                   isCompleted
-                                    ? "border-green-500/20 bg-green-500/5"
-                                    : "border-jungle-border/50 bg-jungle-deeper/30"
+                                    ? "border-viltrum-laurel/30 bg-viltrum-laurel-bg"
+                                    : "border-viltrum-ash bg-viltrum-limestone"
                                 }`}
                               >
                                 {/* Set header */}

@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import PageTitle from "@/components/PageTitle";
 import CalendarMonth from "@/components/CalendarMonth";
+import PPMCycleView from "@/components/PPMCycleView";
 import { api } from "@/lib/api";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -197,6 +198,23 @@ export default function ProgramPage() {
   const [calendarOverlay, setCalendarOverlay] = useState<"none" | "macrocycle" | "mesocycle" | "microcycle" | "split">("none");
   const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
 
+  // PPM mode switches the program page over to an improvement-cycle layout.
+  interface PPMStatusLite {
+    ppm_enabled: boolean;
+    target_tier: number | null;
+    current_cycle_number: number;
+    current_cycle_start_date: string | null;
+    current_cycle_week: number;
+    cycle_focus_muscles: string[] | null;
+    current_phase: string;
+    competition_date: string | null;
+  }
+  const [ppmStatus, setPpmStatus] = useState<PPMStatusLite | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    api.get<PPMStatusLite>("/ppm/status").then(setPpmStatus).catch(() => {});
+  }, [user]);
+
   // Volume landmark data — MEV/MAV/MRV + current weekly sets (B3.5)
   interface LandmarkMuscle {
     name: string;
@@ -319,6 +337,32 @@ export default function ProgramPage() {
       return (d.getDay() + 6) % 7 === idx;
     }) ?? null;
   });
+
+  // PPM users see a dedicated improvement-cycle view — 14-week macro strip,
+  // current mesocycle focus per muscle, microcycle day chips, checkpoint
+  // history. Competition-date users see the original macro/meso/micro calendar.
+  if (ppmStatus?.ppm_enabled && !ppmStatus.competition_date) {
+    return (
+      <div className="min-h-screen">
+        <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
+        <main className="px-3 py-4 sm:px-6">
+          <div className="max-w-3xl mx-auto space-y-4">
+            <div className="flex items-center gap-3 mb-4">
+              <a href="/training" className="text-viltrum-iron hover:text-viltrum-obsidian transition-colors" aria-label="Back">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </a>
+              <div className="min-w-0 flex-1">
+                <PageTitle text="Program" subtitle="Perpetual Progression Mode" className="mb-0" />
+              </div>
+            </div>
+            <PPMCycleView status={ppmStatus} />
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
