@@ -45,13 +45,16 @@ interface CyclePlan {
   weeks: WeekPlan[];
 }
 
-const SUB_PHASE_STYLE: Record<string, { label: string; fill: string; text: string }> = {
-  ppm_assessment:      { label: "Assess",     fill: "bg-viltrum-adriatic-bg",  text: "text-viltrum-adriatic" },
-  ppm_accumulation:    { label: "Accum",      fill: "bg-viltrum-laurel-bg",    text: "text-viltrum-laurel"   },
-  ppm_intensification: { label: "Intensify",  fill: "bg-viltrum-aureus-bg",    text: "text-viltrum-aureus"   },
-  ppm_deload:          { label: "Deload",     fill: "bg-viltrum-limestone",    text: "text-viltrum-iron"     },
-  ppm_checkpoint:      { label: "Checkpoint", fill: "bg-viltrum-blush",        text: "text-viltrum-centurion"},
-  ppm_mini_cut:        { label: "Mini-cut",   fill: "bg-viltrum-aureus-bg",    text: "text-viltrum-aureus"   },
+// Two forms per sub-phase:
+//   abbr  — 2-3 char code rendered INSIDE a cycle column (narrow space)
+//   label — full word rendered in the legend at the bottom of the strip
+const SUB_PHASE_STYLE: Record<string, { abbr: string; label: string; fill: string; text: string }> = {
+  ppm_assessment:      { abbr: "ASMT", label: "Assessment",     fill: "bg-viltrum-adriatic-bg",  text: "text-viltrum-adriatic" },
+  ppm_accumulation:    { abbr: "ACC",  label: "Accumulation",   fill: "bg-viltrum-laurel-bg",    text: "text-viltrum-laurel"   },
+  ppm_intensification: { abbr: "INT",  label: "Intensification",fill: "bg-viltrum-aureus-bg",    text: "text-viltrum-aureus"   },
+  ppm_deload:          { abbr: "DLD",  label: "Deload",         fill: "bg-viltrum-limestone",    text: "text-viltrum-iron"     },
+  ppm_checkpoint:      { abbr: "CHK",  label: "Checkpoint",     fill: "bg-viltrum-blush",        text: "text-viltrum-centurion"},
+  ppm_mini_cut:        { abbr: "CUT",  label: "Mini-cut",       fill: "bg-viltrum-aureus-bg",    text: "text-viltrum-aureus"   },
 };
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -146,23 +149,30 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
               <div
                 key={w.week}
                 title={`Week ${w.week} · ${style?.label ?? w.ppm_sub_phase}`}
-                className={`relative h-14 rounded-card flex flex-col items-center justify-center ${style?.fill ?? "bg-viltrum-limestone"} ${active ? "border-b-[2.5px] border-viltrum-obsidian" : ""}`}
+                className={`relative h-14 rounded-card flex flex-col items-center justify-center overflow-hidden ${style?.fill ?? "bg-viltrum-limestone"} ${active ? "border-b-[2.5px] border-viltrum-obsidian" : ""}`}
               >
-                <span className={`font-display text-[11px] ${style?.text ?? "text-viltrum-iron"}`}>
+                {/* Week number — primary, always visible. */}
+                <span className={`font-display text-[12px] ${style?.text ?? "text-viltrum-iron"}`}>
                   {w.week}
                 </span>
-                <span className="text-[8px] uppercase tracking-[1px] text-viltrum-iron/70 mt-0.5 hidden sm:block">
-                  {style?.label ?? ""}
+                {/* Sub-phase abbreviation — 3-char code so it fits in a
+                    ~70px cell even at 16 columns. Full label appears in the
+                    legend below plus the column's title tooltip. */}
+                <span className={`text-[8px] font-semibold tracking-[1px] mt-0.5 ${style?.text ?? "text-viltrum-iron"}/80`}>
+                  {style?.abbr ?? ""}
                 </span>
               </div>
             );
           })}
         </div>
-        <div className="flex flex-wrap gap-3 mt-3 text-[10px] text-viltrum-travertine">
-          {Object.entries(SUB_PHASE_STYLE).slice(0, 5).map(([k, s]) => (
+        <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-3 text-[10px] text-viltrum-travertine">
+          {Object.entries(SUB_PHASE_STYLE).map(([k, s]) => (
             <span key={k} className="flex items-center gap-1.5">
               <span className={`inline-block w-2.5 h-2.5 rounded-sm ${s.fill}`} />
-              <span className={s.text}>{s.label}</span>
+              <span className={s.text}>
+                <span className="font-mono text-[9px] mr-1">{s.abbr}</span>
+                {s.label}
+              </span>
             </span>
           ))}
         </div>
