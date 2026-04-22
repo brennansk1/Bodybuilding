@@ -214,14 +214,18 @@ export default function PeakWeekPage() {
 
           {/* No data */}
           {!fetching && !data && (
-            <div className="card text-center py-16">
-              <p className="text-jungle-muted text-lg font-medium">No peak week protocol available.</p>
-              <p className="text-jungle-dim text-sm mt-2">
-                A protocol will appear when your competition is within 21 days.
-              </p>
-              <a href="/nutrition" className="btn-secondary inline-block mt-5">
-                Back to Nutrition
-              </a>
+            <div className="card text-center py-14 px-6 space-y-4">
+              <div className="mx-auto w-14 h-14 rounded-full bg-blush flex items-center justify-center">
+                <svg className="w-6 h-6 text-centurion" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="space-y-1.5">
+                <p className="h-display-sm">Protocol not yet unlocked</p>
+                <p className="body-serif-sm italic text-iron max-w-md mx-auto">
+                  The peak-week protocol engages automatically when your show date is within 21 days. Until then, stay the course — consistency wins podiums.
+                </p>
+              </div>
             </div>
           )}
 
@@ -249,10 +253,6 @@ export default function PeakWeekPage() {
               </div>
             </>
           )}
-
-          <a href="/nutrition" className="btn-secondary w-full text-center block">
-            Back to Nutrition
-          </a>
 
         </div>
       </main>

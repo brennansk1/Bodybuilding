@@ -762,25 +762,64 @@ export default function SettingsPage() {
             <a href="/dashboard" className="btn-secondary text-sm px-3 py-2">Dashboard</a>
           </div>
 
-          {/* Section tabs — with icons */}
-          <div className="grid grid-cols-4 gap-1 bg-jungle-deeper border border-jungle-border rounded-xl p-1">
+          {/* Section tabs */}
+          <div className="grid grid-cols-4 gap-1 bg-alabaster border border-ash rounded-card p-1">
             {([
-              { key: "profile" as const, label: "Profile", icon: "M" },
-              { key: "training" as const, label: "Training", icon: "T" },
-              { key: "nutrition" as const, label: "Nutrition", icon: "N" },
-              { key: "account" as const, label: "Account", icon: "A" },
+              {
+                key: "profile" as const,
+                label: "Profile",
+                // user silhouette
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <circle cx="12" cy="8" r="3.5" />
+                    <path d="M4.5 20c1.5-3.5 4.5-5.5 7.5-5.5s6 2 7.5 5.5" />
+                  </svg>
+                ),
+              },
+              {
+                key: "training" as const,
+                label: "Training",
+                // barbell
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="w-5 h-5">
+                    <path d="M4 9v6M20 9v6M7 7v10M17 7v10M7 12h10" />
+                  </svg>
+                ),
+              },
+              {
+                key: "nutrition" as const,
+                label: "Nutrition",
+                // apple/leaf
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M12 7c-3 0-5 2-5 5.5 0 4.5 3 8.5 5 8.5s5-4 5-8.5c0-3.5-2-5.5-5-5.5z" />
+                    <path d="M12 7c0-2 1-3.5 3-4" />
+                  </svg>
+                ),
+              },
+              {
+                key: "account" as const,
+                label: "Account",
+                // gear
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="w-5 h-5">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+                  </svg>
+                ),
+              },
             ]).map(({ key, label, icon }) => (
               <button
                 key={key}
                 onClick={() => setActiveSection(key)}
-                className={`py-2.5 rounded-lg transition-all text-center ${
+                className={`py-2.5 rounded-button transition-all text-center flex flex-col items-center gap-1 ${
                   activeSection === key
-                    ? "bg-jungle-accent text-white shadow-sm"
-                    : "text-jungle-muted hover:text-jungle-accent hover:bg-jungle-card/50"
+                    ? "bg-legion text-white shadow-card"
+                    : "text-iron hover:text-obsidian hover:bg-white"
                 }`}
               >
-                <span className={`block text-lg font-bold leading-none ${activeSection === key ? "" : "opacity-50"}`}>{icon}</span>
-                <span className="block text-[10px] mt-0.5 font-medium">{label}</span>
+                <span className={activeSection === key ? "" : "opacity-70"}>{icon}</span>
+                <span className="block text-[10px] tracking-[0.15em] uppercase font-medium">{label}</span>
               </button>
             ))}
           </div>

@@ -4,6 +4,7 @@ import { Contrail_One, Crimson_Pro, Inter } from "next/font/google";
 import "./globals.css";
 import ToastContainer from "@/components/Toast";
 import RouteProgress from "@/components/RouteProgress";
+import NavLoader from "@/components/NavLoader";
 
 // Display — the Contrail One wordmark font, single weight.
 const contrail = Contrail_One({
@@ -69,6 +70,9 @@ export default function RootLayout({
       <body className="min-h-screen antialiased flex flex-col">
         <Suspense fallback={null}>
           <RouteProgress />
+        </Suspense>
+        <Suspense fallback={null}>
+          <NavLoader />
         </Suspense>
         <div className="flex-1">{children}</div>
         {/* Global footer — motto + wordmark, unobtrusive */}

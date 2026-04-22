@@ -58,14 +58,22 @@ body::before {
   pointer-events: none;
 }
 /* Marble tint layer — translucent so the skyline peeks through the empty
-   areas of the page. Cards still render on top of this and stay readable. */
+   areas of the page. Cards still render on top of this and stay readable.
+   Overlay opacity deliberately high — the skyline is atmosphere, not content.
+   A soft top-down gradient keeps a hint of sky at the crest of each page
+   without overpowering card content further down. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-color: rgba(245, 244, 241, 0.62);
+  background-image: linear-gradient(
+    180deg,
+    rgba(245, 244, 241, 0.72) 0%,
+    rgba(245, 244, 241, 0.88) 40%,
+    rgba(245, 244, 241, 0.94) 100%
+  );
 }
 html { background-color: transparent; }
 @media (max-width: 767px) {
@@ -73,7 +81,12 @@ html { background-color: transparent; }
     background-attachment: scroll;
   }
   body::after {
-    background-color: rgba(245, 244, 241, 0.72);
+    background-image: linear-gradient(
+      180deg,
+      rgba(245, 244, 241, 0.82) 0%,
+      rgba(245, 244, 241, 0.94) 40%,
+      rgba(245, 244, 241, 0.97) 100%
+    );
   }
 }
 

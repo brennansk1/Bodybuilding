@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import PageTitle from "@/components/PageTitle";
+import ViltrumLoader from "@/components/ViltrumLoader";
 import { api } from "@/lib/api";
 
 interface Exercise {
@@ -31,7 +32,7 @@ const MUSCLE_GROUPS = [
   "calves",
   "abs",
   "traps",
-];
+] as const;
 
 const EQUIPMENT_LABELS: Record<string, string> = {
   barbell: "Barbell",
@@ -49,14 +50,16 @@ function muscleLabel(muscle: string): string {
   return muscle.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function equipmentColor(equipment: string): string {
+/** Equipment badge — Viltrum semantic families, muted so the exercise name wins */
+function equipmentBadge(equipment: string): string {
   switch (equipment) {
-    case "barbell": return "text-yellow-400 bg-yellow-500/10 border-yellow-500/30";
-    case "dumbbell": return "text-blue-400 bg-blue-500/10 border-blue-500/30";
-    case "cable": return "text-purple-400 bg-purple-500/10 border-purple-500/30";
-    case "machine": return "text-orange-400 bg-orange-500/10 border-orange-500/30";
-    case "bodyweight": return "text-green-400 bg-green-500/10 border-green-500/30";
-    default: return "text-jungle-dim bg-jungle-deeper border-jungle-border";
+    case "barbell":    return "bg-limestone text-obsidian border-pumice";
+    case "dumbbell":   return "bg-viltrum-adriatic-bg text-adriatic border-adriatic/30";
+    case "cable":      return "bg-viltrum-aureus-bg text-aureus border-aureus/30";
+    case "machine":    return "bg-alabaster text-iron border-ash";
+    case "bodyweight": return "bg-viltrum-laurel-bg text-laurel border-laurel/30";
+    case "kettlebell": return "bg-blush text-centurion border-terracotta";
+    default:           return "bg-alabaster text-travertine border-ash";
   }
 }
 
@@ -65,7 +68,7 @@ export default function ExercisesPage() {
   const { user, loading, logout } = useAuth();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [searchQ, setSearchQ] = useState("");
-  const [selectedMuscle, setSelectedMuscle] = useState("all");
+  const [selectedMuscle, setSelectedMuscle] = useState<string>("all");
   const [compoundOnly, setCompoundOnly] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
@@ -101,111 +104,211 @@ export default function ExercisesPage() {
 
   if (loading || !user) return null;
 
-  const filtered = compoundOnly ? exercises.filter((e) => e.compound) : exercises;
+  const filtered = useMemo(
+    () => (compoundOnly ? exercises.filter((e) => e.compound) : exercises),
+    [exercises, compoundOnly]
+  );
 
-  // Group by muscle for display when no search
-  const grouped: Record<string, Exercise[]> = {};
-  filtered.forEach((ex) => {
-    const key = ex.primary_muscle;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(ex);
-  });
+  // Group by muscle for display (for the "browse" view). In search mode we
+  // render a flat grid — search ranking is more valuable than alphabetical.
+  const grouped = useMemo(() => {
+    const g: Record<string, Exercise[]> = {};
+    filtered.forEach((ex) => {
+      const key = ex.primary_muscle;
+      if (!g[key]) g[key] = [];
+      g[key].push(ex);
+    });
+    return g;
+  }, [filtered]);
+
+  // Left-rail muscle counts — derived from everything fetched so the rail
+  // shows the full library, not just the post-filter slice.
+  const muscleCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: exercises.length };
+    exercises.forEach((e) => {
+      counts[e.primary_muscle] = (counts[e.primary_muscle] ?? 0) + 1;
+    });
+    return counts;
+  }, [exercises]);
+
+  const searchMode = searchQ.length >= 2;
+  const visibleGroups = selectedMuscle === "all"
+    ? Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
+    : Object.entries(grouped).filter(([m]) => m === selectedMuscle);
 
   return (
     <div className="min-h-screen">
       <NavBar username={user.username} onLogout={() => { logout(); router.push("/"); }} />
 
       <main className="container-app py-6">
-        <div className="max-w-3xl mx-auto">
-          {/* Header */}
-          <PageTitle
-            text="Exercise Library"
-            subtitle={`${exercises.length} exercises · filtered by muscle group`}
-            actions={<a href="/training" className="btn-secondary text-sm px-3 py-2">← Training</a>}
-          />
+        <PageTitle
+          text="Exercise Library"
+          subtitle={`${exercises.length} movements · filter by muscle, equipment, or pattern`}
+          actions={<a href="/training" className="btn-secondary text-sm px-3 py-2">← Training</a>}
+        />
 
-          {/* Search + filters */}
-          <div className="card mb-4 space-y-3">
+        {/* Search + compound toggle */}
+        <div className="card mb-5 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="relative flex-1">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-travertine pointer-events-none"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.75}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4-4" />
+            </svg>
             <input
               type="text"
-              placeholder="Search exercises (e.g. bench press, squat...)"
+              placeholder="Search — e.g. bench press, squat, row…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
-              className="input-field w-full"
+              className="input-field w-full pl-9"
             />
-
-            {/* Muscle filter pills */}
-            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-              {MUSCLE_GROUPS.map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setSelectedMuscle(m)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
-                    selectedMuscle === m
-                      ? "bg-jungle-accent text-white"
-                      : "bg-jungle-deeper border border-jungle-border text-jungle-muted hover:border-jungle-accent"
-                  }`}
-                >
-                  {m === "all" ? "All" : muscleLabel(m)}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2">
+            {searchQ && (
               <button
-                onClick={() => setCompoundOnly(!compoundOnly)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
-                  compoundOnly
-                    ? "border-jungle-accent bg-jungle-accent/10 text-jungle-accent"
-                    : "border-jungle-border text-jungle-muted hover:border-jungle-accent"
-                }`}
+                onClick={() => setSearchQ("")}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-travertine hover:text-obsidian text-[10px] tracking-[0.15em] uppercase"
               >
-                <span
-                  className={`w-3 h-3 rounded border ${
-                    compoundOnly ? "bg-jungle-accent border-jungle-accent" : "border-jungle-muted"
-                  }`}
-                />
-                Compound only
+                Clear
               </button>
-              <span className="text-jungle-dim text-xs">{filtered.length} results</span>
-            </div>
+            )}
           </div>
 
-          {/* Exercise list */}
-          {fetching ? (
-            <div className="flex items-center justify-center py-12 text-jungle-dim">
-              <span className="w-2 h-2 rounded-full bg-jungle-accent animate-pulse mr-2" />
-              Loading...
-            </div>
-          ) : searchQ.length >= 2 ? (
-            // Flat list for search results
-            <div className="space-y-2">
-              {filtered.map((ex) => (
-                <ExerciseCard
-                  key={ex.id}
-                  exercise={ex}
-                  onClick={() => setSelectedExercise(selectedExercise?.id === ex.id ? null : ex)}
-                  expanded={selectedExercise?.id === ex.id}
-                />
-              ))}
-              {filtered.length === 0 && (
-                <div className="card text-center py-8 text-jungle-dim">
-                  No exercises found for &quot;{searchQ}&quot;
-                </div>
+          <button
+            onClick={() => setCompoundOnly(!compoundOnly)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-button text-xs tracking-[0.1em] uppercase border transition-colors shrink-0 ${
+              compoundOnly
+                ? "border-legion bg-blush text-centurion"
+                : "border-ash text-iron hover:border-pumice"
+            }`}
+          >
+            <span
+              className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                compoundOnly ? "bg-legion border-legion" : "border-pewter"
+              }`}
+              aria-hidden
+            >
+              {compoundOnly && (
+                <svg viewBox="0 0 16 16" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3}>
+                  <path d="M3 8l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               )}
+            </span>
+            Compound only
+          </button>
+
+          <span className="text-[10px] tracking-[0.15em] uppercase text-travertine shrink-0">
+            {filtered.length} results
+          </span>
+        </div>
+
+        {/* Two-column layout: sticky muscle rail + results grid */}
+        <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-5">
+          {/* Muscle rail */}
+          <aside className="md:sticky md:top-24 self-start">
+            {/* Mobile: horizontal scrolling chips */}
+            <div className="md:hidden -mx-4 px-4 overflow-x-auto scrollbar-hide">
+              <div className="flex gap-1.5 pb-2 w-max">
+                {MUSCLE_GROUPS.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setSelectedMuscle(m)}
+                    className={`px-3 py-1.5 rounded-button text-[11px] tracking-[0.08em] uppercase whitespace-nowrap transition-colors shrink-0 border ${
+                      selectedMuscle === m
+                        ? "bg-obsidian border-obsidian text-white"
+                        : "bg-white border-ash text-iron hover:border-pumice"
+                    }`}
+                  >
+                    {m === "all" ? "All" : muscleLabel(m)}
+                    {muscleCounts[m] != null && (
+                      <span className="ml-1.5 opacity-60">{muscleCounts[m]}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
-          ) : (
-            // Grouped by muscle
-            <div className="space-y-4">
-              {Object.entries(grouped)
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([muscle, exs]) => (
+
+            {/* Desktop: vertical list */}
+            <nav className="hidden md:block card p-0 overflow-hidden">
+              <p className="h-section px-4 pt-4 pb-2 text-travertine">Muscle Group</p>
+              <ul className="divide-y divide-ash">
+                {MUSCLE_GROUPS.map((m) => {
+                  const active = selectedMuscle === m;
+                  return (
+                    <li key={m}>
+                      <button
+                        onClick={() => setSelectedMuscle(m)}
+                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between transition-colors ${
+                          active
+                            ? "bg-blush text-centurion border-l-2 border-legion pl-[14px]"
+                            : "text-iron hover:bg-alabaster"
+                        }`}
+                      >
+                        <span className={active ? "font-medium" : ""}>
+                          {m === "all" ? "All movements" : muscleLabel(m)}
+                        </span>
+                        <span className={`text-[10px] tabular-nums ${active ? "text-centurion" : "text-travertine"}`}>
+                          {muscleCounts[m] ?? 0}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          </aside>
+
+          {/* Results */}
+          <section>
+            {fetching ? (
+              <div className="card">
+                <ViltrumLoader variant="inline" />
+              </div>
+            ) : searchMode ? (
+              // Search mode — flat grid, ranked by API
+              filtered.length === 0 ? (
+                <div className="card text-center py-16 space-y-2">
+                  <p className="h-display-sm">No matches</p>
+                  <p className="body-serif-sm italic text-iron max-w-md mx-auto">
+                    Nothing matched &ldquo;{searchQ}&rdquo;. Try a shorter keyword, or clear the search and browse by muscle group.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {filtered.map((ex) => (
+                    <ExerciseCard
+                      key={ex.id}
+                      exercise={ex}
+                      onClick={() => setSelectedExercise(selectedExercise?.id === ex.id ? null : ex)}
+                      expanded={selectedExercise?.id === ex.id}
+                    />
+                  ))}
+                </div>
+              )
+            ) : visibleGroups.length === 0 ? (
+              <div className="card text-center py-16">
+                <p className="body-serif-sm italic text-iron">No exercises in this group.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {visibleGroups.map(([muscle, exs]) => (
                   <div key={muscle}>
-                    <h3 className="text-xs font-semibold text-jungle-muted uppercase tracking-wider mb-2 px-1">
-                      {muscleLabel(muscle)} <span className="text-jungle-dim font-normal">({exs.length})</span>
-                    </h3>
-                    <div className="space-y-1.5">
-                      {exs.slice(0, 8).map((ex) => (
+                    <div className="flex items-baseline justify-between mb-3 px-1">
+                      <h3 className="h-card text-obsidian">
+                        {muscleLabel(muscle)}
+                      </h3>
+                      <span className="text-[10px] tracking-[0.2em] uppercase text-travertine tabular-nums">
+                        {exs.length}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {exs.map((ex) => (
                         <ExerciseCard
                           key={ex.id}
                           exercise={ex}
@@ -213,19 +316,12 @@ export default function ExercisesPage() {
                           expanded={selectedExercise?.id === ex.id}
                         />
                       ))}
-                      {exs.length > 8 && (
-                        <button
-                          onClick={() => setSelectedMuscle(muscle)}
-                          className="text-xs text-jungle-accent hover:underline px-2"
-                        >
-                          +{exs.length - 8} more — filter by {muscleLabel(muscle)}
-                        </button>
-                      )}
                     </div>
                   </div>
                 ))}
-            </div>
-          )}
+              </div>
+            )}
+          </section>
         </div>
       </main>
 
@@ -244,68 +340,72 @@ function ExerciseCard({
   expanded: boolean;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left card py-3 px-4 transition-all ${
-        expanded ? "border-jungle-accent" : "hover:border-jungle-border-hover"
-      }`}
+    <div
+      className={`card transition-all ${expanded ? "border-legion ring-1 ring-legion/20" : "hover:border-pumice"}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm leading-tight">{exercise.name}</span>
-            {exercise.compound && (
-              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-jungle-accent/15 text-jungle-accent border border-jungle-accent/30 shrink-0">
-                Compound
+      <button
+        onClick={onClick}
+        className="w-full text-left"
+        aria-expanded={expanded}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium text-sm text-obsidian leading-snug">{exercise.name}</span>
+              {exercise.compound && (
+                <span className="text-[9px] font-medium tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-blush text-centurion border border-terracotta shrink-0">
+                  Compound
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <span className="text-[11px] tracking-[0.08em] uppercase text-iron">{muscleLabel(exercise.primary_muscle)}</span>
+              <span className="w-1 h-1 rounded-full bg-pewter" aria-hidden />
+              <span
+                className={`text-[10px] tracking-[0.1em] uppercase px-1.5 py-0.5 rounded border ${equipmentBadge(exercise.equipment)}`}
+              >
+                {EQUIPMENT_LABELS[exercise.equipment] ?? exercise.equipment}
               </span>
-            )}
+              {exercise.movement_type && (
+                <span className="text-[10px] tracking-[0.1em] uppercase text-travertine">
+                  {exercise.movement_type.replace(/_/g, " ")}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span className="text-xs text-jungle-muted capitalize">{muscleLabel(exercise.primary_muscle)}</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.5 rounded border ${equipmentColor(exercise.equipment)}`}
-            >
-              {EQUIPMENT_LABELS[exercise.equipment] ?? exercise.equipment}
-            </span>
-            {exercise.movement_type && (
-              <span className="text-[10px] text-jungle-dim capitalize">
-                {exercise.movement_type.replace(/_/g, " ")}
-              </span>
-            )}
-          </div>
+          <svg
+            className={`w-4 h-4 text-travertine shrink-0 mt-0.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
+          </svg>
         </div>
-        <svg
-          className={`w-4 h-4 text-jungle-dim shrink-0 mt-0.5 transition-transform ${expanded ? "rotate-180" : ""}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </div>
+      </button>
 
       {expanded && (
-        <div className="mt-3 pt-3 border-t border-jungle-border space-y-2">
+        <div className="mt-3 pt-3 border-t border-ash space-y-3">
           {exercise.secondary_muscles?.length > 0 && (
             <div>
-              <span className="text-[10px] text-jungle-dim uppercase tracking-wide">Secondary: </span>
-              <span className="text-xs text-jungle-muted">
-                {exercise.secondary_muscles.map((m) => muscleLabel(m)).join(", ")}
-              </span>
+              <p className="h-section text-travertine mb-1">Secondary</p>
+              <p className="text-xs text-iron">
+                {exercise.secondary_muscles.map((m) => muscleLabel(m)).join(" · ")}
+              </p>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="bg-jungle-deeper rounded p-2">
-              <span className="text-jungle-dim">Primary</span>
-              <p className="text-jungle-muted font-medium mt-0.5 capitalize">{muscleLabel(exercise.primary_muscle)}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-alabaster rounded-button border border-ash px-3 py-2">
+              <p className="h-section text-travertine">Primary</p>
+              <p className="text-xs text-obsidian font-medium mt-1">{muscleLabel(exercise.primary_muscle)}</p>
             </div>
-            <div className="bg-jungle-deeper rounded p-2">
-              <span className="text-jungle-dim">Equipment</span>
-              <p className="text-jungle-muted font-medium mt-0.5">{EQUIPMENT_LABELS[exercise.equipment] ?? exercise.equipment}</p>
+            <div className="bg-alabaster rounded-button border border-ash px-3 py-2">
+              <p className="h-section text-travertine">Equipment</p>
+              <p className="text-xs text-obsidian font-medium mt-1">{EQUIPMENT_LABELS[exercise.equipment] ?? exercise.equipment}</p>
             </div>
           </div>
         </div>
       )}
-    </button>
+    </div>
   );
 }

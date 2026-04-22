@@ -373,31 +373,31 @@ export default function NutritionPage() {
                       </div>
                     </div>
 
-                    {/* Macro cards with per-kg metric */}
+                    {/* Macro cards with per-kg metric — categorical colors matching the pie */}
                     <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-jungle-deeper rounded-xl p-2.5 border-t-2 border-blue-400/60">
+                      <div className="bg-alabaster rounded-button p-3 border-t-2 border-adriatic">
                         <div className="flex items-baseline gap-1">
-                          <p className="text-xl font-bold text-blue-400">{Math.round(activeMacros.protein_g)}</p>
-                          <p className="text-[10px] text-jungle-dim">g</p>
+                          <p className="metric-md text-adriatic">{Math.round(activeMacros.protein_g)}</p>
+                          <p className="text-[10px] text-travertine">g</p>
                         </div>
-                        <p className="text-[9px] text-jungle-muted uppercase tracking-wider mt-0.5">Protein</p>
-                        <p className="text-[9px] text-jungle-dim">{protCals} kcal</p>
+                        <p className="text-[9px] text-iron uppercase tracking-[0.15em] mt-0.5">Protein</p>
+                        <p className="text-[9px] text-travertine">{protCals} kcal</p>
                       </div>
-                      <div className="bg-jungle-deeper rounded-xl p-2.5 border-t-2 border-amber-400/60">
+                      <div className="bg-alabaster rounded-button p-3 border-t-2 border-aureus">
                         <div className="flex items-baseline gap-1">
-                          <p className="text-xl font-bold text-amber-400">{Math.round(activeMacros.carbs_g)}</p>
-                          <p className="text-[10px] text-jungle-dim">g</p>
+                          <p className="metric-md text-aureus">{Math.round(activeMacros.carbs_g)}</p>
+                          <p className="text-[10px] text-travertine">g</p>
                         </div>
-                        <p className="text-[9px] text-jungle-muted uppercase tracking-wider mt-0.5">Carbs</p>
-                        <p className="text-[9px] text-jungle-dim">{carbCals} kcal</p>
+                        <p className="text-[9px] text-iron uppercase tracking-[0.15em] mt-0.5">Carbs</p>
+                        <p className="text-[9px] text-travertine">{carbCals} kcal</p>
                       </div>
-                      <div className="bg-jungle-deeper rounded-xl p-2.5 border-t-2 border-red-400/60">
+                      <div className="bg-alabaster rounded-button p-3 border-t-2 border-legion">
                         <div className="flex items-baseline gap-1">
-                          <p className="text-xl font-bold text-red-400">{Math.round(activeMacros.fat_g)}</p>
-                          <p className="text-[10px] text-jungle-dim">g</p>
+                          <p className="metric-md text-legion">{Math.round(activeMacros.fat_g)}</p>
+                          <p className="text-[10px] text-travertine">g</p>
                         </div>
-                        <p className="text-[9px] text-jungle-muted uppercase tracking-wider mt-0.5">Fat</p>
-                        <p className="text-[9px] text-jungle-dim">{fatCals} kcal</p>
+                        <p className="text-[9px] text-iron uppercase tracking-[0.15em] mt-0.5">Fat</p>
+                        <p className="text-[9px] text-travertine">{fatCals} kcal</p>
                       </div>
                     </div>
 
@@ -496,47 +496,63 @@ export default function NutritionPage() {
                 <>
                   <p className="text-[10px] text-jungle-dim">{loggedCount} of {meals.length} meals logged</p>
                   <div className="space-y-2">
-                    {meals.map(meal => {
+                    {meals.map((meal, mealIdx) => {
                       const adh = mealAdherence[meal.meal_number] || 0;
                       const isLogged = adh > 0;
+                      // Alternating row tint — tames the visual monotony of a long meal stack
+                      // without losing the logged/peri state cues.
+                      const stateCls = isLogged
+                        ? "border-laurel/30 bg-viltrum-laurel-bg"
+                        : meal.is_peri
+                          ? "border-legion/30 bg-blush"
+                          : mealIdx % 2 === 0
+                            ? "border-ash bg-white"
+                            : "border-ash bg-alabaster";
                       return (
                         <div key={meal.meal_number}
-                          className={`rounded-2xl border transition-colors ${isLogged ? "border-green-500/30 bg-green-500/5" : meal.is_peri ? "border-jungle-accent/30 bg-jungle-accent/5" : "border-jungle-border/50 bg-jungle-deeper/50"}`}>
+                          className={`rounded-card border transition-colors ${stateCls}`}>
                           <div className="flex items-center justify-between px-3 py-2">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-jungle-text">{meal.label}</span>
-                              {meal.is_peri && <span className="text-[9px] px-1.5 py-0.5 rounded-lg bg-jungle-accent/20 text-jungle-accent">Peri-WO</span>}
+                              <span className="h-card text-obsidian">{meal.label}</span>
+                              {meal.is_peri && (
+                                <span className="text-[9px] tracking-[0.15em] uppercase px-1.5 py-0.5 rounded bg-legion text-white font-medium">
+                                  Peri-WO
+                                </span>
+                              )}
+                              {isLogged && (
+                                <span className="text-[9px] tracking-[0.15em] uppercase text-laurel">Logged</span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-jungle-dim">{meal.time}</span>
-                              <span className="text-[10px] text-jungle-muted font-mono">{Math.round(meal.totals.calories)} kcal</span>
+                              <span className="text-[10px] tracking-[0.1em] uppercase text-travertine">{meal.time}</span>
+                              <span className="text-[10px] text-iron font-mono tabular-nums">{Math.round(meal.totals.calories)} kcal</span>
                             </div>
                           </div>
-                          <div className="flex gap-3 px-3 pb-1 text-[9px] text-jungle-dim">
-                            <span className="text-blue-400">{Math.round(meal.totals.protein_g)}g P</span>
-                            <span className="text-amber-400">{Math.round(meal.totals.carbs_g)}g C</span>
-                            <span className="text-red-400">{Math.round(meal.totals.fat_g)}g F</span>
+                          <div className="flex gap-3 px-3 pb-1 text-[10px] font-medium">
+                            <span className="text-adriatic">{Math.round(meal.totals.protein_g)}g P</span>
+                            <span className="text-aureus">{Math.round(meal.totals.carbs_g)}g C</span>
+                            <span className="text-legion">{Math.round(meal.totals.fat_g)}g F</span>
                           </div>
                           <div className="px-3 pb-2 space-y-0.5">
                             {meal.ingredients.map((ing, i) => (
-                              <div key={i} className={`flex items-center justify-between text-[11px] py-0.5 ${i > 0 ? "border-t border-jungle-border/20" : ""}`}>
-                                <span className={`flex-1 ${isLogged && adh >= 8 ? "text-jungle-dim line-through" : "text-jungle-muted"}`}>{ing.name}</span>
+                              <div key={i} className={`flex items-center justify-between text-[11px] py-0.5 ${i > 0 ? "border-t border-ash/60" : ""}`}>
+                                <span className={`flex-1 ${isLogged && adh >= 8 ? "text-travertine line-through" : "text-charcoal"}`}>{ing.name}</span>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-jungle-dim font-mono w-10 text-right">{ing.quantity_g}g</span>
-                                  <span className="text-[9px] text-jungle-dim/70 font-mono w-10 text-right">{gramsToOz(ing.quantity_g)}oz</span>
-                                  <span className="text-[9px] text-blue-400/70 w-6 text-right">{Math.round(ing.protein_g)}p</span>
-                                  <span className="text-[9px] text-amber-400/70 w-6 text-right">{Math.round(ing.carbs_g)}c</span>
-                                  <span className="text-[9px] text-red-400/70 w-6 text-right">{Math.round(ing.fat_g)}f</span>
-                                  <span className="text-[9px] text-jungle-dim w-10 text-right">{Math.round(ing.calories)}</span>
+                                  <span className="text-iron font-mono tabular-nums w-10 text-right">{ing.quantity_g}g</span>
+                                  <span className="text-[9px] text-travertine font-mono tabular-nums w-10 text-right">{gramsToOz(ing.quantity_g)}oz</span>
+                                  <span className="text-[9px] text-adriatic/80 tabular-nums w-6 text-right">{Math.round(ing.protein_g)}p</span>
+                                  <span className="text-[9px] text-aureus/80 tabular-nums w-6 text-right">{Math.round(ing.carbs_g)}c</span>
+                                  <span className="text-[9px] text-legion/80 tabular-nums w-6 text-right">{Math.round(ing.fat_g)}f</span>
+                                  <span className="text-[9px] text-travertine tabular-nums w-10 text-right">{Math.round(ing.calories)}</span>
                                 </div>
                               </div>
                             ))}
                           </div>
 
                           {/* ── Adherence Slider (1-10) ── */}
-                          <div className="px-3 pb-3 pt-1 border-t border-jungle-border/20">
+                          <div className="px-3 pb-3 pt-1 border-t border-ash/60">
                             <div className="flex items-center gap-2">
-                              <span className="text-[9px] text-jungle-dim w-16 shrink-0">
+                              <span className="text-[9px] tracking-[0.1em] uppercase text-travertine w-20 shrink-0">
                                 {adh === 0 ? "Not eaten" : adh <= 3 ? "Barely ate" : adh <= 6 ? "Partial" : adh <= 8 ? "Most of it" : "All of it"}
                               </span>
                               <input
@@ -546,10 +562,10 @@ export default function NutritionPage() {
                                 step="1"
                                 value={adh}
                                 onChange={(e) => setAdherence(meal.meal_number, parseInt(e.target.value))}
-                                className="flex-1 accent-jungle-accent h-1.5"
+                                className="flex-1 accent-legion h-1.5"
                               />
-                              <span className={`text-xs font-bold w-8 text-right ${
-                                adh === 0 ? "text-jungle-dim" : adh >= 8 ? "text-green-400" : adh >= 5 ? "text-jungle-accent" : "text-red-400"
+                              <span className={`text-xs font-bold tabular-nums w-8 text-right ${
+                                adh === 0 ? "text-travertine" : adh >= 8 ? "text-laurel" : adh >= 5 ? "text-centurion" : "text-aureus"
                               }`}>
                                 {adh === 0 ? "—" : `${adh * 10}%`}
                               </span>

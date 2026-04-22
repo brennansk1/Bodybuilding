@@ -504,69 +504,71 @@ export default function CheckinPage() {
             <>
               <PageTitle text="Check-in" subtitle="Choose your check-in mode" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Daily — Viltrumite red rail */}
                 <button
                   onClick={() => setMode("quick")}
-                  className="card text-left hover:border-jungle-accent transition-colors border border-jungle-border group"
+                  className="relative card text-left group hover:border-pumice transition-colors overflow-hidden pl-5"
                 >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-lg bg-jungle-accent/15 flex items-center justify-center shrink-0">
-                      <svg className="w-5 h-5 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-legion" />
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-card bg-blush flex items-center justify-center shrink-0">
+                      <svg className="w-5 h-5 text-legion" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+                        <path d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                     </div>
                     <div>
-                      <p className="font-semibold text-sm group-hover:text-jungle-accent transition-colors">
-                        Daily Check-In
-                      </p>
-                      <p className="text-[10px] text-jungle-dim">~2 min</p>
+                      <p className="h-card text-obsidian group-hover:text-legion transition-colors">Daily Check-In</p>
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-travertine mt-0.5">~2 min</p>
                     </div>
                   </div>
-                  <p className="text-xs text-jungle-muted">
-                    Log weight, HRV, sleep, and soreness. Get your readiness score instantly.
+                  <p className="body-serif-sm text-iron">
+                    Log weight, HRV, sleep, and soreness. Your readiness score refreshes instantly.
                   </p>
                 </button>
 
+                {/* Weekly — Laurel rail */}
                 <button
                   onClick={() => setMode("full")}
-                  className="card text-left hover:border-jungle-accent transition-colors border border-jungle-border group"
+                  className="relative card text-left group hover:border-pumice transition-colors overflow-hidden pl-5"
                 >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-lg bg-jungle-accent/15 flex items-center justify-center shrink-0">
-                      <svg className="w-5 h-5 text-jungle-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-laurel" />
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-card bg-viltrum-laurel-bg flex items-center justify-center shrink-0">
+                      <svg className="w-5 h-5 text-laurel" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                        <path d="M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                       </svg>
                     </div>
                     <div>
-                      <p className="font-semibold text-sm group-hover:text-jungle-accent transition-colors">
-                        Weekly Full Check-In
-                      </p>
-                      <p className="text-[10px] text-jungle-dim">~10 min</p>
+                      <p className="h-card text-obsidian group-hover:text-laurel transition-colors">Weekly Full Check-In</p>
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-travertine mt-0.5">~10 min</p>
                     </div>
                   </div>
-                  <p className="text-xs text-jungle-muted">
-                    Full check-in: tape measurements, skinfolds, HRV, adherence, and progress photos. Recalibrates all engines.
+                  <p className="body-serif-sm text-iron">
+                    Tape, skinfolds, HRV, adherence, photos. Recalibrates all three engines.
                   </p>
                 </button>
 
+                {/* Fit 3D — Adriatic rail */}
                 <button
                   onClick={() => setMode("fit3d")}
-                  className="card text-left hover:border-blue-400 transition-colors border border-jungle-border group"
+                  className="relative card text-left group hover:border-pumice transition-colors overflow-hidden pl-5"
                 >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
-                      <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-adriatic" />
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-card bg-viltrum-adriatic-bg flex items-center justify-center shrink-0">
+                      <svg className="w-5 h-5 text-adriatic" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 3a9 9 0 110 18 9 9 0 010-18z" />
+                        <path d="M3 12h18M12 3c2.5 2.5 4 5.5 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.5-4-9s1.5-6.5 4-9z" />
                       </svg>
                     </div>
                     <div>
-                      <p className="font-semibold text-sm group-hover:text-blue-400 transition-colors">
-                        Fit 3D Scan Upload
-                      </p>
-                      <p className="text-[10px] text-blue-400/70">Twice per mesocycle</p>
+                      <p className="h-card text-obsidian group-hover:text-adriatic transition-colors">Fit 3D Scan Upload</p>
+                      <p className="text-[10px] tracking-[0.15em] uppercase text-travertine mt-0.5">Twice per mesocycle</p>
                     </div>
                   </div>
-                  <p className="text-xs text-jungle-muted">
-                    Upload Fit 3D scan results (circumferences, body composition). Hard-recalibrates all three engines.
+                  <p className="body-serif-sm text-iron">
+                    Upload Fit 3D circumferences and body composition. Hard-recalibrates every engine.
                   </p>
                 </button>
               </div>

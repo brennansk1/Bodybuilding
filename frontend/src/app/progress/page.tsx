@@ -314,47 +314,49 @@ export default function ProgressPage() {
             <a href="/dashboard" className="btn-secondary text-sm px-3 py-2">← Dashboard</a>
           </div>
 
-          {/* Summary cards */}
+          {/* Hero summary cards — editorial metric treatment */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="card text-center">
-              <p className="text-[10px] text-jungle-muted uppercase tracking-wide">Current PDS</p>
-              <p className="text-2xl font-bold text-jungle-accent mt-1">
-                {pds?.current.pds_score ?? "—"}
-              </p>
-              <p className="text-xs text-jungle-fern capitalize mt-0.5">
+            <div className="card text-center border-t-2 border-legion">
+              <p className="h-section text-travertine">Current PDS</p>
+              <p className="metric-xl text-legion mt-2">{pds?.current.pds_score ?? "—"}</p>
+              <p className="text-[10px] tracking-[0.2em] uppercase text-centurion mt-1">
                 {pds?.current.tier ?? ""}
               </p>
             </div>
-            <div className="card text-center">
-              <p className="text-[10px] text-jungle-muted uppercase tracking-wide">Body Weight</p>
-              <p className="text-2xl font-bold mt-1">
-                {latestWeight !== undefined ? `${latestWeight}kg` : "—"}
+            <div className="card text-center border-t-2 border-obsidian">
+              <p className="h-section text-travertine">Body Weight</p>
+              <p className="metric-xl text-obsidian mt-2">
+                {latestWeight !== undefined ? latestWeight : "—"}
+                {latestWeight !== undefined && <span className="text-xl text-iron ml-1">kg</span>}
               </p>
               {weightChange !== null && (
-                <p className={`text-xs mt-0.5 ${weightChange > 0 ? "text-red-400" : weightChange < 0 ? "text-green-400" : "text-jungle-dim"}`}>
-                  {weightChange > 0 ? "+" : ""}{weightChange.toFixed(1)}kg
+                <p className={`text-[10px] tracking-[0.2em] uppercase mt-1 ${
+                  weightChange > 0 ? "text-aureus" : weightChange < 0 ? "text-laurel" : "text-travertine"
+                }`}>
+                  {weightChange > 0 ? "▲ " : weightChange < 0 ? "▼ " : ""}
+                  {Math.abs(weightChange).toFixed(1)}kg
                 </p>
               )}
             </div>
-            <div className="card text-center">
-              <p className="text-[10px] text-jungle-muted uppercase tracking-wide">Overall LCSA</p>
-              <p className="text-2xl font-bold mt-1">
+            <div className="card text-center border-t-2 border-adriatic">
+              <p className="h-section text-travertine">Overall LCSA</p>
+              <p className="metric-xl text-adriatic mt-2">
                 {lcsa?.current.total ? Math.round(lcsa.current.total) : "—"}
               </p>
-              <p className="text-xs text-jungle-dim mt-0.5">lean cross-section</p>
+              <p className="text-[10px] tracking-[0.2em] uppercase text-travertine mt-1">lean cross-section</p>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 bg-jungle-deeper border border-jungle-border rounded-xl p-1 flex-wrap">
+          <div className="flex gap-1 bg-alabaster border border-ash rounded-card p-1 flex-wrap">
             {(["weight", "pds", "measurements", "feasibility", "condition", "photos"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 min-w-[50px] py-2 text-xs sm:text-sm rounded-lg transition-colors ${
+                className={`flex-1 min-w-[60px] py-2 text-[11px] sm:text-xs tracking-[0.1em] uppercase rounded-button transition-all ${
                   activeTab === tab
-                    ? "bg-jungle-accent text-white font-semibold"
-                    : "text-jungle-muted hover:text-jungle-accent"
+                    ? "bg-obsidian text-white font-medium shadow-card"
+                    : "text-iron hover:text-obsidian hover:bg-white"
                 }`}
               >
                 {tabLabels[tab]}
@@ -443,8 +445,13 @@ export default function ProgressPage() {
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-center h-40 text-jungle-dim text-sm border border-dashed border-jungle-border rounded-lg">
-                  Log body weight during check-in to track trends
+                <div className="flex flex-col items-center justify-center h-48 gap-3 border border-dashed border-ash rounded-card bg-alabaster">
+                  <p className="body-serif-sm italic text-iron text-center max-w-xs">
+                    Log body weight during check-in to track trends over time.
+                  </p>
+                  <a href="/checkin" className="btn-accent text-xs px-4 py-2">
+                    Log weight now
+                  </a>
                 </div>
               )}
             </div>

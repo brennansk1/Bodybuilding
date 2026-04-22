@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
+import ViltrumLoader from "@/components/ViltrumLoader";
 import { showError } from "@/components/Toast";
 import CompetitionModeToggle from "@/components/CompetitionModeToggle";
 import { validateRequired, extractErrorMessage } from "@/lib/validation";
@@ -128,11 +129,7 @@ export default function OnboardingPage() {
   }, [authLoading, user, router]);
 
   if (authLoading || !user) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-canopy-gradient">
-        <p className="text-jungle-muted">Loading...</p>
-      </main>
-    );
+    return <ViltrumLoader variant="fullscreen" />;
   }
 
   const submitStep = async () => {

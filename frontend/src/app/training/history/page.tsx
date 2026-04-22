@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
 import PageTitle from "@/components/PageTitle";
+import ViltrumLoader from "@/components/ViltrumLoader";
 import { api } from "@/lib/api";
 
 interface SessionSummary {
@@ -33,20 +34,30 @@ function SkeletonCard() {
   return (
     <div className="card animate-pulse space-y-3">
       <div className="flex items-center justify-between">
-        <div className="h-4 bg-jungle-deeper rounded w-32" />
-        <div className="h-5 bg-jungle-deeper rounded w-20" />
+        <div className="h-4 bg-limestone rounded w-32" />
+        <div className="h-5 bg-limestone rounded w-20" />
       </div>
       <div className="flex gap-2">
-        <div className="h-4 bg-jungle-deeper rounded w-16" />
-        <div className="h-4 bg-jungle-deeper rounded w-24" />
+        <div className="h-4 bg-limestone rounded w-16" />
+        <div className="h-4 bg-limestone rounded w-24" />
       </div>
       <div className="flex gap-1 flex-wrap">
-        <div className="h-5 bg-jungle-deeper rounded w-20" />
-        <div className="h-5 bg-jungle-deeper rounded w-28" />
-        <div className="h-5 bg-jungle-deeper rounded w-16" />
+        <div className="h-5 bg-limestone rounded w-20" />
+        <div className="h-5 bg-limestone rounded w-28" />
+        <div className="h-5 bg-limestone rounded w-16" />
       </div>
     </div>
   );
+}
+
+/** Soft categorical tint for session type — keeps history from reading as a column of red */
+function sessionTypeBadge(type: string): string {
+  const t = type.toLowerCase();
+  if (t.includes("push") || t.includes("chest") || t.includes("shoulder")) return "bg-blush text-centurion border-terracotta";
+  if (t.includes("pull") || t.includes("back") || t.includes("bicep"))     return "bg-viltrum-adriatic-bg text-adriatic border-adriatic/30";
+  if (t.includes("leg")  || t.includes("quad") || t.includes("glute"))     return "bg-viltrum-laurel-bg text-laurel border-laurel/30";
+  if (t.includes("arm")  || t.includes("tricep"))                          return "bg-viltrum-aureus-bg text-aureus border-aureus/30";
+  return "bg-alabaster text-iron border-ash";
 }
 
 export default function TrainingHistoryPage() {
@@ -133,12 +144,20 @@ export default function TrainingHistoryPage() {
 
           {/* Empty state */}
           {!fetching && sessions.length === 0 && (
-            <div className="card text-center py-16">
-              <p className="text-jungle-muted text-lg font-medium">No training history yet.</p>
-              <p className="text-jungle-dim text-sm mt-2">
-                Complete your first session to see it here.
-              </p>
-              <a href="/training" className="btn-primary inline-block mt-5">
+            <div className="card text-center py-14 space-y-4">
+              <div className="mx-auto w-14 h-14 rounded-full bg-blush flex items-center justify-center">
+                <svg className="w-6 h-6 text-centurion" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 3v18h18" />
+                  <path d="M7 14l3-3 4 4 5-5" />
+                </svg>
+              </div>
+              <div className="space-y-1.5">
+                <p className="h-display-sm">No history yet</p>
+                <p className="body-serif-sm italic text-iron max-w-md mx-auto">
+                  Finish your first session and it lives here — every rep, every week, ready to compound.
+                </p>
+              </div>
+              <a href="/training" className="btn-accent inline-block">
                 Go to Training
               </a>
             </div>
@@ -149,31 +168,29 @@ export default function TrainingHistoryPage() {
             <div key={week} className="space-y-3">
               {/* Week divider */}
               <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-jungle-border" />
-                <span className="text-xs font-semibold text-jungle-muted uppercase tracking-widest px-2">
-                  Week {week}
-                </span>
-                <div className="flex-1 h-px bg-jungle-border" />
+                <div className="flex-1 h-px bg-ash" />
+                <span className="h-section text-travertine px-2">Week {week}</span>
+                <div className="flex-1 h-px bg-ash" />
               </div>
 
               {byWeek[week].map((session) => (
-                <div key={session.id} className="card">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
+                <div key={session.id} className="card hover:border-pumice transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0 space-y-2">
                       {/* Date + completion */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold">{formatDate(session.session_date)}</span>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="h-card text-obsidian">{formatDate(session.session_date)}</span>
                         {session.completed ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-green-400">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          <span className="inline-flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase text-laurel">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                             </svg>
                             Done
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs text-jungle-dim">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <circle cx="12" cy="12" r="9" strokeWidth={2} />
+                          <span className="inline-flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase text-travertine">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                              <circle cx="12" cy="12" r="9" />
                             </svg>
                             Incomplete
                           </span>
@@ -181,21 +198,22 @@ export default function TrainingHistoryPage() {
                       </div>
 
                       {/* Session type + week label */}
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className="px-2 py-0.5 rounded bg-jungle-accent/20 text-jungle-accent text-xs font-medium">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded text-[10px] tracking-[0.1em] uppercase font-medium border ${sessionTypeBadge(session.session_type)}`}>
                           {formatSessionType(session.session_type)}
                         </span>
-                        <span className="text-xs text-jungle-dim">Week {session.week_number}</span>
-                        <span className="text-xs text-jungle-muted">{session.set_count} sets</span>
+                        <span className="text-[10px] tracking-[0.1em] uppercase text-travertine">Week {session.week_number}</span>
+                        <span className="w-1 h-1 rounded-full bg-pewter" aria-hidden />
+                        <span className="text-[10px] tracking-[0.1em] uppercase text-iron tabular-nums">{session.set_count} sets</span>
                       </div>
 
                       {/* Exercise tags */}
                       {session.exercises.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
+                        <div className="flex flex-wrap gap-1 pt-1">
                           {session.exercises.map((ex) => (
                             <span
                               key={ex}
-                              className="px-1.5 py-0.5 rounded bg-jungle-deeper text-[10px] text-jungle-muted"
+                              className="px-2 py-0.5 rounded bg-alabaster border border-ash text-[10px] text-iron"
                             >
                               {ex}
                             </span>
@@ -214,9 +232,14 @@ export default function TrainingHistoryPage() {
             <button
               onClick={loadMore}
               disabled={loadingMore}
-              className="btn-secondary w-full disabled:opacity-50"
+              className="btn-secondary w-full disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loadingMore ? "Loading..." : "Load More"}
+              {loadingMore ? (
+                <>
+                  <ViltrumLoader variant="compact" label="Loading more sessions" />
+                  <span>Loading</span>
+                </>
+              ) : "Load More"}
             </button>
           )}
 

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import ViltrumLoader from "@/components/ViltrumLoader";
 import PageTitle from "@/components/PageTitle";
 import PlateLoadingSVG from "@/components/PlateLoadingSVG";
 import SessionProgressRing from "@/components/SessionProgressRing";
@@ -1310,19 +1311,47 @@ export default function TrainingPage() {
 
           {/* No program */}
           {!program && (
-            <div className="card text-center py-10">
-              <p className="text-jungle-muted">No active program</p>
-              <button onClick={generateProgram} disabled={generating} className="btn-primary mt-4 disabled:opacity-50">
-                {generating ? "Generating..." : "Generate Program"}
+            <div className="card text-center py-12 space-y-4">
+              <div className="mx-auto w-14 h-14 rounded-full bg-blush flex items-center justify-center">
+                <svg className="w-6 h-6 text-legion" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 4v16M4 12h16" />
+                </svg>
+              </div>
+              <div className="space-y-1.5">
+                <p className="h-display-sm">No active program</p>
+                <p className="body-serif-sm italic text-iron max-w-md mx-auto">
+                  Generate your first program and the three engines come online — training, nutrition, and physique scoring.
+                </p>
+              </div>
+              <button
+                onClick={generateProgram}
+                disabled={generating}
+                className="btn-accent disabled:opacity-60 inline-flex items-center justify-center gap-2"
+              >
+                {generating ? (
+                  <>
+                    <ViltrumLoader variant="compact" label="Generating your program" />
+                    <span>Generating…</span>
+                  </>
+                ) : "Generate Program"}
               </button>
             </div>
           )}
 
-          {/* No session today */}
+          {/* No session today — Rest Day */}
           {program && !session && (
-            <div className="card text-center py-10">
-              <p className="text-jungle-muted text-lg">Rest Day</p>
-              <p className="text-jungle-dim text-sm mt-1">No session scheduled — enjoy recovery</p>
+            <div className="card text-center py-12 space-y-3">
+              <div className="mx-auto w-14 h-14 rounded-full bg-alabaster border border-ash flex items-center justify-center">
+                <svg className="w-6 h-6 text-iron" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.5A9 9 0 0111.5 3a7 7 0 109.5 9.5z" />
+                </svg>
+              </div>
+              <div className="space-y-1.5">
+                <p className="h-display-sm">Rest Day</p>
+                <p className="body-serif-sm italic text-iron max-w-md mx-auto">
+                  No session scheduled — recovery is the work today. Tomorrow&apos;s split is queued and waiting.
+                </p>
+              </div>
             </div>
           )}
 
@@ -2051,20 +2080,69 @@ export default function TrainingPage() {
             )}
           </div>
 
-          {/* Quick links */}
-          <div className="grid grid-cols-2 gap-2">
-            <a href="/training/program" className="btn-secondary text-center text-sm py-2.5">
-              Program
-            </a>
-            <a href="/training/history" className="btn-secondary text-center text-sm py-2.5">
-              History
-            </a>
-            <a href="/training/exercises" className="btn-secondary text-center text-sm py-2.5">
-              Exercises
-            </a>
-            <a href="/training/analytics" className="btn-secondary text-center text-sm py-2.5">
-              Analytics
-            </a>
+          {/* Quick links — editorial tile grid */}
+          <div>
+            <p className="h-section text-travertine mb-2 px-1">Explore</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                {
+                  href: "/training/program",
+                  label: "Program",
+                  desc: "Mesocycle map",
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="w-4 h-4">
+                      <rect x="4" y="5" width="16" height="16" rx="1.5" />
+                      <path d="M4 10h16M9 3v4M15 3v4" />
+                    </svg>
+                  ),
+                },
+                {
+                  href: "/training/history",
+                  label: "History",
+                  desc: "Past sessions",
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="w-4 h-4">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M12 7v5l3 2" />
+                    </svg>
+                  ),
+                },
+                {
+                  href: "/training/exercises",
+                  label: "Exercises",
+                  desc: "Movement library",
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="w-4 h-4">
+                      <path d="M4 9v6M20 9v6M7 7v10M17 7v10M7 12h10" />
+                    </svg>
+                  ),
+                },
+                {
+                  href: "/training/analytics",
+                  label: "Analytics",
+                  desc: "Volume & 1RM",
+                  icon: (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+                    </svg>
+                  ),
+                },
+              ].map(({ href, label, desc, icon }) => (
+                <a
+                  key={href}
+                  href={href}
+                  className="group card hover:border-pumice transition-colors px-3 py-3 text-left flex flex-col gap-1.5"
+                >
+                  <div className="flex items-center gap-2 text-iron group-hover:text-centurion transition-colors">
+                    {icon}
+                    <span className="h-card">{label}</span>
+                  </div>
+                  <span className="text-[10px] tracking-[0.1em] uppercase text-travertine">
+                    {desc}
+                  </span>
+                </a>
+              ))}
+            </div>
           </div>
 
         </div>

@@ -55,11 +55,14 @@ function formatDay(dateStr: string): string {
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
+// Categorical palette — one family per entry type. Legion is reserved for
+// PDS (the hero score). Secondary entry types use the semantic family so the
+// timeline doesn't read as one uniform red column.
 const TYPE_STYLES: Record<string, { label: string; cls: string; dotCls: string }> = {
-  weekly_checkin: { label: "Weekly Check-In", cls: "bg-jungle-accent/15 text-jungle-accent", dotCls: "bg-jungle-accent" },
-  daily_checkin: { label: "Daily Check-In", cls: "bg-blue-500/15 text-blue-400", dotCls: "bg-blue-400" },
-  weight: { label: "Weight", cls: "bg-green-500/15 text-green-400", dotCls: "bg-green-400" },
-  pds: { label: "PDS Score", cls: "bg-purple-500/15 text-purple-400", dotCls: "bg-purple-400" },
+  pds:            { label: "PDS Score",       cls: "bg-blush text-centurion",              dotCls: "bg-legion" },
+  weekly_checkin: { label: "Weekly Check-In", cls: "bg-viltrum-laurel-bg text-laurel",     dotCls: "bg-laurel" },
+  daily_checkin:  { label: "Daily Check-In",  cls: "bg-viltrum-adriatic-bg text-adriatic", dotCls: "bg-adriatic" },
+  weight:         { label: "Weight",          cls: "bg-viltrum-aureus-bg text-aureus",     dotCls: "bg-aureus" },
 };
 
 // ─── Main Component ──────────────────────────────────────────────────────────

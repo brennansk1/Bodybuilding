@@ -2351,9 +2351,11 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="mt-3 flex flex-col items-center justify-center h-36 border-2 border-dashed border-jungle-border rounded-lg">
-                    <p className="text-[11px] text-jungle-dim mb-3 text-center">No goal set yet</p>
-                    <button onClick={openGoalEditor} className="btn-primary text-xs px-3 py-1">
+                  <div className="mt-3 flex flex-col items-center justify-center h-40 gap-3 border border-dashed border-ash rounded-card bg-blush/40 px-4">
+                    <p className="body-serif-sm italic text-iron text-center">
+                      The pursuit begins with a picture. Pin the physique you are chasing.
+                    </p>
+                    <button onClick={openGoalEditor} className="btn-accent text-xs px-4 py-1.5">
                       Set your goal
                     </button>
                   </div>
