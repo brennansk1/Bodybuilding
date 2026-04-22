@@ -562,7 +562,7 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
         from app.engines.engine1.weight_cap import compute_max_circumferences
         from app.engines.engine1.hqi import compute_ideal_circumferences
         from app.engines.engine1.muscle_gaps import compute_all_gaps
-        from app.constants.divisions import DIVISION_CEILING_FACTORS, DIVISION_VECTORS
+        from app.constants.divisions import DIVISION_CEILING_FACTORS
 
         _casey_max = compute_max_circumferences(
             height_cm=profile.height_cm,
@@ -572,6 +572,7 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
         )
         _div_key = (profile.division or "").lower().replace(" ", "_")
         _factors = DIVISION_CEILING_FACTORS.get(_div_key, DIVISION_CEILING_FACTORS["mens_open"])
+        # DIVISION_VECTORS comes from the module-level import (top of file)
         _div_vec = DIVISION_VECTORS.get(_div_key, DIVISION_VECTORS["mens_open"])
         _casey_ideals = compute_ideal_circumferences(_casey_max, _factors, _div_vec, profile.height_cm)
 
