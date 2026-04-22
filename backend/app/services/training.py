@@ -31,7 +31,7 @@ from app.models.training import (
 from app.models.diagnostic import HQILog
 from app.models.measurement import TapeMeasurement
 from app.engines.engine2.periodization import (
-    generate_mesocycle, auto_select_split, _WEEKLY_SCHEDULE,
+    generate_mesocycle, _WEEKLY_SCHEDULE,
 )
 from app.engines.engine2.split_designer import design_split
 from app.engines.engine2.resistance import (
