@@ -96,9 +96,48 @@ _PPM_PHASE_BY_WEEK: dict[range | int, str] = {}  # documentation only
 
 
 def ppm_phase_for_week(cycle_week: int, mini_cut_active: bool = False) -> str:
-    """Return the PPM sub-phase for a given 1-indexed cycle week."""
+    """Return the PPM sub-phase for a given 1-indexed cycle week.
+
+    Audit-fix: when mini-cut is active, it is a **PREPEND** (weeks 1-2) so
+    the athlete brings BF under their division offseason ceiling BEFORE
+    running the 14-week improvement cycle. Previously the mini-cut was
+    appended at W15-16, which meant the athlete accumulated for 14 weeks
+    while getting fatter, then tried to cut in 2 — backwards.
+
+    Layout with mini-cut active (16 weeks):
+        W1-2   mini-cut (prepend)
+        W3-4   assessment
+        W5-12  accumulation
+        W13-14 intensification
+        W15    deload
+        W16    checkpoint
+
+    Layout without mini-cut (14 weeks):
+        W1-2   assessment
+        W3-10  accumulation
+        W11-12 intensification
+        W13    deload
+        W14    checkpoint
+    """
     if cycle_week < 1:
         return "ppm_assessment"
+
+    if mini_cut_active:
+        if cycle_week <= 2:
+            return "ppm_mini_cut"
+        if cycle_week <= 4:
+            return "ppm_assessment"
+        if cycle_week <= 12:
+            return "ppm_accumulation"
+        if cycle_week <= 14:
+            return "ppm_intensification"
+        if cycle_week == 15:
+            return "ppm_deload"
+        if cycle_week == 16:
+            return "ppm_checkpoint"
+        return "ppm_assessment"
+
+    # Standard 14-week layout (no mini-cut needed)
     if cycle_week <= 2:
         return "ppm_assessment"
     if cycle_week <= 10:
@@ -109,9 +148,6 @@ def ppm_phase_for_week(cycle_week: int, mini_cut_active: bool = False) -> str:
         return "ppm_deload"
     if cycle_week == 14:
         return "ppm_checkpoint"
-    if 15 <= cycle_week <= 16 and mini_cut_active:
-        return "ppm_mini_cut"
-    # Past week 14 (or 16 with mini-cut) → new cycle begins
     return "ppm_assessment"
 
 

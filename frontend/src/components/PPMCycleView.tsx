@@ -93,17 +93,26 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
       .then(([weekResp, hist]) => {
         if (weekResp) setCurrentWeekPlan(weekResp.week_plan);
         if (hist) setHistory(hist);
-        // The cycle-wide strip is generated from the stable sub-phase rule:
-        // weeks 1-2 assess, 3-10 accum, 11-12 intensify, 13 deload, 14 checkpoint.
+        const totalWeeks = weekResp?.cycle_summary?.total_weeks ?? 14;
+        // The cycle-wide strip mirrors backend `prep_timeline.ppm_phase_for_week`:
+        // - No mini-cut (14w): W1-2 assess → W3-10 accum → W11-12 intensify → W13 deload → W14 checkpoint
+        // - Mini-cut active (16w): W1-2 mini-cut (PREPEND) → W3-4 assess → W5-12 accum → W13-14 intensify → W15 deload → W16 checkpoint
+        const miniCut = totalWeeks >= 16;
         const labelFor = (w: number): string => {
+          if (miniCut) {
+            if (w <= 2) return "ppm_mini_cut";
+            if (w <= 4) return "ppm_assessment";
+            if (w <= 12) return "ppm_accumulation";
+            if (w <= 14) return "ppm_intensification";
+            if (w === 15) return "ppm_deload";
+            return "ppm_checkpoint";
+          }
           if (w <= 2) return "ppm_assessment";
           if (w <= 10) return "ppm_accumulation";
           if (w <= 12) return "ppm_intensification";
           if (w === 13) return "ppm_deload";
-          if (w === 14) return "ppm_checkpoint";
-          return "ppm_mini_cut";
+          return "ppm_checkpoint";
         };
-        const totalWeeks = weekResp?.cycle_summary?.total_weeks ?? 14;
         const generatedWeeks: WeekPlan[] = Array.from({ length: totalWeeks }, (_, i) => ({
           week: i + 1,
           ppm_sub_phase: labelFor(i + 1),

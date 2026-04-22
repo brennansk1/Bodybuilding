@@ -551,7 +551,96 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
             lean_measurements=lean_averaged,
             sex=profile.sex,
         )
-        muscle_gaps = ghost_result["site_scores"]
+        # AUDIT FIX — interim blended ideal.
+        # Ghost-only ideals were enhanced-class (Bumstead-tier arms ≈ 21.8"
+        # for Classic) which over-targets natural athletes. Casey-Butt ×
+        # DIVISION_CEILING_FACTORS produces natural-aligned ideals
+        # (Reeves/Zane-tier ≈ 17.2"). For now we average the two so the
+        # HQI site gaps reflect a midpoint between "natural achievable
+        # ceiling" and "enhanced-Olympia presentation" — a compromise
+        # the user asked for until a per-training-status split lands.
+        from app.engines.engine1.weight_cap import compute_max_circumferences
+        from app.engines.engine1.hqi import compute_ideal_circumferences
+        from app.engines.engine1.muscle_gaps import compute_all_gaps
+        from app.constants.divisions import DIVISION_CEILING_FACTORS, DIVISION_VECTORS
+
+        _casey_max = compute_max_circumferences(
+            height_cm=profile.height_cm,
+            wrist_cm=profile.wrist_circumference_cm,
+            ankle_cm=profile.ankle_circumference_cm,
+            sex=profile.sex or "male",
+        )
+        _div_key = (profile.division or "").lower().replace(" ", "_")
+        _factors = DIVISION_CEILING_FACTORS.get(_div_key, DIVISION_CEILING_FACTORS["mens_open"])
+        _div_vec = DIVISION_VECTORS.get(_div_key, DIVISION_VECTORS["mens_open"])
+        _casey_ideals = compute_ideal_circumferences(_casey_max, _factors, _div_vec, profile.height_cm)
+
+        _ghost_site_scores = ghost_result.get("site_scores") or {}
+
+        # Blend per-site ideals as the rounded average of the two models.
+        # Sites where the ghost pipeline omitted a measurement (e.g. back_width
+        # is only present in some ghost paths, or the ghost map had a
+        # degenerate zero/negative reading) fall through to Casey-Butt alone.
+        # This is the correct behavior — the two models are complementary, and
+        # Casey-Butt's per-site regressions cover every site the HQI pipeline
+        # needs. Each blended row carries an `ideal_source` tag so the UI
+        # can distinguish the three paths.
+        _blended_ideals: dict[str, float] = {}
+        _ideal_sources: dict[str, str] = {}
+
+        def _clean_positive(v) -> float | None:
+            """Return v as a positive float, or None for missing/zero/negative."""
+            if v is None:
+                return None
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                return None
+            return fv if fv > 0 else None
+
+        _all_sites = set(_casey_ideals.keys()) | set(_ghost_site_scores.keys())
+        for _site in _all_sites:
+            _casey_v = _clean_positive(_casey_ideals.get(_site))
+            _ghost_row = _ghost_site_scores.get(_site)
+            _ghost_v = None
+            if isinstance(_ghost_row, dict):
+                _ghost_v = _clean_positive(_ghost_row.get("ideal_lean_cm"))
+
+            if _casey_v is not None and _ghost_v is not None:
+                _blended_ideals[_site] = round((_casey_v + _ghost_v) / 2.0, 1)
+                _ideal_sources[_site] = "blended_casey_ghost"
+            elif _casey_v is not None:
+                # Ghost missing or degenerate — use Casey alone. Most common
+                # for back_width (present in Casey, absent in some ghost maps).
+                _blended_ideals[_site] = round(_casey_v, 1)
+                _ideal_sources[_site] = "casey_only"
+                logger.info(
+                    "ideal fallback: site=%s ghost missing/degenerate, using Casey-Butt %.1f cm",
+                    _site, _casey_v,
+                )
+            elif _ghost_v is not None:
+                # Casey missing (rare — usually means wrist/ankle not logged,
+                # so Casey couldn't regress). Use ghost alone.
+                _blended_ideals[_site] = round(_ghost_v, 1)
+                _ideal_sources[_site] = "ghost_only"
+                logger.info(
+                    "ideal fallback: site=%s Casey missing, using Ghost %.1f cm",
+                    _site, _ghost_v,
+                )
+            # else: both missing — site simply omitted from blended ideals.
+
+        # Re-score gaps against the blended ideals. compute_all_gaps emits
+        # the richer {ideal_lean_cm, current_lean_cm, gap_cm, pct_of_ideal,
+        # gap_type} shape the rest of the pipeline expects (readiness
+        # mass_distribution, rank_sites_by_gap, UI Muscle Gaps widget).
+        muscle_gaps = compute_all_gaps(lean_averaged, _blended_ideals)
+        # Tag each row with the ideal source so the UI can clarify which
+        # model produced the target (useful for troubleshooting and for
+        # eventual per-training-status UI differentiation).
+        for _s, _row in muscle_gaps.items():
+            if isinstance(_row, dict):
+                _row["ideal_source"] = _ideal_sources.get(_s, "blended_casey_ghost")
+
         total_gap = compute_total_gap(muscle_gaps)
         avg_pct = compute_avg_pct_of_ideal(muscle_gaps, division=profile.division)
         weight_cap = {
