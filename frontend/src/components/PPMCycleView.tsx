@@ -228,20 +228,34 @@ export default function PPMCycleView({ status }: { status: PPMStatus }) {
       )}
 
       {/* ── Microcycle — this week at a glance ──────────────────────── */}
+      {/* Bug fix: the previous `i % day_rotation.length` wrapped the split
+          template across all 7 calendar days so a 5-day program would
+          show Sat=Push, Sun=Pull instead of rest days. Now the split's
+          N training days are laid out consecutively (Mon→...) and the
+          remaining days are explicit Rest slots. */}
       {currentWeekPlan && currentWeekPlan.day_rotation.length > 0 && (
         <section className="card">
           <h3 className="h-card mb-3">Microcycle · This Week</h3>
           <div className="grid grid-cols-7 gap-1">
             {DAY_LABELS.map((label, i) => {
-              const day = currentWeekPlan.day_rotation[i % currentWeekPlan.day_rotation.length];
+              const day = i < currentWeekPlan.day_rotation.length
+                ? currentWeekPlan.day_rotation[i]
+                : null;
+              const isRest = day === null;
               return (
                 <div
                   key={label}
-                  className="rounded-card p-2 bg-viltrum-limestone border border-viltrum-ash text-center"
+                  className={`rounded-card p-2 text-center border ${
+                    isRest
+                      ? "bg-viltrum-ash/20 border-viltrum-ash/60"
+                      : "bg-viltrum-limestone border-viltrum-ash"
+                  }`}
                 >
                   <div className="text-[9px] uppercase tracking-[2px] text-viltrum-travertine">{label}</div>
-                  <div className="text-[11px] text-viltrum-obsidian font-medium mt-1">
-                    {day?.day ?? "Rest"}
+                  <div className={`text-[11px] font-medium mt-1 ${
+                    isRest ? "text-viltrum-pewter" : "text-viltrum-obsidian"
+                  }`}>
+                    {isRest ? "Rest" : day?.day}
                   </div>
                 </div>
               );

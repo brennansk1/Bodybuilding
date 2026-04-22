@@ -90,6 +90,10 @@ def _run_schema_migrations(conn):
     _add_column_if_missing(conn, "user_profiles", "training_programming_factor", "DOUBLE PRECISION")
     # v2 post-sprint — glutes is first-class HQI visibility site; add tape col
     _add_column_if_missing(conn, "tape_measurements", "glutes", "DOUBLE PRECISION")
+    # v2 audit-fix — promote illusion_xframe + conditioning_pct from
+    # measurements_json blob to first-class PPMCheckpoint columns
+    _add_column_if_missing(conn, "ppm_checkpoints", "illusion_xframe",  "DOUBLE PRECISION")
+    _add_column_if_missing(conn, "ppm_checkpoints", "conditioning_pct", "DOUBLE PRECISION")
     # Indexes for frequently queried columns
     _create_index_if_missing(conn, "ix_session_user_date", "training_sessions", "user_id, session_date")
     _create_index_if_missing(conn, "ix_sets_session", "training_sets", "session_id")

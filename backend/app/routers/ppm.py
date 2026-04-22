@@ -525,6 +525,11 @@ async def post_checkpoint(
         sex=prof.sex or "male",
     )
 
+    # V2 audit-fix — promote illusion_xframe + conditioning_pct to first-class
+    # columns so the history endpoint can surface them without JSON-probing.
+    _conditioning_entry = readiness.get("per_metric", {}).get("conditioning_pct") or {}
+    _conditioning_pct_val = _conditioning_entry.get("current") if isinstance(_conditioning_entry, dict) else None
+
     # Persist the checkpoint row.
     row = PPMCheckpoint(
         user_id=user.id,
@@ -538,6 +543,8 @@ async def post_checkpoint(
         arm_calf_neck_parity=metrics["arm_calf_neck_max_diff_inches"],
         hqi_score=metrics["hqi_score"],
         weight_cap_pct=(metrics["body_weight_kg"] / cap_kg) if cap_kg else None,
+        illusion_xframe=metrics.get("illusion_xframe"),
+        conditioning_pct=_conditioning_pct_val,
         readiness_state=readiness["state"],
         limiting_factor=readiness.get("limiting_factor"),
         cycle_focus=",".join(prof.cycle_focus_muscles or []),
@@ -598,15 +605,24 @@ async def history(
     rows = q.scalars().all()
 
     def _extract_v2_metrics(row: PPMCheckpoint) -> tuple[float | None, float | None]:
-        """Pull illusion_xframe + conditioning_pct from measurements_json.
+        """Pull illusion_xframe + conditioning_pct.
 
-        These metrics were added in V2.S9; pre-V2 checkpoints don't have them.
-        Both nested locations are checked to stay robust across schema pivots.
+        Post-audit-fix: checkpoints now persist these as first-class columns.
+        For pre-fix rows we fall back to the `measurements_json` blob so the
+        UI can render historical values without a data backfill.
         """
+        # Prefer first-class columns (post-audit-fix rows)
+        top_illusion = getattr(row, "illusion_xframe", None)
+        top_conditioning = getattr(row, "conditioning_pct", None)
+        if top_illusion is not None or top_conditioning is not None:
+            return (
+                float(top_illusion) if top_illusion is not None else None,
+                float(top_conditioning) if top_conditioning is not None else None,
+            )
+        # Fallback to JSON blob for pre-fix rows
         mj = row.measurements_json or {}
         metrics = mj.get("metrics") or {}
         illusion = metrics.get("illusion_xframe")
-        # conditioning_pct lives on the per_metric row (current value 0..1)
         per_metric = metrics.get("per_metric") or {}
         cond_entry = per_metric.get("conditioning_pct") or {}
         conditioning = cond_entry.get("current") if isinstance(cond_entry, dict) else None

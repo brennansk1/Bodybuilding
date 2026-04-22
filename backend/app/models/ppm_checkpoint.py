@@ -41,6 +41,11 @@ class PPMCheckpoint(Base):
     arm_calf_neck_parity: Mapped[float | None] = mapped_column(Float, nullable=True)
     hqi_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     weight_cap_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # V2.S9 additions — illusion (X-frame) and conditioning_pct as first-class
+    # checkpoint columns (previously only stashed in measurements_json). Makes
+    # history queryable and enables cross-cycle progression charting.
+    illusion_xframe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    conditioning_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Classification outputs
     readiness_state: Mapped[str] = mapped_column(String(32), nullable=False)

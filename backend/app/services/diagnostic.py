@@ -127,25 +127,34 @@ def _lean_adjust_measurements(
     averaged: dict[str, float],
     body_fat_pct: float,
     skinfold_data: dict[str, float] | None = None,
+    sex: str = "male",
 ) -> dict[str, float]:
     """
     Strip fat from tape measurements before proportion/gap comparison.
 
-    Two strategies (site-specific preferred when available):
-    1. Lean girth formula (per-site skinfold): C_lean = C_total - pi * S_mm / 10
-    2. Global fallback (overall BF%): lean_circ = raw * sqrt(1 - bf_fraction)
+    V2 unification (audit fix) — routes every site through
+    `engine1.girth_projection.project_lean`, which enforces the same
+    three-tier dispatch (ISAK skinfold → JP-derived → BF-linear floor) that
+    the rest of the V2 engines use. Previously this function used an
+    inline sqrt(1 - bf_fraction) global fallback that diverged from the
+    V2 canonical path by ~3-10% per site. Now both surfaces agree.
+
+    Sources per strategy:
+      - ISAK manual / Heymsfield 1982 (primary skinfold path)
+      - Jackson & Pollock 1978 (fallback from total BF%)
     """
-    import math
-    bf_fraction = max(0.0, min(body_fat_pct / 100.0, 0.50))
-    global_factor = math.sqrt(1.0 - bf_fraction)
+    from app.engines.engine1.girth_projection import project_lean
 
     result: dict[str, float] = {}
     for site, circ in averaged.items():
-        sf_col = _SITE_SKINFOLD_MAP.get(site)
-        if sf_col and skinfold_data and sf_col in skinfold_data:
-            result[site] = lean_girth(circ, skinfold_data[sf_col])
-        else:
-            result[site] = round(circ * global_factor, 2)
+        projection = project_lean(
+            raw_cm=circ,
+            site=site,
+            skinfold_row=skinfold_data,  # project_lean handles both dict + ORM
+            bf_pct=body_fat_pct,
+            sex=sex,
+        )
+        result[site] = round(projection["lean_cm"], 2)
     return result
 
 
@@ -515,7 +524,9 @@ async def run_full_diagnostic(db: AsyncSession, user: User) -> dict:
         averaged["chest"] = tape.chest_relaxed
 
     # Lean-adjust circumferences
-    lean_averaged = _lean_adjust_measurements(averaged, body_fat_pct or 15.0, sf_data)
+    lean_averaged = _lean_adjust_measurements(
+        averaged, body_fat_pct or 15.0, sf_data, sex=profile.sex or "male",
+    )
 
     # LCSA — fault-tolerant
     lcsa_values: dict = {}
