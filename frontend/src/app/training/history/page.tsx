@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import { api } from "@/lib/api";
 
 interface SessionSummary {
@@ -108,20 +109,18 @@ export default function TrainingHistoryPage() {
         <div className="max-w-3xl mx-auto space-y-6">
 
           {/* Header */}
-          <div className="flex items-center gap-3">
-            <a
-              href="/training"
-              className="text-jungle-muted hover:text-jungle-accent transition-colors"
-              aria-label="Back to Training"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </a>
-            <h1 className="text-2xl font-bold">
-              <span className="text-jungle-accent">Training</span> History
-            </h1>
-          </div>
+          <PageTitle
+            text="Training History"
+            actions={
+              <a
+                href="/training"
+                className="btn-secondary text-sm px-3 py-2"
+                aria-label="Back to Training"
+              >
+                ← Training
+              </a>
+            }
+          />
 
           {/* Loading skeleton */}
           {fetching && (

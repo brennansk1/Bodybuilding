@@ -584,10 +584,7 @@ export default function CheckinPage() {
                   ←
                 </button>
                 <div>
-                  <h1 className="text-2xl font-bold">
-                    Daily <span className="text-jungle-accent">Check-In</span>
-                  </h1>
-                  <p className="text-jungle-muted text-sm mt-0.5">Quick tracking, 2 minutes</p>
+                  <PageTitle text="Daily Check-In" subtitle="Quick tracking, 2 minutes" className="mb-0" />
                 </div>
               </div>
 
@@ -848,10 +845,7 @@ export default function CheckinPage() {
           {mode === "quick" && quickResult && (
             <>
               <div>
-                <h1 className="text-2xl font-bold">
-                  Daily <span className="text-jungle-accent">Check-In</span>
-                </h1>
-                <p className="text-jungle-muted text-sm mt-1">All done!</p>
+                <PageTitle text="Daily Check-In" subtitle="All done!" className="mb-0" />
               </div>
               <div className="card space-y-4">
                 <div className="text-center">

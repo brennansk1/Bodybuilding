@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import { api } from "@/lib/api";
 
 interface Exercise {
@@ -117,17 +118,11 @@ export default function ExercisesPage() {
       <main className="container-app py-6">
         <div className="max-w-3xl mx-auto">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold">
-                <span className="text-jungle-accent">Exercise</span> Library
-              </h1>
-              <p className="text-jungle-muted text-sm mt-1">
-                {exercises.length} exercises • filtered by muscle group
-              </p>
-            </div>
-            <a href="/training" className="btn-secondary text-sm px-3 py-2">← Training</a>
-          </div>
+          <PageTitle
+            text="Exercise Library"
+            subtitle={`${exercises.length} exercises · filtered by muscle group`}
+            actions={<a href="/training" className="btn-secondary text-sm px-3 py-2">← Training</a>}
+          />
 
           {/* Search + filters */}
           <div className="card mb-4 space-y-3">

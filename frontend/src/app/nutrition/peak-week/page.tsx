@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import NavBar from "@/components/NavBar";
+import PageTitle from "@/components/PageTitle";
 import { api } from "@/lib/api";
 
 interface PeakWeekDay {
@@ -171,34 +172,26 @@ export default function PeakWeekPage() {
         <div className="max-w-3xl mx-auto space-y-6">
 
           {/* Header */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <a
-                href="/nutrition"
-                className="text-jungle-muted hover:text-jungle-accent transition-colors"
-                aria-label="Back to Nutrition"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </a>
-              <div>
-                <h1 className="text-2xl font-bold">
-                  <span className="text-jungle-accent">Peak Week</span> Protocol
-                </h1>
-                {showDate && (
-                  <p className="text-jungle-muted text-sm mt-0.5">
-                    Show date: {formatDate(showDate)}
-                  </p>
+          <PageTitle
+            text="Peak Week Protocol"
+            subtitle={showDate ? `Show date: ${formatDate(showDate)}` : undefined}
+            actions={
+              <>
+                <a
+                  href="/nutrition"
+                  className="btn-secondary text-sm px-3 py-2"
+                  aria-label="Back to Nutrition"
+                >
+                  ← Nutrition
+                </a>
+                {daysOut !== null && (
+                  <span className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ${badgeClass}`}>
+                    {daysOut}d out
+                  </span>
                 )}
-              </div>
-            </div>
-            {daysOut !== null && (
-              <span className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ${badgeClass}`}>
-                {daysOut}d out
-              </span>
-            )}
-          </div>
+              </>
+            }
+          />
 
           {/* Loading */}
           {fetching && (
