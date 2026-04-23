@@ -184,7 +184,20 @@ async def _compute_athlete_metrics(
         select(HQILog).where(HQILog.user_id == user.id).order_by(desc(HQILog.created_at)).limit(1)
     )
     hqi_row = hqi_q.scalar_one_or_none()
-    hqi_score = float(hqi_row.overall_hqi) if hqi_row and hqi_row.overall_hqi is not None else 0.0
+    # V3 fix: recompute the overall HQI on the fly from stored site_scores
+    # instead of trusting the cached `overall_hqi` column. The averaging
+    # math was corrected (grow-sites capped at 100%, stay-small penalized
+    # when over-ideal) and cached values written by older diagnostic runs
+    # will be inflated until the user runs a fresh diagnostic. Recomputing
+    # here makes the fix take effect immediately.
+    if hqi_row is not None and hqi_row.site_scores:
+        try:
+            from app.engines.engine1.muscle_gaps import compute_avg_pct_of_ideal as _avg
+            hqi_score = float(_avg(hqi_row.site_scores, division=prof.division))
+        except Exception:
+            hqi_score = float(hqi_row.overall_hqi) if hqi_row.overall_hqi is not None else 0.0
+    else:
+        hqi_score = float(hqi_row.overall_hqi) if hqi_row and hqi_row.overall_hqi is not None else 0.0
     hqi_age_days: int | None = None
     hqi_site_gaps: dict = {}
     if hqi_row is not None:

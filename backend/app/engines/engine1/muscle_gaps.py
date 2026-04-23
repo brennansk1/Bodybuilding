@@ -183,6 +183,23 @@ def compute_avg_pct_of_ideal(
     """
     Visibility-weighted average of pct_of_ideal across all sites.
     Hidden sites (e.g. thighs in Men's Physique) are down-weighted.
+
+    V3 fix: two asymmetries that were silently inflating the score for
+    high-BF or over-muscled athletes.
+
+    1. **Grow sites** (biceps, shoulders, chest, etc.) are capped at 100%.
+       Exceeding the divisional ideal on a grow site is neutral at worst
+       (and sometimes a negative for Classic judging). The old math gave
+       a +X% credit for every cm over ideal, which padded the overall HQI
+       for above-ideal sites and masked gaps elsewhere.
+
+    2. **Stay-small sites** (waist, hips) *lose* score when they exceed
+       100% of ideal — because "exceeding the waist ideal" means the
+       waist is too large (usually high BF carried in the midsection).
+       Previously a 110% waist counted as a +10% bonus; now it becomes
+       a ~80% contribution. A fat-waisted athlete no longer appears
+       "above ideal" on HQI. Penalty scales 2× per point over (symmetric
+       with how far you'd mark any other metric's gap).
     """
     visibility = _DIVISION_VISIBILITY.get(
         (division or "").lower().replace(" ", "_"),
@@ -197,7 +214,19 @@ def compute_avg_pct_of_ideal(
             pct = data.get("pct_of_ideal", 0.0)
         else:
             pct = float(data)
-            
+
+        if site in _RATIO_SITES:
+            # Stay-small: exceeding ideal is the problem, not the goal.
+            # 100% = at ceiling (good). 110% = 10 points over → penalize
+            # by 2× the overshoot so a chronically-high waist doesn't
+            # look like a contribution.
+            if pct > 100.0:
+                pct = max(0.0, 100.0 - 2.0 * (pct - 100.0))
+        else:
+            # Grow sites: exceeding ideal is neutral — cap at 100 so one
+            # oversized site can't paper over multiple undersized ones.
+            pct = min(pct, 100.0)
+
         w = visibility.get(site, 1.0)
         weighted_sum += pct * w
         total_weight += w
