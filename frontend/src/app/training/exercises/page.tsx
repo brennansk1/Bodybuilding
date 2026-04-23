@@ -404,8 +404,91 @@ function ExerciseCard({
               <p className="text-xs text-obsidian font-medium mt-1">{EQUIPMENT_LABELS[exercise.equipment] ?? exercise.equipment}</p>
             </div>
           </div>
+          <E1RMTrend exerciseName={exercise.name} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// V3.P7 — Per-lift e1RM trend sparkline
+// Lazy-loaded; fetches only when the exercise card is expanded.
+// ---------------------------------------------------------------------------
+interface StrengthRow { date: string; estimated_1rm: number; weight_kg: number; reps: number }
+
+function E1RMTrend({ exerciseName }: { exerciseName: string }) {
+  const [rows, setRows] = useState<StrengthRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<StrengthRow[]>(`/engine2/strength-log?exercise_name=${encodeURIComponent(exerciseName)}&limit=30`)
+      .then((data) => setRows(Array.isArray(data) ? data : null))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [exerciseName]);
+
+  if (loading) {
+    return (
+      <div className="bg-alabaster rounded-button border border-ash px-3 py-2 animate-pulse">
+        <div className="h-2 w-24 bg-ash rounded" />
+        <div className="h-8 mt-2 bg-ash rounded" />
+      </div>
+    );
+  }
+
+  if (!rows || rows.length < 2) {
+    return (
+      <div className="bg-alabaster rounded-button border border-ash px-3 py-2">
+        <p className="h-section text-travertine mb-0.5">Strength Trend</p>
+        <p className="text-[11px] text-iron body-serif-sm italic">
+          Log two sets of this lift to start seeing your estimated-1RM trend.
+        </p>
+      </div>
+    );
+  }
+
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  const values = sorted.map(r => r.estimated_1rm);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(0.5, max - min);
+  const w = 240;
+  const h = 46;
+  const path = values.map((v, i) => {
+    const x = (i / Math.max(1, values.length - 1)) * w;
+    const y = h - ((v - min) / range) * h;
+    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const latest = values[values.length - 1];
+  const first = values[0];
+  const delta = latest - first;
+  const deltaPct = first > 0 ? (delta / first) * 100 : 0;
+  const up = delta > 0.1;
+  const down = delta < -0.1;
+
+  return (
+    <div className="bg-alabaster rounded-button border border-ash px-3 py-2.5">
+      <div className="flex items-baseline justify-between mb-1.5">
+        <p className="h-section text-travertine">Estimated 1RM</p>
+        <span className="text-[10px] tracking-[0.1em] uppercase text-iron tabular-nums">
+          {sorted.length} entries
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <div className="text-lg font-semibold tabular-nums text-obsidian">
+            {latest.toFixed(1)}<span className="text-[11px] ml-1 text-travertine">kg</span>
+          </div>
+          <div className={`text-[10px] tracking-wider uppercase tabular-nums ${up ? "text-laurel" : down ? "text-terracotta" : "text-travertine"}`}>
+            {up ? "+" : ""}{delta.toFixed(1)}kg · {up ? "+" : ""}{deltaPct.toFixed(1)}%
+          </div>
+        </div>
+        <svg width="60%" viewBox={`0 0 ${w} ${h}`} className={up ? "text-laurel" : down ? "text-terracotta" : "text-adriatic"}>
+          <path d={path} fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
+        </svg>
+      </div>
     </div>
   );
 }

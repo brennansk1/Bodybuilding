@@ -864,6 +864,13 @@ export default function TrainingPage() {
         { notes: sessionNotes || undefined }
       );
       setProgressions(result.progressions || []);
+      // V3.P7 — PR celebration. Every session with progressions gets a
+      // prominent success toast; users kept missing the quiet card below.
+      if ((result.progressions ?? []).length > 0) {
+        const lifts = (result.progressions ?? []).map(p => p.exercise).slice(0, 3).join(", ");
+        const extra = (result.progressions ?? []).length > 3 ? ` +${(result.progressions ?? []).length - 3} more` : "";
+        showToast(`🏆 Progression unlocked: ${lifts}${extra}`, "success");
+      }
       // BUG-F1: update local session state so completed badge shows + sticky
       // bar and start button hide immediately. Also stash summary stats from
       // the finish response for the SessionSummary component.
@@ -1988,20 +1995,33 @@ export default function TrainingPage() {
                 )}
               </div>
 
-              {/* Progression readouts */}
+              {/* Progression readouts — V3.P7 prominence lift */}
               {progressions.length > 0 && (
-                <div className="card border-jungle-accent/40">
-                  <h3 className="text-xs font-semibold text-jungle-accent uppercase tracking-wider mb-2">
-                    Progression Unlocked
-                  </h3>
-                  {progressions.map((p) => (
-                    <div key={p.exercise} className="flex justify-between items-center py-1 text-sm border-b border-jungle-border last:border-0">
-                      <span className="text-jungle-muted text-xs">{p.exercise}</span>
-                      <span className="text-green-400 font-semibold text-xs">
-                        → {useLbs ? (p.next_weight_kg * 2.20462).toFixed(1) : p.next_weight_kg}{unit} × {p.next_reps}
-                      </span>
-                    </div>
-                  ))}
+                <div className="card border-laurel bg-viltrum-laurel-bg">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <h3 className="h-card text-laurel flex items-center gap-2">
+                      <span aria-hidden>🏆</span>
+                      Progression Unlocked
+                    </h3>
+                    <span className="text-[10px] tracking-[0.15em] uppercase text-laurel/80">
+                      Next session
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {progressions.map((p) => (
+                      <div key={p.exercise} className="flex justify-between items-baseline gap-2 text-sm border-b border-laurel/15 last:border-0 pb-1.5 last:pb-0">
+                        <span className="text-viltrum-obsidian text-[12px] truncate">{p.exercise}</span>
+                        <div className="flex items-baseline gap-2 flex-shrink-0">
+                          <span className="text-[10px] text-viltrum-pewter tabular-nums">
+                            e1RM {useLbs ? (p.estimated_1rm * 2.20462).toFixed(0) : p.estimated_1rm.toFixed(1)}{unit}
+                          </span>
+                          <span className="text-laurel font-semibold text-[13px] tabular-nums">
+                            → {useLbs ? (p.next_weight_kg * 2.20462).toFixed(1) : p.next_weight_kg}{unit} × {p.next_reps}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </>

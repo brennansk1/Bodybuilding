@@ -97,6 +97,7 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
     { href: "/nutrition", label: "Nutrition" },
     { href: "/timeline", label: "Timeline" },
     { href: "/progress", label: "Progress" },
+    { href: "/archive", label: "Archive" },
   ];
 
   const firstLetter = username ? username.charAt(0).toUpperCase() : "?";

@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from app.config import settings
 from app.database import engine, Base, async_session
 from app.models import *  # noqa: F401, F403 — register all models with Base
-from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin, telegram, ppm, insights
+from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin, telegram, ppm, insights, progress_photos
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +205,7 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(telegram.router, prefix="/api/v1")
 app.include_router(ppm.router, prefix="/api/v1")
 app.include_router(insights.router, prefix="/api/v1")
+app.include_router(progress_photos.router, prefix="/api/v1")
 
 import os
 from pathlib import Path as _Path

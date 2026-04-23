@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { showToast } from "@/components/Toast";
 import MiniLineChart from "@/components/MiniLineChart";
 import WeightTrendChart from "@/components/WeightTrendChart";
+import ProgressPhotoStack from "@/components/ProgressPhotoStack";
 
 interface WeightEntry { date: string; weight_kg: number }
 interface PDSEntry { date: string; pds_score: number; tier: string }
@@ -984,9 +985,12 @@ export default function ProgressPage() {
           {/* Photos Tab */}
           {activeTab === "photos" && (
             <div className="space-y-4">
+              {/* V3.P8 — pose-aware stack with overlay comparison */}
+              <ProgressPhotoStack />
+
               <div className="card">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold">Check-in Photos</h3>
+                  <h3 className="text-sm font-semibold">Check-in Photos (legacy)</h3>
                   <div className="flex gap-2">
                     {photos.length >= 2 && (
                       <button
