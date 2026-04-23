@@ -193,8 +193,9 @@ async def _compute_athlete_metrics(
     if hqi_row is not None and hqi_row.site_scores:
         try:
             from app.engines.engine1.muscle_gaps import compute_avg_pct_of_ideal as _avg
-            hqi_score = float(_avg(hqi_row.site_scores, division=prof.division))
-        except Exception:
+            hqi_score = float(_avg(hqi_row.site_scores, division=profile.division))
+        except Exception as _e:
+            logger.warning("on-the-fly HQI recompute failed: %s", _e)
             hqi_score = float(hqi_row.overall_hqi) if hqi_row.overall_hqi is not None else 0.0
     else:
         hqi_score = float(hqi_row.overall_hqi) if hqi_row and hqi_row.overall_hqi is not None else 0.0
