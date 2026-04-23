@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import Logo from "./Logo";
 
 interface NavBarProps {
   username?: string;
@@ -111,38 +110,81 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
     return !moreSpecific && (pathname === href || pathname?.startsWith(href + "/"));
   };
 
+  // Imperial dark nav per Claude Design — obsidian gradient, hexagonal red brand
+  // mark, Contrail One stenciled links, legion-red bottom edge stripe.
   return (
-    <nav className="sticky top-0 z-50 bg-white border-b-[2.5px] border-viltrum-obsidian">
+    <nav
+      className="sticky top-0 z-50 text-viltrum-bone"
+      style={{
+        background: "linear-gradient(180deg, var(--viltrum-obsidian) 0%, #0E0D0C 100%)",
+        borderBottom: "1px solid #000",
+        boxShadow: "0 2px 0 var(--viltrum-legion), 0 6px 20px -6px rgba(26,24,22,0.4)",
+      }}
+    >
       <div className="container-app">
         <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
-          {/* Logo — the circle crops the banner top/bottom, VILTRUM wordmark is oversized. */}
+          {/* Brand: logo image + VILTRUM wordmark + "All is Ours" tagline */}
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex items-center shrink-0 -my-1 hover:opacity-85 transition-opacity"
+            className="flex items-center gap-2.5 shrink-0 hover:opacity-85 transition-opacity"
             aria-label="Viltrum — home"
           >
-            <Logo variant="lockup" size="navbar" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/viltrum-logo.png"
+              alt=""
+              className="w-8 h-8 sm:w-9 sm:h-9 object-contain"
+              style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))" }}
+            />
+            <div className="leading-none text-left">
+              <div
+                className="text-viltrum-bone"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "16px",
+                  letterSpacing: "6px",
+                  textTransform: "uppercase",
+                  fontWeight: 400,
+                }}
+              >
+                Viltrum
+              </div>
+              <div
+                className="mt-0.5 italic"
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: "10px",
+                  color: "rgba(245,244,241,0.55)",
+                  letterSpacing: "1.5px",
+                }}
+              >
+                All is Ours
+              </div>
+            </div>
           </button>
 
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-0 flex-1 justify-center">
+          {/* Desktop nav — stenciled */}
+          <div className="hidden md:flex items-center gap-1.5 flex-1 justify-center">
             {navLinks.map((link) => {
               const active = activeFor(link.href);
               return (
                 <a
                   key={link.href}
                   href={link.href}
-                  className={`relative px-3 py-2 text-[12px] font-medium transition-colors ${
-                    active ? "text-viltrum-obsidian" : "text-viltrum-travertine hover:text-viltrum-obsidian"
-                  }`}
+                  className="relative px-2.5 py-1.5 transition-colors"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "11px",
+                    letterSpacing: "2.5px",
+                    textTransform: "uppercase",
+                    fontWeight: 400,
+                    color: active ? "var(--viltrum-bone)" : "rgba(245,244,241,0.6)",
+                    borderBottom: active ? "2px solid var(--viltrum-legion)" : "2px solid transparent",
+                  }}
+                  onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "var(--viltrum-bone)"; }}
+                  onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "rgba(245,244,241,0.6)"; }}
                 >
                   {link.label}
-                  {active && (
-                    <span
-                      className="absolute left-3 right-3 -bottom-[17px] h-[2.5px] bg-viltrum-centurion"
-                      aria-hidden="true"
-                    />
-                  )}
                 </a>
               );
             })}
@@ -151,13 +193,16 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
           {/* User section */}
           <div className="hidden md:flex items-center gap-3 shrink-0">
             {username && (
-              <span className="text-viltrum-travertine text-[12px]">{username}</span>
+              <span style={{ color: "rgba(245,244,241,0.55)", fontSize: "11px", letterSpacing: "1px" }}>
+                {username}
+              </span>
             )}
 
             <button
               onClick={() => avatarInputRef.current?.click()}
               title="Change profile picture"
-              className="relative w-8 h-8 rounded-full overflow-hidden bg-viltrum-obsidian focus:outline-none focus-visible:ring-2 focus-visible:ring-viltrum-obsidian focus-visible:ring-offset-2"
+              className="relative w-8 h-8 rounded-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-viltrum-legion focus-visible:ring-offset-2"
+              style={{ background: "var(--viltrum-legion)", border: "1px solid rgba(245,244,241,0.2)" }}
               aria-label="Change profile picture"
             >
               {profilePicUrl ? (
@@ -179,18 +224,29 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
 
             <a
               href="/settings"
-              className={`text-[12px] transition-colors ${
-                pathname === "/settings"
-                  ? "text-viltrum-obsidian font-semibold"
-                  : "text-viltrum-travertine hover:text-viltrum-obsidian"
-              }`}
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: "11px",
+                letterSpacing: "2.5px",
+                textTransform: "uppercase",
+                color: pathname === "/settings" ? "var(--viltrum-bone)" : "rgba(245,244,241,0.6)",
+                borderBottom: pathname === "/settings" ? "2px solid var(--viltrum-legion)" : "2px solid transparent",
+                paddingBottom: "6px",
+              }}
             >
               Settings
             </a>
             {onLogout && (
               <button
                 onClick={onLogout}
-                className="text-[12px] text-viltrum-travertine hover:text-viltrum-legion transition-colors"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "11px",
+                  letterSpacing: "2.5px",
+                  textTransform: "uppercase",
+                  color: "rgba(245,244,241,0.45)",
+                }}
+                className="hover:!text-viltrum-legion transition-colors"
               >
                 Logout
               </button>
@@ -201,7 +257,8 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
           <div className="flex items-center gap-2 md:hidden">
             <button
               onClick={() => avatarInputRef.current?.click()}
-              className="relative w-8 h-8 rounded-full overflow-hidden bg-viltrum-obsidian"
+              className="relative w-8 h-8 rounded-full overflow-hidden"
+              style={{ background: "var(--viltrum-legion)" }}
               aria-label="Change profile picture"
             >
               {profilePicUrl ? (
@@ -215,7 +272,7 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
             </button>
             <button
               onClick={() => setMobileOpen((o) => !o)}
-              className="p-2 text-viltrum-obsidian"
+              className="p-2 text-viltrum-bone"
               aria-label="Toggle menu"
               aria-expanded={mobileOpen}
             >
@@ -232,15 +289,18 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
 
         {/* Breadcrumb strip — only on nested pages */}
         {crumbs.length > 1 && (
-          <div className="hidden md:flex items-center gap-2 pb-2 text-[11px] text-viltrum-travertine">
+          <div className="hidden md:flex items-center gap-2 pb-2" style={{ fontSize: "10px" }}>
             {crumbs.map((c, i) => (
               <span key={c.href} className="flex items-center gap-2">
-                {i > 0 && <span className="text-viltrum-pewter">›</span>}
+                {i > 0 && <span style={{ color: "rgba(245,244,241,0.3)" }}>›</span>}
                 <a
                   href={c.href}
-                  className={`uppercase tracking-[2px] ${
-                    i === crumbs.length - 1 ? "text-viltrum-obsidian" : "hover:text-viltrum-obsidian"
-                  }`}
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    letterSpacing: "2px",
+                    textTransform: "uppercase",
+                    color: i === crumbs.length - 1 ? "var(--viltrum-bone)" : "rgba(245,244,241,0.5)",
+                  }}
                 >
                   {c.label}
                 </a>
@@ -250,9 +310,9 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
         )}
       </div>
 
-      {/* Mobile menu — full-width slide-down */}
+      {/* Mobile menu — obsidian drawer */}
       {mobileOpen && (
-        <div className="md:hidden border-t border-viltrum-ash bg-white">
+        <div className="md:hidden" style={{ background: "#0E0D0C", borderTop: "1px solid #000" }}>
           <div className="container-app py-3 space-y-1">
             {navLinks.map((link) => {
               const active = activeFor(link.href);
@@ -260,31 +320,46 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
                 <a
                   key={link.href}
                   href={link.href}
-                  className={`block px-3 py-3 rounded-card transition-colors text-[14px] ${
-                    active
-                      ? "text-viltrum-obsidian bg-viltrum-limestone font-semibold"
-                      : "text-viltrum-iron hover:bg-viltrum-limestone"
-                  }`}
+                  className="block px-3 py-3 transition-colors"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "13px",
+                    letterSpacing: "2.5px",
+                    textTransform: "uppercase",
+                    color: active ? "var(--viltrum-bone)" : "rgba(245,244,241,0.6)",
+                    background: active ? "rgba(196,64,64,0.08)" : "transparent",
+                    borderLeft: active ? "2px solid var(--viltrum-legion)" : "2px solid transparent",
+                  }}
                 >
                   {link.label}
                 </a>
               );
             })}
-            <div className="border-t border-viltrum-ash mt-3 pt-3 space-y-1">
+            <div className="mt-3 pt-3 space-y-1" style={{ borderTop: "1px solid rgba(245,244,241,0.08)" }}>
               <a
                 href="/settings"
-                className={`block px-3 py-3 rounded-card text-[14px] transition-colors ${
-                  pathname === "/settings"
-                    ? "text-viltrum-obsidian bg-viltrum-limestone font-semibold"
-                    : "text-viltrum-iron hover:bg-viltrum-limestone"
-                }`}
+                className="block px-3 py-3"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "13px",
+                  letterSpacing: "2.5px",
+                  textTransform: "uppercase",
+                  color: pathname === "/settings" ? "var(--viltrum-bone)" : "rgba(245,244,241,0.6)",
+                }}
               >
                 Settings
               </a>
               {onLogout && (
                 <button
                   onClick={onLogout}
-                  className="w-full text-left px-3 py-3 text-[14px] text-viltrum-legion hover:bg-viltrum-blush rounded-card"
+                  className="w-full text-left px-3 py-3"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "13px",
+                    letterSpacing: "2.5px",
+                    textTransform: "uppercase",
+                    color: "var(--viltrum-legion)",
+                  }}
                 >
                   Logout
                 </button>

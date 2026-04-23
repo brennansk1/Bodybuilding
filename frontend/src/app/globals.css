@@ -24,6 +24,30 @@
   --viltrum-success:       #2D7A45;
   --viltrum-warning:       #C48820;
   --viltrum-info:          #2E6B9C;
+
+  /* Named tokens — mirror tailwind's viltrum-* group so inline `var()` works
+     in places where Tailwind utilities aren't available (NavBar inline styles,
+     ChartCard ribbon, etc.). Keep in sync with tailwind.config.ts. */
+  --viltrum-bone:          #F5F4F1;
+  --viltrum-alabaster:     #FAFAF8;
+  --viltrum-limestone:     #F0EFEC;
+  --viltrum-ash:           #E2E0DC;
+  --viltrum-pumice:        #D0CFC8;
+  --viltrum-obsidian:      #1A1816;
+  --viltrum-iron:          #5C5750;
+  --viltrum-travertine:    #8A857D;
+  --viltrum-pewter:        #C4C0B9;
+  --viltrum-blush:         #FAF0F0;
+  --viltrum-terracotta:    #E8B4B4;
+  --viltrum-legion:        #C44040;
+  --viltrum-legion-hover:  #B33838;
+  --viltrum-centurion:     #8B2B2B;
+  --viltrum-laurel:        #2D7A45;
+  --viltrum-laurel-bg:     #EDF7F0;
+  --viltrum-aureus:        #C48820;
+  --viltrum-aureus-bg:     #FBF5E8;
+  --viltrum-adriatic:      #2E6B9C;
+  --viltrum-adriatic-bg:   #EBF3FA;
 }
 
 html {
@@ -57,23 +81,29 @@ body::before {
   background-attachment: fixed;
   pointer-events: none;
 }
-/* Marble tint layer — translucent so the skyline peeks through the empty
-   areas of the page. Cards still render on top of this and stay readable.
-   Overlay opacity deliberately high — the skyline is atmosphere, not content.
-   A soft top-down gradient keeps a hint of sky at the crest of each page
-   without overpowering card content further down. */
+/* Marble tint + Viltrum atmospheric overlays.
+   Per Claude Design — layer (top to bottom):
+   1. Crimson ceiling bloom — radial fade from top-center, the "imperial"
+      atmosphere reaching down into the page.
+   2. Obsidian ground vignette — same radial from bottom, weight + horizon.
+   3. Marble fade — translucent so the city skyline peeks through. Higher
+      opacity than before so the bloom + vignette read clearly without the
+      city overpowering. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: linear-gradient(
-    180deg,
-    rgba(245, 244, 241, 0.72) 0%,
-    rgba(245, 244, 241, 0.88) 40%,
-    rgba(245, 244, 241, 0.94) 100%
-  );
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(196, 64, 64, 0.10) 0%, rgba(196, 64, 64, 0) 38%),
+    radial-gradient(ellipse at 50% 100%, rgba(26, 24, 22, 0.14) 0%, rgba(26, 24, 22, 0) 45%),
+    linear-gradient(
+      180deg,
+      rgba(245, 244, 241, 0.86) 0%,
+      rgba(245, 244, 241, 0.92) 40%,
+      rgba(245, 244, 241, 0.96) 100%
+    );
 }
 html { background-color: transparent; }
 @media (max-width: 767px) {
@@ -81,12 +111,15 @@ html { background-color: transparent; }
     background-attachment: scroll;
   }
   body::after {
-    background-image: linear-gradient(
-      180deg,
-      rgba(245, 244, 241, 0.82) 0%,
-      rgba(245, 244, 241, 0.94) 40%,
-      rgba(245, 244, 241, 0.97) 100%
-    );
+    background-image:
+      radial-gradient(ellipse at 50% 0%, rgba(196, 64, 64, 0.12) 0%, rgba(196, 64, 64, 0) 35%),
+      radial-gradient(ellipse at 50% 100%, rgba(26, 24, 22, 0.10) 0%, rgba(26, 24, 22, 0) 40%),
+      linear-gradient(
+        180deg,
+        rgba(245, 244, 241, 0.90) 0%,
+        rgba(245, 244, 241, 0.95) 40%,
+        rgba(245, 244, 241, 0.98) 100%
+      );
   }
 }
 

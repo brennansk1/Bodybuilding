@@ -2375,7 +2375,7 @@ Keep your token secure and store it safely...`}</pre>
                 </div>
                 <p className="text-[10px] text-jungle-dim">
                   💡 Replace <code>your-coronado-host</code> with your actual backend URL
-                  (for local access that&apos;s <code className="text-jungle-accent">http://<server-ip>:8000</code>).
+                  (for local access that&apos;s <code className="text-jungle-accent">{"http://<server-ip>:8000"}</code>).
                   Shortcuts needs an <strong>https://</strong> URL if you&apos;re outside your home network.
                 </p>
               </section>

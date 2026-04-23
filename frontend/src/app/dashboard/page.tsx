@@ -2654,6 +2654,21 @@ export default function DashboardPage() {
   );
 }
 
+// V4 / Claude Design — every card gets a tall red `legion`-colored ribbon
+// banner with hexagonal glyph + uppercase title + italic Crimson subtitle +
+// auto-incrementing "№ NN" sequence number. Tier badge + info button drop
+// into a thin row below the ribbon. The card body starts after that row.
+//
+// `subtitle` (the small right-aligned tag prop) is now redundant for cards
+// that pass `plainDescription`; we surface plainDescription inside the
+// ribbon as the italic descriptor and drop the small tag entirely. If a
+// card only passes `subtitle`, that becomes the descriptor instead.
+let __cardSeq = 0;
+function nextCardSeq(): string {
+  __cardSeq += 1;
+  return String(__cardSeq).padStart(2, "0");
+}
+
 const ChartCard = memo(function ChartCard({
   title,
   subtitle,
@@ -2672,32 +2687,120 @@ const ChartCard = memo(function ChartCard({
   scoreExtraKeys?: import("@/components/ScoreInfoModal").ScoreKey[];
   /** V3 — tier chip rendered alongside subtitle (e.g., "T1 → T2"). */
   tierBadge?: React.ReactNode;
-  /** V3 — plain-English subtitle under the title. Distinct from `subtitle`
-   * which is a small uppercase right-aligned tag. */
+  /** V3 — plain-English subtitle under the title. Surfaced inside the V4 ribbon. */
   plainDescription?: string;
   children: React.ReactNode;
 }) {
+  // Each card gets a stable per-mount sequence number for the ribbon's № tag.
+  const seq = useRef<string | null>(null);
+  if (seq.current === null) seq.current = nextCardSeq();
+  const descriptor = plainDescription || subtitle;
+  const hasControls = !!tierBadge || !!scoreKey || !!tooltip;
+
   return (
-    <div className="card">
-      <div className="flex items-baseline justify-between mb-2 gap-3">
-        <h3 className="h-card flex items-center gap-1.5">
-          {title}
+    <div
+      className="card"
+      style={{
+        // Override default card padding — ribbon needs to extend edge-to-edge.
+        padding: 0,
+        overflow: "hidden",
+      }}
+    >
+      {/* Ribbon banner */}
+      <div
+        style={{
+          background: "var(--viltrum-legion)",
+          color: "var(--viltrum-bone)",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "10px",
+          padding: "10px 14px",
+          borderBottom: "2px solid var(--viltrum-centurion)",
+        }}
+      >
+        {/* Hexagonal glyph */}
+        <span
+          aria-hidden
+          style={{
+            width: "12px",
+            height: "12px",
+            flexShrink: 0,
+            marginTop: "3px",
+            background: "var(--viltrum-bone)",
+            clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)",
+          }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "11px",
+              letterSpacing: "3px",
+              textTransform: "uppercase",
+              lineHeight: 1.2,
+              fontWeight: 500,
+            }}
+          >
+            {title}
+          </div>
+          {descriptor && (
+            <div
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontStyle: "italic",
+                fontSize: "12px",
+                color: "rgba(245,240,230,0.88)",
+                marginTop: "3px",
+                lineHeight: 1.4,
+                fontWeight: 400,
+              }}
+            >
+              {descriptor}
+            </div>
+          )}
+        </div>
+        <span
+          aria-hidden
+          style={{
+            marginLeft: "auto",
+            fontFamily: "var(--font-display)",
+            fontVariantNumeric: "tabular-nums",
+            letterSpacing: "2px",
+            color: "var(--viltrum-bone)",
+            opacity: 0.7,
+            fontSize: "9px",
+            marginTop: "4px",
+            flexShrink: 0,
+          }}
+        >
+          № {seq.current}
+        </span>
+      </div>
+      {/* Controls strip — tier badge + info button. Only renders when present. */}
+      {hasControls && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            justifyContent: "flex-end",
+            padding: "8px 14px 0",
+            flexWrap: "wrap",
+          }}
+        >
+          {tierBadge}
           {tooltip && <InfoTooltip text={tooltip} />}
           {scoreKey && <ScoreInfoButton scoreKey={scoreKey} extraKeys={scoreExtraKeys} />}
-        </h3>
-        <div className="flex items-center gap-2">
-          {tierBadge}
-          <span className="text-[10px] text-viltrum-travertine uppercase tracking-[2px] font-sans truncate">
-            {subtitle}
-          </span>
         </div>
-      </div>
-      {plainDescription && (
-        <p className="text-[11px] text-viltrum-iron italic body-serif-sm leading-snug mb-2 -mt-1">
-          {plainDescription}
-        </p>
       )}
-      {children}
+      {/* Body */}
+      <div
+        style={{
+          padding: hasControls ? "12px 16px 16px" : "14px 16px 16px",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 });

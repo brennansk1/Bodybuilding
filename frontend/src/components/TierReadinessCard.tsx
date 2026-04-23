@@ -1,7 +1,56 @@
 "use client";
 
+import { useState } from "react";
 import type { TierReadiness, TierProjection, ReadinessState } from "@/lib/types";
 import { AlertTriangle, Check } from "./icons";
+
+// V4 / Claude Design — per-gate static coaching copy. Used by the inline
+// click-to-expand panel so each of the 10 gates can teach the athlete what
+// the metric is, why it matters at their target tier, and how to close the
+// gap. No new backend data — all derivable from the existing `per_metric`
+// payload.
+const GATE_DETAILS: Record<string, { what: string; how: string }> = {
+  weight_cap_pct: {
+    what: "Your projected stage weight as a fraction of your IFBB Classic Physique weight cap. Stage weight is your current LBM grossed up to ~5% body fat.",
+    how: "Add lean mass — keep training intensity high and stay in a controlled surplus until BF approaches the offseason ceiling, then mini-cut and rebuild.",
+  },
+  ffmi: {
+    what: "Normalized Fat-Free Mass Index — LBM in kg ÷ height² in m, normalized to 6'0\" so it's comparable across heights.",
+    how: "Same as weight: add LBM. FFMI moves slowly; expect ~0.5/year at your training age under elite execution.",
+  },
+  shoulder_waist: {
+    what: "Shoulder circumference ÷ waist circumference. The defining Classic silhouette.",
+    how: "Two levers: side delt + back specialization (numerator) and waist control via vacuum work + low BF (denominator).",
+  },
+  chest_waist: {
+    what: "Chest circumference ÷ waist circumference. Reeves' classical ideal is 1.48; modern Classic winners run 1.74+.",
+    how: "Upper-chest emphasis (incline pressing) + waist control. Dropping BF lowers waist circumference proportionally.",
+  },
+  arm_calf_neck_parity: {
+    what: "Reeves' equal-circumference rule — arm, calf, and neck should match. Classic judges look for it specifically.",
+    how: "Identify the smallest of the three and run a structural-priority cycle on it. This is a 5-year project at your frame; tag the lagging site as a permanent priority muscle.",
+  },
+  illusion_score: {
+    what: "X-frame ratio: (shoulders × hips) ÷ waist². Captures the silhouette that lets a lighter athlete beat a heavier one with worse proportions.",
+    how: "Driven by the same proportions as V-taper — shoulders/back up, waist down. Hips matter too: glute training contributes to the X.",
+  },
+  hqi: {
+    what: "Hypertrophy Quality Index — visibility-weighted average of how close each judged site is to your tier's ideal lean circumference.",
+    how: "Run diagnostics regularly so this number is fresh. Per-site gap analysis (Muscle Gaps card) tells you which sites are dragging the average.",
+  },
+  training_years: {
+    what: "Chronological years of consistent training. Soft gate — won't block tier classification on its own but matters for projection math.",
+    how: "Time. Genuine training years can't be shortcut. Adherence factors (consistency × intensity × programming) determine your effective training age.",
+  },
+  mass_distribution: {
+    what: "Worst-site percentage of ideal across your seven primary sites. Catches lopsided physiques that score well on average HQI but have one site lagging badly.",
+    how: "Open the Muscle Gaps card, identify the lowest pct site, and run a specialization cycle focused there.",
+  },
+  conditioning_pct: {
+    what: "Fraction of the offseason→stage body-fat range you've closed. 0% = at offseason ceiling; 100% = at stage target BF.",
+    how: "Cut. Maintain a controlled deficit until BF reaches your division's stage target. Carb-cycle to preserve performance through the cut.",
+  },
+};
 
 const STATE: Record<ReadinessState, { label: string; badge: string; ring: string }> = {
   not_ready:   { label: "Not Ready",    badge: "bg-viltrum-limestone text-viltrum-iron",     ring: "border-viltrum-ash" },
@@ -151,6 +200,11 @@ export default function TierReadinessCard({
     statusCounts[s]++;
   }
 
+  // V4 / Claude Design — click-to-expand gate detail panel. Only one open
+  // at a time. Toggling the same key closes it.
+  const [openGate, setOpenGate] = useState<string | null>(null);
+  const tierLabel = readiness.tier.replace(/_/g, " ");
+
   // V2 recalibration notice — shown once per browser session since the
   // readiness metric count grew (8 → 10/11) and users need to know why
   // their pct_met looks lower at first glance.
@@ -265,38 +319,56 @@ export default function TierReadinessCard({
               const label = METRIC_LABELS[key] || key;
               const status = classifyMetric(m.pct_progress, m.met);
               const copy = STATUS_COPY[status];
+              const isOpen = openGate === key;
+              const detail = GATE_DETAILS[key];
+              const gapHint = (() => {
+                if (m.met) return `Met — at or above the ${tierLabel} threshold of ${formatTarget(key, m)}.`;
+                const cur = formatMetricValue(key, m);
+                const tgt = formatTarget(key, m);
+                return `At ${cur} of ${tgt} — ${100 - pct}% to gate. ${pct >= 85 ? "Close." : pct >= 60 ? "Developing." : "Far."}`;
+              })();
               return (
-                <div
-                  key={key}
-                  className={`pl-2 border-l-[3px] ${copy.rowBorderClass}`}
-                >
-                  <div className="flex justify-between items-baseline gap-2 text-[11px]">
-                    <div className="flex items-baseline gap-1.5 min-w-0">
-                      <span
-                        className={`text-[13px] leading-none flex-shrink-0 ${copy.textClass}`}
-                        aria-label={copy.label}
-                      >
-                        {copy.glyph}
+                <div key={key} className={`pl-2 border-l-[3px] ${copy.rowBorderClass}`}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenGate(isOpen ? null : key)}
+                    className="w-full text-left hover:bg-viltrum-alabaster transition-colors rounded -mx-1 px-1 py-0.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-viltrum-obsidian"
+                    aria-expanded={isOpen}
+                  >
+                    <div className="flex justify-between items-baseline gap-2 text-[11px]">
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span
+                          className={`text-[13px] leading-none flex-shrink-0 ${copy.textClass}`}
+                          aria-label={copy.label}
+                        >
+                          {copy.glyph}
+                        </span>
+                        <span className="text-viltrum-iron truncate">{label}</span>
+                        <span
+                          aria-hidden
+                          className={`ml-1 text-[9px] text-viltrum-pewter transition-transform ${isOpen ? "rotate-90" : ""}`}
+                        >
+                          ▸
+                        </span>
+                      </div>
+                      <span className={m.met ? "text-viltrum-laurel font-semibold shrink-0" : "text-viltrum-obsidian shrink-0"}>
+                        <span className="font-mono">{formatMetricValue(key, m)}</span>
+                        <span className="text-viltrum-pewter"> / </span>
+                        <span className="font-mono">{formatTarget(key, m)}</span>
                       </span>
-                      <span className="text-viltrum-iron truncate">{label}</span>
                     </div>
-                    <span className={m.met ? "text-viltrum-laurel font-semibold shrink-0" : "text-viltrum-obsidian shrink-0"}>
-                      <span className="font-mono">{formatMetricValue(key, m)}</span>
-                      <span className="text-viltrum-pewter"> / </span>
-                      <span className="font-mono">{formatTarget(key, m)}</span>
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="flex-1 h-1 bg-viltrum-limestone rounded">
-                      <div
-                        className={`h-1 rounded ${copy.barClass}`}
-                        style={{ width: `${Math.min(100, pct)}%` }}
-                      />
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1 bg-viltrum-limestone rounded">
+                        <div
+                          className={`h-1 rounded ${copy.barClass}`}
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                      <span className={`text-[9px] font-mono tabular-nums ${copy.textClass} flex-shrink-0 w-9 text-right`}>
+                        {pct}%
+                      </span>
                     </div>
-                    <span className={`text-[9px] font-mono tabular-nums ${copy.textClass} flex-shrink-0 w-9 text-right`}>
-                      {pct}%
-                    </span>
-                  </div>
+                  </button>
                   {/* Stage weight detail — only on weight_cap_pct */}
                   {key === "weight_cap_pct" && m.projected_stage_kg != null && (
                     <div className="text-[10px] text-viltrum-travertine mt-1 flex justify-between">
@@ -308,6 +380,28 @@ export default function TierReadinessCard({
                     <div className="text-[10px] text-viltrum-aureus mt-1 flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" />
                       Diagnostic is {m.age_days ?? "90+"} days old — rerun to refresh.
+                    </div>
+                  )}
+                  {/* V4 / Claude Design — click-to-expand detail panel */}
+                  {isOpen && detail && (
+                    <div
+                      className="mt-2 p-2.5 rounded-card border border-viltrum-ash bg-viltrum-alabaster"
+                      style={{ borderLeftWidth: 0 }}
+                    >
+                      <div className="space-y-1.5">
+                        <div>
+                          <div className="text-[9px] uppercase tracking-[0.15em] text-viltrum-travertine">What it is</div>
+                          <p className="text-[11px] text-viltrum-iron leading-snug body-serif-sm italic mt-0.5">{detail.what}</p>
+                        </div>
+                        <div>
+                          <div className="text-[9px] uppercase tracking-[0.15em] text-viltrum-travertine">Why at {tierLabel}</div>
+                          <p className={`text-[11px] leading-snug mt-0.5 ${copy.textClass}`}>{gapHint}</p>
+                        </div>
+                        <div>
+                          <div className="text-[9px] uppercase tracking-[0.15em] text-viltrum-travertine">How to close it</div>
+                          <p className="text-[11px] text-viltrum-iron leading-snug mt-0.5">{detail.how}</p>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
