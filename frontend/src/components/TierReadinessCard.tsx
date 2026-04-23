@@ -10,6 +10,53 @@ const STATE: Record<ReadinessState, { label: string; badge: string; ring: string
   stage_ready: { label: "Stage Ready",  badge: "bg-viltrum-laurel-bg text-viltrum-laurel",   ring: "border-viltrum-laurel/40" },
 };
 
+// V3 — 4-tier status classification per metric. Lets the user see at a
+// glance which gates are met, which are close, which need work, and which
+// are far from target. Previously every unmet metric rendered the same
+// "red bar" regardless of distance, so a 99%-complete metric looked no
+// different from a 20%-complete one.
+type MetricStatus = "met" | "close" | "developing" | "far";
+
+function classifyMetric(pct: number, met: boolean): MetricStatus {
+  if (met) return "met";
+  if (pct >= 0.85) return "close";
+  if (pct >= 0.60) return "developing";
+  return "far";
+}
+
+const STATUS_COPY: Record<MetricStatus, {
+  label: string; glyph: string; textClass: string; barClass: string; rowBorderClass: string;
+}> = {
+  met: {
+    label: "Met",
+    glyph: "✓",
+    textClass: "text-viltrum-laurel",
+    barClass: "bg-viltrum-laurel",
+    rowBorderClass: "border-l-viltrum-laurel",
+  },
+  close: {
+    label: "Close",
+    glyph: "◐",
+    textClass: "text-viltrum-aureus",
+    barClass: "bg-viltrum-aureus",
+    rowBorderClass: "border-l-viltrum-aureus",
+  },
+  developing: {
+    label: "Developing",
+    glyph: "◔",
+    textClass: "text-viltrum-adriatic",
+    barClass: "bg-viltrum-adriatic",
+    rowBorderClass: "border-l-viltrum-adriatic",
+  },
+  far: {
+    label: "Far",
+    glyph: "○",
+    textClass: "text-viltrum-centurion",
+    barClass: "bg-viltrum-centurion",
+    rowBorderClass: "border-l-viltrum-centurion",
+  },
+};
+
 const METRIC_LABELS: Record<string, string> = {
   weight_cap_pct:       "Stage-projected weight",
   ffmi:                 "FFMI",
@@ -94,6 +141,16 @@ export default function TierReadinessCard({
   const canTransition = readiness.state === "approaching" || readiness.state === "stage_ready";
   const limiter = readiness.per_metric[readiness.limiting_factor] as MetricShape | undefined;
 
+  // V3 — compute per-metric status distribution for the at-a-glance summary.
+  // Shows the user "1 met · 3 close · 2 developing · 4 far" so they see
+  // how many gates are in each band without counting checkmarks.
+  const statusCounts: Record<MetricStatus, number> = { met: 0, close: 0, developing: 0, far: 0 };
+  for (const m of Object.values(readiness.per_metric)) {
+    if (!m) continue;
+    const s = classifyMetric(m.pct_progress, m.met);
+    statusCounts[s]++;
+  }
+
   // V2 recalibration notice — shown once per browser session since the
   // readiness metric count grew (8 → 10/11) and users need to know why
   // their pct_met looks lower at first glance.
@@ -146,6 +203,38 @@ export default function TierReadinessCard({
         </div>
       </header>
 
+      {/* V3 — Status distribution strip. Tells the user at a glance how
+          many gates are met / close / developing / far without them having
+          to count checkmarks down the list. */}
+      <div className="py-3 border-b border-viltrum-ash">
+        <div className="text-[10px] uppercase tracking-[2px] text-viltrum-travertine mb-2">
+          Gate status
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {(["met", "close", "developing", "far"] as MetricStatus[]).map((s) => {
+            const copy = STATUS_COPY[s];
+            const count = statusCounts[s];
+            const dim = count === 0 ? "opacity-40" : "";
+            return (
+              <div
+                key={s}
+                className={`rounded-card border border-viltrum-ash px-2 py-1.5 text-center ${dim}`}
+              >
+                <div className={`text-[16px] leading-none ${copy.textClass}`}>
+                  {copy.glyph}
+                </div>
+                <div className="text-[10px] font-mono tabular-nums text-viltrum-obsidian mt-0.5">
+                  {count}
+                </div>
+                <div className="text-[9px] uppercase tracking-[0.1em] text-viltrum-travertine">
+                  {copy.label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Cycle progress (PPM) */}
       {typeof currentCycleWeek === "number" && typeof totalCycleWeeks === "number" && (
         <div className="py-3 border-b border-viltrum-ash">
@@ -162,7 +251,9 @@ export default function TierReadinessCard({
         </div>
       )}
 
-      {/* Metric groups — two columns on desktop, stacked on mobile */}
+      {/* Metric groups — two columns on desktop, stacked on mobile.
+          V3: each row carries its status glyph + color in a left border
+          stripe so the state is legible without having to read the numbers. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 py-4">
         {GROUPS.map((group) => (
           <div key={group.title} className="space-y-2">
@@ -172,22 +263,39 @@ export default function TierReadinessCard({
               if (!m) return null;
               const pct = Math.round(m.pct_progress * 100);
               const label = METRIC_LABELS[key] || key;
+              const status = classifyMetric(m.pct_progress, m.met);
+              const copy = STATUS_COPY[status];
               return (
-                <div key={key}>
-                  <div className="flex justify-between items-baseline text-[11px]">
-                    <span className="text-viltrum-iron">{label}</span>
-                    <span className={m.met ? "text-viltrum-laurel font-semibold" : "text-viltrum-obsidian"}>
+                <div
+                  key={key}
+                  className={`pl-2 border-l-[3px] ${copy.rowBorderClass}`}
+                >
+                  <div className="flex justify-between items-baseline gap-2 text-[11px]">
+                    <div className="flex items-baseline gap-1.5 min-w-0">
+                      <span
+                        className={`text-[13px] leading-none flex-shrink-0 ${copy.textClass}`}
+                        aria-label={copy.label}
+                      >
+                        {copy.glyph}
+                      </span>
+                      <span className="text-viltrum-iron truncate">{label}</span>
+                    </div>
+                    <span className={m.met ? "text-viltrum-laurel font-semibold shrink-0" : "text-viltrum-obsidian shrink-0"}>
                       <span className="font-mono">{formatMetricValue(key, m)}</span>
                       <span className="text-viltrum-pewter"> / </span>
                       <span className="font-mono">{formatTarget(key, m)}</span>
-                      {m.met && <Check className="inline-block w-3 h-3 ml-1" />}
                     </span>
                   </div>
-                  <div className="h-1 bg-viltrum-limestone rounded mt-1">
-                    <div
-                      className={`h-1 rounded ${m.met ? "bg-viltrum-laurel" : "bg-viltrum-legion"}`}
-                      style={{ width: `${Math.min(100, pct)}%` }}
-                    />
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 h-1 bg-viltrum-limestone rounded">
+                      <div
+                        className={`h-1 rounded ${copy.barClass}`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
+                    <span className={`text-[9px] font-mono tabular-nums ${copy.textClass} flex-shrink-0 w-9 text-right`}>
+                      {pct}%
+                    </span>
                   </div>
                   {/* Stage weight detail — only on weight_cap_pct */}
                   {key === "weight_cap_pct" && m.projected_stage_kg != null && (
