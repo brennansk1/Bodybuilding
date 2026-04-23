@@ -10,6 +10,7 @@ dist/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 
 # Environment
 .env
@@ -59,3 +60,13 @@ uploads/
 !frontend/public/**/*.png
 !frontend/public/**/*.webp
 Viltrum_vlcsnap*.webp
+
+# Session artifacts (simulation runs, screenshot dumps, etc.)
+artifacts/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python build metadata
+*.egg-info/
