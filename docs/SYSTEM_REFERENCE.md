@@ -1,6 +1,24 @@
-# Coronado (CPOS) — System Reference
+# Viltrum — System Reference (legacy)
 
-> Competitive Physique Optimization System: 3 engines, 6 divisions, full algorithm documentation.
+> **STATUS — partially stale (2026-04-23).** This document was written for
+> the pre-PPM, pre-Engine-4 three-engine architecture (then branded
+> "Coronado / CPOS"). Most of the engine-math content below is still
+> accurate, but anything about phase detection, the 3-engine count, the
+> division ceiling factors, or the classic Men's-Physique competition
+> flow may be stale.
+>
+> For the current spec, read these first:
+>
+> - [`ENGINES.md`](./ENGINES.md) — authoritative engine reference (4 engines)
+> - [`CALCULATIONS.md`](./CALCULATIONS.md) — authoritative formulas + constants
+> - [`COMPETITIVE_TIERS.md`](./COMPETITIVE_TIERS.md) — PPM tier ladder
+> - [`DIVISION_VECTORS.md`](./DIVISION_VECTORS.md) — current division values
+> - [`PPM.md`](./PPM.md) — Perpetual Progression Mode
+>
+> Everything below is kept because the Engine-1 body-fat math, the
+> LCSA/PDS derivations, and the Casey-Butt weight-cap formulas haven't
+> moved — but cross-check any decision against the docs above before
+> acting on it.
 
 ---
 

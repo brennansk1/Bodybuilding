@@ -8,7 +8,7 @@ from app.services.diagnostic import run_full_diagnostic
 
 async def main():
     async with async_session() as db:
-        user = (await db.execute(select(User).where(User.username == "Brennansk"))).scalar_one_or_none()
+        user = (await db.execute(select(User).where(User.username == "samplesk"))).scalar_one_or_none()
         if not user:
             print("User not found.")
             return

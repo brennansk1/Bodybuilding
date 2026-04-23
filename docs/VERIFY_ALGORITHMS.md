@@ -1,6 +1,12 @@
-# Coronado v4.0 — Comprehensive Algorithm & Constant Verification Report
+# Viltrum — Comprehensive Algorithm & Constant Verification Report (snapshot)
 
-> **Status:** VERIFIED — All algorithms, constants, and formulas have been independently reviewed against peer-reviewed literature, IFBB/NPC standards, and established exercise science sources.
+> *Snapshot from 2026-03-19, originally written under the "Coronado"
+> brand. Values and citations here are still useful as the audit trail
+> for initial engine calibration, but do not treat them as current — see
+> [`ENGINES.md`](./ENGINES.md), [`CALCULATIONS.md`](./CALCULATIONS.md),
+> and [`COMPETITIVE_TIERS.md`](./COMPETITIVE_TIERS.md) for live values.*
+
+> **Status (at snapshot time):** VERIFIED — All algorithms, constants, and formulas have been independently reviewed against peer-reviewed literature, IFBB/NPC standards, and established exercise science sources.
 >
 > **Last verified:** 2026-03-19
 

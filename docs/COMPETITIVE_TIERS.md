@@ -66,7 +66,7 @@ Every metric below is one of the 10 gates evaluated in `engine1/readiness.py::ev
 
 - **What:** Your projected stage weight ÷ your IFBB Classic-Physique weight cap for your height. Stage weight is computed by stripping current body fat down to the implied stage BF (5 %).
 - **Why it matters:** Each tier has a min cap-percentage you need to credibly fill. T1 = 80 % of cap; T5 = 100 % of cap.
-- **Your-frame example (188 cm):** weight cap is 105.2 kg. T2 floor is 87 % × 105.2 = **91.5 kg stage weight** required.
+- **Worked example (188 cm male):** weight cap is 105.2 kg. T2 floor is 87 % × 105.2 = **91.5 kg stage weight** required.
 - **Source:** `constants/weight_caps.py::lookup_weight_cap` — Ground Truth audit (2024 IFBB Pro League table).
 
 ### `bf_pct` — Stage body fat %

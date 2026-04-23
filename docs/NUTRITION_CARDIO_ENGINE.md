@@ -1,7 +1,14 @@
 # Engine 3 (Nutrition Controller) & Engine 4 (Cardio & NEAT) -- Algorithmic Specification
 
-> **CPOS v4.0 Development Reference**
-> Last updated: 2026-03-23
+> **Viltrum — Engine 3 / Engine 4 specification (snapshot 2026-03-23)**
+>
+> The TDEE math, macro prescription, fat-floor rules, refeed logic, peak-
+> week protocol, and cardio/NEAT titration documented here are still
+> authoritative — Engine 3 and Engine 4 have not had breaking changes
+> since this snapshot. If a constant here disagrees with
+> [`CALCULATIONS.md`](./CALCULATIONS.md), trust CALCULATIONS (pulled from
+> source). Refer to [`ENGINES.md § Engine 3`](./ENGINES.md) for a shorter
+> module-by-module map.
 
 ---
 

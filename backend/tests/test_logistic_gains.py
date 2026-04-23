@@ -80,7 +80,7 @@ def test_enhanced_gain_faster_than_natural():
 # Cycles-to-tier integration
 # ---------------------------------------------------------------------------
 def test_cycles_to_tier_uses_logistic():
-    # Brennan-like: 93.5 kg @ 15% BF, T2 target, Classic Physique
+    # sample: 93.5 kg @ 15% BF, T2 target, Classic Physique
     metrics = {
         "body_weight_kg": 93.5, "bf_pct": 15.0,
         "normalized_ffmi": 22.0,
@@ -97,7 +97,7 @@ def test_cycles_to_tier_uses_logistic():
     assert "t_effective_years" in r
     assert "muscle_fraction_used" in r
     assert "ceiling_lbm_kg_used" in r
-    # Projected cycles bounded — mass not the limiter at T2 for brennan
+    # Projected cycles bounded — mass not the limiter at T2 for sample
     assert 0 <= r["estimated_cycles"] <= 10
 
 

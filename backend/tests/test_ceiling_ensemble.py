@@ -84,8 +84,8 @@ def test_ffmi_band_ranges():
     assert ffmi_band(25.0)["p_natural"] > ffmi_band(26.5)["p_natural"]
 
 
-def test_kouri_for_brennan_profile():
-    # Brennan-like: 178 cm male, mid-intermediate.
+def test_kouri_for_sample_profile():
+    # sample: 178 cm male, mid-intermediate.
     k25 = kouri_ceiling_lbm(178.0, sex="male", ffmi_target=25.0)
     # At 178cm, Kouri-25 LBM ≈ 78 kg — sanity check for the band label
     # emitted to readiness downstream.

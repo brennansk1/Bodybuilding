@@ -1,4 +1,10 @@
-# CPOS Engine Verification — Ghost Model Ideal Size Report (v3)
+# Viltrum — Ghost Model Ideal Size Report (verification snapshot)
+
+> *Snapshot from 2026-03-23. For the current ghost vectors and scaling, see
+> [`ENGINES.md § volumetric_ghost`](./ENGINES.md) and
+> `backend/app/constants/divisions.py::GHOST_VECTORS`. Values below may
+> have drifted; this report is preserved as the audit trail for the V3 MP
+> chest-decoupling fix.*
 
 > **v3 fix**: Decoupled MP chest from shoulder scaling. MP chest_expanded vector
 > reduced from 0.620 to 0.565 so that Classic always exceeds MP in chest thickness
@@ -128,7 +134,7 @@
 
 ---
 
-## Brennan Kelley
+## sample Kelley
 
 | Field | Value |
 |-------|-------|
@@ -256,7 +262,7 @@
 | Jake | Mens Open | 188 | 60.9 (24.0") | 129.2 (50.9") | 153.2 (60.3") | 92.1 (36.3") | 84.9 (33.4") | 47.6 (18.7") |
 | Derek | Classic Physique | 175 | 51.5 (20.3") | 112.7 (44.4") | 124.0 (48.8") | 75.6 (29.8") | 72.5 (28.5") | 43.3 (17.1") |
 | Ryan | Classic Physique | 183 | 53.9 (21.2") | 117.9 (46.4") | 129.8 (51.1") | 79.1 (31.1") | 75.9 (29.9") | 45.3 (17.9") |
-| Brennan | Mens Physique | 188 | 47.0 (18.5") | 106.2 (41.8") | 129.7 (51.1") | 80.8 (31.8") | 63.9 (25.2") | 38.5 (15.2") |
+| sample | Mens Physique | 188 | 47.0 (18.5") | 106.2 (41.8") | 129.7 (51.1") | 80.8 (31.8") | 63.9 (25.2") | 38.5 (15.2") |
 | Tyler | Mens Physique | 175 | 44.3 (17.4") | 100.1 (39.4") | 122.2 (48.1") | 75.2 (29.6") | 60.2 (23.7") | 36.3 (14.3") |
 | Sofia | Womens Bikini | 165 | 26.1 (10.3") | 79.2 (31.2") | 84.2 (33.2") | 63.5 (25.0") | 59.8 (23.5") | 32.0 (12.6") |
 | Alyssa | Womens Figure | 170 | 30.9 (12.2") | 89.1 (35.1") | 103.9 (40.9") | 67.2 (26.4") | 62.7 (24.7") | 35.5 (14.0") |

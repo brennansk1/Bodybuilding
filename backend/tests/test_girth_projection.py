@@ -7,7 +7,7 @@ from app.engines.engine1.girth_projection import (
 )
 
 
-# Brennan-like skinfold row (struct-style; module handles both dict and obj).
+# sample skinfold row (struct-style; module handles both dict and obj).
 BRENNAN_SKINFOLD = {
     "chest":       10.0,
     "midaxillary": 10.0,
@@ -72,7 +72,7 @@ def test_isak_converges_with_bf_linear_at_stage_condition():
 
 
 def test_isak_and_bf_linear_within_1cm_at_offseason():
-    # At brennan's 22% BF with real skinfolds, ISAK and BF-linear should
+    # At the sample athlete's 22% BF with real skinfolds, ISAK and BF-linear should
     # agree within ~1 cm (both strip ~1.9 cm for the bicep).
     r_isak = project_lean(40.0, "bicep", skinfold_row=BRENNAN_SKINFOLD, bf_pct=22.0)
     bf_only = project_lean_bf_only(40.0, "bicep", 22.0)

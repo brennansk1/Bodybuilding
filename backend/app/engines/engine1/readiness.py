@@ -418,7 +418,7 @@ def estimate_cycles_to_tier(
     # user already over the weight-cap-pct floor at high BF. Instead compare
     # LBM-to-LBM: the target LBM at stage weight vs. current LBM.
     #
-    # Example (brennan, T2): target_weight = 91.5 kg; target_lbm_at_stage =
+    # Example (sample, T2): target_weight = 91.5 kg; target_lbm_at_stage =
     # 86.9 kg; current_lbm = 72.3 kg; lbm_gap = 14.6 kg. Previously the
     # engine emitted lbm_gap = 0 because 93.5 kg > 91.5 kg.
     target_weight = thresholds.weight_cap_pct_min * weight_cap_kg
