@@ -84,10 +84,16 @@ async def get_muscle_gaps(
 ):
     """
     Return per-site muscle gap analysis — raw cm gaps from current lean size
-    to division-specific genetic ceiling ideal.
+    to the ideal. V3: gaps are scaled to the athlete's target tier
+    (T1 0.87 → T5 1.03 of the absolute division ceiling) so a Tier-1 athlete
+    isn't told their bicep is 9 cm short of an Olympia-level target they
+    don't care about.
     """
     from app.models.diagnostic import HQILog
-    from app.engines.engine1.muscle_gaps import rank_sites_by_gap, compute_total_gap, compute_avg_pct_of_ideal
+    from app.engines.engine1.muscle_gaps import (
+        rank_sites_by_gap, compute_total_gap, compute_avg_pct_of_ideal,
+        compute_site_gap, TIER_IDEAL_SCALING,
+    )
     from sqlalchemy import select, desc
 
     result = await db.execute(
@@ -101,10 +107,31 @@ async def get_muscle_gaps(
     profile_result = await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
     profile = profile_result.scalar_one_or_none()
     division = profile.division if profile else None
+    target_tier = profile.target_tier if profile else None
 
     site_data = log.site_scores
-    # Detect format: new format has gap_cm/pct_of_ideal keys
+    # Detect format: new format has gap_cm/pct_of_ideal keys.
+    # If a target tier is set, post-process each entry to scale the ideal.
+    # Waist/hips (stay-small sites) are passed through at absolute ideal.
     if site_data and isinstance(next(iter(site_data.values()), None), dict):
+        if target_tier in TIER_IDEAL_SCALING:
+            factor = TIER_IDEAL_SCALING[target_tier]
+            rescaled: dict[str, dict] = {}
+            from app.engines.engine1.muscle_gaps import _RATIO_SITES
+            for site, d in site_data.items():
+                ideal_abs = float(d.get("ideal_lean_cm") or 0.0)
+                current  = float(d.get("current_lean_cm") or 0.0)
+                if site in _RATIO_SITES or ideal_abs <= 0:
+                    tier_ideal = ideal_abs
+                else:
+                    tier_ideal = round(ideal_abs * factor, 1)
+                recomputed = compute_site_gap(current, tier_ideal, site)
+                recomputed["absolute_ideal_cm"] = round(ideal_abs, 1)
+                recomputed["tier_ideal_cm"] = round(tier_ideal, 1)
+                recomputed["target_tier"] = target_tier
+                rescaled[site] = recomputed
+            site_data = rescaled
+
         ranked = rank_sites_by_gap(site_data, division=division)
         total_gap = compute_total_gap(site_data)
         avg_pct = compute_avg_pct_of_ideal(site_data, division=division)
@@ -118,6 +145,7 @@ async def get_muscle_gaps(
         "total_gap_cm": total_gap,
         "avg_pct_of_ideal": avg_pct,
         "ranked_gaps": ranked,
+        "target_tier": target_tier,
     }
 
 

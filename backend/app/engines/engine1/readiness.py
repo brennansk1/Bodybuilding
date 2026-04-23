@@ -412,9 +412,23 @@ def estimate_cycles_to_tier(
     if surplus_pct_per_week is not None:
         muscle_fraction = max(0.50, min(0.85, 0.85 - 0.015 * surplus_pct_per_week))
 
+    # V3 fix: target_weight is a STAGE weight (athlete at 5% BF), but
+    # body_weight_kg is the athlete's CURRENT (offseason) weight. Comparing
+    # raw BW to target stage BW produced the "0 years HIGH" trap for any
+    # user already over the weight-cap-pct floor at high BF. Instead compare
+    # LBM-to-LBM: the target LBM at stage weight vs. current LBM.
+    #
+    # Example (brennan, T2): target_weight = 91.5 kg; target_lbm_at_stage =
+    # 86.9 kg; current_lbm = 72.3 kg; lbm_gap = 14.6 kg. Previously the
+    # engine emitted lbm_gap = 0 because 93.5 kg > 91.5 kg.
     target_weight = thresholds.weight_cap_pct_min * weight_cap_kg
-    weight_gap = target_weight - body_weight_kg
-    lbm_gap = max(0.0, weight_gap * muscle_fraction)
+    stage_bf_fraction = 0.05  # implied stage BF used to derive the cap
+    target_lbm_at_stage = target_weight * (1.0 - stage_bf_fraction)
+    lbm_gap = max(0.0, target_lbm_at_stage - current_lbm_kg)
+    # Keep muscle_fraction unused in this branch — we're comparing LBM→LBM
+    # so there's no surplus-to-LBM discount to apply.
+    _ = muscle_fraction
+    weight_gap = target_weight - body_weight_kg  # retained for diagnostic payload
 
     # Mass cycles: walk the logistic curve forward until we've closed the gap.
     # No per-cycle 5% tax — the curve already slows as current approaches ceiling.

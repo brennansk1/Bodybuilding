@@ -186,17 +186,28 @@ def get_current_phase(
     if nutrition_mode_override:
         return nutrition_mode_override
 
-    # V3 extended-cut pre-phase: only fires before cycle #1 starts
-    # (cycle_start_date is None means user has PPM enabled but has not yet
-    # begun their first improvement cycle).
-    if ppm_enabled and cycle_start_date is None and current_bf_pct is not None:
+    # V3 extended-cut pre-phase. Fires when PPM is enabled AND BF is above
+    # the divisional offseason ceiling, regardless of cycle state — a mid-
+    # cycle bulker who is too fat should still be redirected to cut.
+    # But only override if the otherwise-resolved phase is a SURPLUS phase
+    # (bulk / lean_bulk / ppm_accumulation / ppm_intensification / offseason),
+    # so we don't clobber a cut/mini-cut/peak the user is already running.
+    def _needs_precut() -> bool:
+        if not ppm_enabled or current_bf_pct is None:
+            return False
         try:
             from app.constants.physio import offseason_bf_ceiling_for_division
             ceiling = offseason_bf_ceiling_for_division(division or "classic_physique", sex)
         except Exception:
             ceiling = 13.0 if sex == "male" else 22.0
-        if current_bf_pct > ceiling + 2.0:
-            return "ppm_pre_cut"
+        return current_bf_pct > ceiling + 2.0
+
+    _SURPLUS_PHASES = {"offseason", "bulk", "lean_bulk", "ppm_accumulation",
+                       "ppm_intensification", "ppm_assessment"}
+
+    # Pre-cut gate when cycle hasn't started yet — fire immediately.
+    if _needs_precut() and cycle_start_date is None:
+        return "ppm_pre_cut"
 
     if competition_date is not None:
         return prep_phase_for_date(competition_date, current_date)
@@ -204,9 +215,13 @@ def get_current_phase(
     if ppm_enabled and cycle_start_date is not None:
         ref = current_date or date.today()
         delta_days = (ref - cycle_start_date).days
-        # 1-indexed cycle week; negative deltas default to assessment.
         cycle_week = max(1, (delta_days // 7) + 1)
-        return ppm_phase_for_week(cycle_week, mini_cut_active=mini_cut_active)
+        phase = ppm_phase_for_week(cycle_week, mini_cut_active=mini_cut_active)
+        # Mid-cycle override: if BF is high AND the phase would be a surplus,
+        # swap to ppm_pre_cut. Leaves cut/deload/checkpoint phases alone.
+        if _needs_precut() and phase in _SURPLUS_PHASES:
+            return "ppm_pre_cut"
+        return phase
 
     return "offseason"
 
