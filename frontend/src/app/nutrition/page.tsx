@@ -828,7 +828,6 @@ export default function NutritionPage() {
 function NutritionOverrideBanner() {
   interface PPMStatus {
     nutrition_mode_override?: string | null;
-    pct_mode_active?: boolean;
     current_phase?: string;
   }
   const [status, setStatus] = useState<PPMStatus | null>(null);
@@ -839,23 +838,17 @@ function NutritionOverrideBanner() {
   if (!status) return null;
 
   const override = status.nutrition_mode_override;
-  const pct = status.pct_mode_active;
+  if (!override) return null;
 
-  if (!override && !pct) return null;
-
-  const label = pct
-    ? "PCT Recovery Lock"
-    : override === "bulk"
-      ? "Manual: Bulk"
-      : override === "cut"
-        ? "Manual: Cut"
-        : override === "maintain"
-          ? "Manual: Maintain"
-          : "Manual Override";
-  const subtitle = pct
-    ? "Deficit blocked. Maintenance ±5%. Fat floor 1.0 g/kg. Adjust in Settings → Nutrition."
-    : `Engine phase detection suppressed. You set this. Clear in Settings → Nutrition.`;
-  const color = pct ? "border-terracotta bg-blush text-centurion" : "border-aureus bg-viltrum-aureus-bg text-aureus";
+  const label = override === "bulk"
+    ? "Manual: Bulk"
+    : override === "cut"
+      ? "Manual: Cut"
+      : override === "maintain"
+        ? "Manual: Maintain"
+        : "Manual Override";
+  const subtitle = "Engine phase detection suppressed. You set this. Clear in Settings → Nutrition.";
+  const color = "border-aureus bg-viltrum-aureus-bg text-aureus";
 
   return (
     <div className={`border ${color} rounded-card p-3 flex items-start gap-3`}>

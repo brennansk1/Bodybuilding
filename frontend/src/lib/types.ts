@@ -34,8 +34,7 @@ export interface UserProfile {
   training_intensity_factor?: number | null;
   training_programming_factor?: number | null;
   // V3 — manual overrides + tier tracking
-  nutrition_mode_override?: "bulk" | "cut" | "maintain" | "pct_recovery" | null;
-  pct_mode_active?: boolean;
+  nutrition_mode_override?: "bulk" | "cut" | "maintain" | null;
   structural_priority_muscles?: string[] | null;
   current_achieved_tier?: CompetitiveTier | null;
 }

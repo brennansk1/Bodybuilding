@@ -158,31 +158,29 @@ def get_current_phase(
     ppm_enabled: bool = False,
     cycle_start_date: date | None = None,
     mini_cut_active: bool = False,
-    # V3 — manual override + pre-cut enforcement + PCT mode
+    # V3 — manual override + pre-cut enforcement
     nutrition_mode_override: str | None = None,
-    pct_mode_active: bool = False,
     current_bf_pct: float | None = None,
     sex: str = "male",
     division: str | None = None,
+    # Kept for backwards compatibility only; PCT mode was removed in V3.1
+    # because `training_status="enhanced"` already covers the programming
+    # adjustments a PCT user needs. Any ``pct_mode_active=True`` is treated
+    # as a no-op — do not propagate via Profile.pct_mode_active any more.
+    pct_mode_active: bool = False,
 ) -> str:
     """Unified phase resolver (Ground Truth PPM doc §8.1, extended for V3).
 
     Resolution order:
-    1. ``pct_mode_active`` → ``"pct_recovery"`` (short-circuits everything —
-       holds maintenance±5%, blocks any deficit path).
-    2. ``nutrition_mode_override`` set → return that override directly
-       (``bulk`` / ``cut`` / ``maintain`` / ``pct_recovery``).
-    3. ``ppm_enabled`` + cycle #1 + BF above divisional offseason ceiling →
-       ``"ppm_pre_cut"`` (extended cut before the first accumulation cycle
-       ever starts). Sim finding: at high starting BF, the right first move
-       is 6–12 months of structured cut, not a lean-bulk improvement cycle.
-    4. ``competition_date`` set → delegate to ``prep_phase_for_date``.
-    5. ``ppm_enabled`` + ``cycle_start_date`` → PPM sub-phase.
-    6. Fallback → ``"offseason"``.
+    1. ``nutrition_mode_override`` set → return that override directly
+       (``bulk`` / ``cut`` / ``maintain``).
+    2. ``ppm_enabled`` + BF above divisional offseason ceiling (and the
+       otherwise-resolved phase would be a surplus phase) → ``"ppm_pre_cut"``.
+    3. ``competition_date`` set → delegate to ``prep_phase_for_date``.
+    4. ``ppm_enabled`` + ``cycle_start_date`` → PPM sub-phase.
+    5. Fallback → ``"offseason"``.
     """
-    # Manual user control takes precedence
-    if pct_mode_active:
-        return "pct_recovery"
+    _ = pct_mode_active  # removed; accepted for backwards compat, ignored
     if nutrition_mode_override:
         return nutrition_mode_override
 
@@ -359,18 +357,6 @@ def phase_description(phase: str) -> dict:
             "training_cue": "Hold intensity, volume at MAV. Lagging-muscle specialization continues.",
             "calorie_modifier": 0.82,
         },
-        "pct_recovery": {
-            "label": "PCT Recovery",
-            "description": (
-                "Post-cycle therapy / hormonal recovery mode. Cuts are blocked; "
-                "calories held at maintenance ±5% with fat floor 1.0 g/kg to "
-                "support endogenous testosterone recovery. Training volume "
-                "autoregulated to recovery signals."
-            ),
-            "nutrition_cue": "Maintenance ±5%. Fat ≥1.0 g/kg. No aggressive deficit.",
-            "training_cue": "Autoregulated volume. Maintain intensity, don't push MRV.",
-            "calorie_modifier": 1.00,
-        },
     }
     return _DESCRIPTIONS.get(phase, _DESCRIPTIONS["offseason"])
 
@@ -403,7 +389,6 @@ def get_phase_config(phase: str) -> dict:
         "ppm_checkpoint":      {"recommended_meso_weeks": 1},
         "ppm_mini_cut":        {"recommended_meso_weeks": 2},
         "ppm_pre_cut":         {"recommended_meso_weeks": 6},
-        "pct_recovery":        {"recommended_meso_weeks": 4},
     }
     return _CONFIGS.get(phase, {"recommended_meso_weeks": 4})
 

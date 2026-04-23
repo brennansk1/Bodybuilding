@@ -24,13 +24,11 @@ class ProfileCreate(BaseModel):
     # Natural attainability acknowledgement — required when enabling PPM at T3+
     # as a natural athlete with an overall_attainable=False honesty result.
     acknowledge_natural_gap: bool = False
-    # V3 — manual nutrition mode override + PCT mode + structural priority muscles.
-    # Override short-circuits phase-driven nutrition; PCT forces maintenance±5%;
-    # structural priority muscles get persistent specialization.
+    # V3 — manual nutrition mode override + structural priority muscles.
+    # Override short-circuits phase-driven nutrition.
     nutrition_mode_override: str | None = Field(
-        default=None, pattern="^(bulk|cut|maintain|pct_recovery)?$"
+        default=None, pattern="^(bulk|cut|maintain)?$"
     )
-    pct_mode_active: bool | None = None
     structural_priority_muscles: list[str] | None = None
 
 

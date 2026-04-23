@@ -293,7 +293,6 @@ async def get_ppm_status(
         "cycle_focus_muscles": prof.cycle_focus_muscles,
         "competition_date": prof.competition_date.isoformat() if prof.competition_date else None,
         "nutrition_mode_override": prof.nutrition_mode_override,
-        "pct_mode_active": bool(prof.pct_mode_active),
         "structural_priority_muscles": prof.structural_priority_muscles,
         "current_phase": get_current_phase(
             competition_date=prof.competition_date,
@@ -301,7 +300,6 @@ async def get_ppm_status(
             ppm_enabled=prof.ppm_enabled,
             cycle_start_date=prof.current_cycle_start_date,
             nutrition_mode_override=prof.nutrition_mode_override,
-            pct_mode_active=bool(prof.pct_mode_active),
             current_bf_pct=current_bf,
             sex=prof.sex or "male",
             division=prof.division,

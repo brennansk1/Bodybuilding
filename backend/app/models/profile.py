@@ -60,13 +60,17 @@ class UserProfile(Base):
     current_cycle_week: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     cycle_focus_muscles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
-    # V3 — manual bulk/cut override + PCT mode. When nutrition_mode_override is set,
-    # the nutrition engine short-circuits phase detection and respects the user's
-    # explicit choice. pct_mode_active blocks any deficit path and enforces the
-    # maintenance±5% band with fat floor at 1.0 g/kg. Structural priority muscles
-    # get persistent specialization regardless of PPM limiting-factor analysis.
+    # V3 — manual bulk/cut override. When set, the nutrition engine short-
+    # circuits phase detection and respects the user's explicit choice.
+    # Structural priority muscles get persistent specialization regardless
+    # of PPM limiting-factor analysis.
+    #
+    # `pct_mode_active` column retained for DB compatibility but the feature
+    # was removed in V3.1 — an `enhanced` training_status already covers the
+    # programming tweaks a PCT user needs. Column accepts writes but nothing
+    # reads it any more.
     nutrition_mode_override: Mapped[str | None] = mapped_column(String(24), nullable=True)
-    pct_mode_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pct_mode_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # deprecated
     structural_priority_muscles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # Per-user Telegram bot token from BotFather. Never exposed in GET responses.
     # TODO: encrypt at rest (app-level Fernet or pgcrypto) before production.

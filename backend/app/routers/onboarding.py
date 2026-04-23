@@ -340,11 +340,11 @@ async def update_profile(
         "training_time_anchor": {"start", "end"},
         "training_status": {"natural", "enhanced"},
         # V3 — manual nutrition mode override
-        "nutrition_mode_override": {"bulk", "cut", "maintain", "pct_recovery"},
+        # V3.1 — PCT removed; enhanced status covers programming for PCT users
+        "nutrition_mode_override": {"bulk", "cut", "maintain"},
     }
     hhmm_fields = {"training_start_time", "training_end_time"}
-    # V3 — pct_mode_active added so Settings Toggle persists
-    bool_fields = {"cycle_tracking_enabled", "ppm_enabled", "pct_mode_active"}
+    bool_fields = {"cycle_tracking_enabled", "ppm_enabled"}
     date_fields = {
         "competition_date", "cycle_start_date", "program_start_date",
         "current_cycle_start_date",
