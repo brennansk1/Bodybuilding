@@ -200,21 +200,34 @@ async def get_current_prescription(
         and rx.phase != profile.nutrition_mode_override
     )
     if (rx.phase == "maintain" or _rx_is_stale_vs_ppm or _rx_is_stale_vs_override) and profile:
-        hqi_res = await db.execute(select(HQILog).where(HQILog.user_id == user.id).order_by(desc(HQILog.recorded_date), desc(HQILog.created_at)).limit(1))
+        # V3 fix: these imports also live inside the `if not rx` branch above,
+        # but Python's function-scope rules mean names assigned anywhere in
+        # the function are treated as locals in all paths — so we re-import
+        # here rather than rely on the other branch having run.
+        from app.models.diagnostic import HQILog as _HQILog, PDSLog as _PDSLog
+        from app.engines.engine3.macros import compute_macros as _compute_macros
+        from app.engines.engine1.body_fat import navy_body_fat as _navy_body_fat
+        from app.services.diagnostic import (
+            _recommend_phase as _recommend_phase_fn,
+            get_latest_tape as _get_latest_tape,
+            get_latest_skinfold as _get_latest_skinfold,
+        )
+
+        hqi_res = await db.execute(select(_HQILog).where(_HQILog.user_id == user.id).order_by(desc(_HQILog.recorded_date), desc(_HQILog.created_at)).limit(1))
         hqi = hqi_res.scalar_one_or_none()
-        pds_res = await db.execute(select(PDSLog).where(PDSLog.user_id == user.id).order_by(desc(PDSLog.recorded_date), desc(PDSLog.created_at)).limit(1))
+        pds_res = await db.execute(select(_PDSLog).where(_PDSLog.user_id == user.id).order_by(desc(_PDSLog.recorded_date), desc(_PDSLog.created_at)).limit(1))
         pds_val = pds_res.scalar_one_or_none()
 
-        tape = await get_latest_tape(db, user.id)
-        skinfold = await get_latest_skinfold(db, user.id)
+        tape = await _get_latest_tape(db, user.id)
+        skinfold = await _get_latest_skinfold(db, user.id)
         bf_pct = skinfold.body_fat_pct if skinfold else None
         if bf_pct is None and tape and tape.waist and tape.neck:
             try:
-                bf_pct = navy_body_fat(tape.waist, tape.neck, profile.height_cm, profile.sex, tape.hips)
+                bf_pct = _navy_body_fat(tape.waist, tape.neck, profile.height_cm, profile.sex, tape.hips)
             except (ValueError, ZeroDivisionError) as e:
                 logger.warning("Navy BF failed in recalculate: %s", e)
 
-        rec = _recommend_phase(
+        rec = _recommend_phase_fn(
             muscle_gaps=hqi.site_scores if hqi else {},
             pds_score=pds_val.pds_score if pds_val else 50.0,
             body_fat_pct=bf_pct,
@@ -244,7 +257,7 @@ async def get_current_prescription(
             bw_val = bw_res.scalar_one_or_none()
             curr_weight = bw_val.weight_kg if bw_val else 80.0
 
-            new_macros = compute_macros(rx.tdee, new_phase, curr_weight, profile.sex, body_fat_pct=bf_pct)
+            new_macros = _compute_macros(rx.tdee, new_phase, curr_weight, profile.sex, body_fat_pct=bf_pct)
             
             rx.target_calories = new_macros["target_calories"]
             rx.protein_g = new_macros["protein_g"]
