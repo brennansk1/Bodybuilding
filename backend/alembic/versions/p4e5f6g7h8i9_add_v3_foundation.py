@@ -37,7 +37,7 @@ def upgrade() -> None:
     # 1. Profile extensions
     with op.batch_alter_table("user_profiles") as batch:
         batch.add_column(sa.Column("nutrition_mode_override", sa.String(length=24), nullable=True))
-        batch.add_column(sa.Column("pct_mode_active", sa.Boolean(), nullable=False, server_default=sa.false()))
+        batch.add_column(sa.Column("pct_mode_active", sa.Boolean(), nullable=False, server_default=sa.text("false")))
         batch.add_column(sa.Column("structural_priority_muscles", JSONB, nullable=True))
         batch.add_column(sa.Column("current_achieved_tier", sa.Integer(), nullable=True))
 

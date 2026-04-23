@@ -385,12 +385,26 @@ async def update_profile(
         "structural_priority_muscles",
     }
 
+    # V3 — whitelist of structural priority muscles. Prevents the Settings
+    # multi-select (or any client) from persisting arbitrary tags that the
+    # engine can't interpret. Kept broad enough that future engine work
+    # can consume any of these without migration.
+    _ALLOWED_PRIORITY_MUSCLES = {
+        "neck", "calves", "forearms", "rear_delts", "upper_chest",
+        "hamstrings", "traps", "abs", "biceps", "triceps",
+        "side_delts", "front_delts", "lats", "glutes", "lower_chest",
+        "inner_chest", "outer_chest", "quads",
+    }
+
     for field, value in data.items():
         if field in list_fields:
             if value is None and field in nullable_clear_fields:
                 setattr(profile, field, None)
                 continue
             if isinstance(value, list) and all(isinstance(x, str) for x in value):
+                # V3 — gate structural_priority_muscles against the whitelist.
+                if field == "structural_priority_muscles":
+                    value = [v for v in value if v in _ALLOWED_PRIORITY_MUSCLES]
                 setattr(profile, field, value)
             continue
 

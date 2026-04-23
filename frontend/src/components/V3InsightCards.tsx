@@ -35,20 +35,37 @@ function InlineSkeleton({ lines = 3 }: { lines?: number }) {
 export function TierTimingCard() {
   const [data, setData] = useState<TierProjection | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<"none" | "not_configured" | "network">("none");
 
   useEffect(() => {
     api.get<TierProjection>("/insights/tier-projection")
       .then(setData)
-      .catch((e: Error) => setError(e.message || "Failed to load"))
+      .catch((e: unknown) => {
+        // Backend returns 400 with "PPM target_tier required" when the user
+        // hasn't set one. Everything else (500, network, CORS) is a real
+        // failure and deserves a distinct message.
+        const msg = e instanceof Error ? e.message.toLowerCase() : "";
+        if (msg.includes("400") || msg.includes("target_tier")) {
+          setErrorKind("not_configured");
+        } else {
+          setErrorKind("network");
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <InlineSkeleton lines={4} />;
-  if (error || !data) {
+  if (errorKind === "not_configured" || !data) {
     return (
       <p className="text-xs text-viltrum-pewter italic text-center py-4">
-        Enable PPM and set a target tier to see projections.
+        Enable PPM and set a target tier in Settings to see projections.
+      </p>
+    );
+  }
+  if (errorKind === "network") {
+    return (
+      <p className="text-xs text-terracotta italic text-center py-4">
+        Couldn&apos;t load projections. Refresh to retry.
       </p>
     );
   }

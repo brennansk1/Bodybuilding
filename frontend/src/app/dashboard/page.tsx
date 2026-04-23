@@ -367,10 +367,17 @@ const CARD_REGISTRY: CardMeta[] = [
 ];
 const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
 
-// On first dashboard load, seed only these 3 widgets visible. The user can
-// always add more via Edit Dashboard. A fresh install with all 20 widgets
+// On first dashboard load, seed only these widgets visible. The user can
+// always add more via Edit Dashboard. A fresh install with all 20+ widgets
 // shown at once is overwhelming.
-const ONBOARDING_DEFAULT_VIZ = ["workout_tomorrow", "macro_adherence", "mesocycle_progress"];
+//
+// V3 additions: `tier_timing` + `weight_trend_rate` + `lever_sensitivity` are
+// high-value "ambient glance" widgets that motivated their own sessions to
+// build — keeping them hidden by default defeats the discoverability purpose.
+const ONBOARDING_DEFAULT_VIZ = [
+  "workout_tomorrow", "macro_adherence", "mesocycle_progress",
+  "tier_timing", "weight_trend_rate", "lever_sensitivity",
+];
 const LABEL_OF: Record<string, string> = Object.fromEntries(
   CARD_REGISTRY.map((c) => [c.key, c.label])
 );
