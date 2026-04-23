@@ -12,4 +12,8 @@
 
 import OilOrbsLoader from "./OilOrbsLoader";
 
+// Preserve the legacy name in React DevTools so the inspector still shows
+// "ViltrumLoader" where it appears in call sites.
+(OilOrbsLoader as unknown as { displayName?: string }).displayName = "ViltrumLoader";
+
 export default OilOrbsLoader;

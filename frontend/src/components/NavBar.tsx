@@ -138,13 +138,13 @@ export default function NavBar({ username, onLogout }: NavBarProps) {
             />
             <div className="leading-none text-left">
               <div
-                className="text-viltrum-bone"
                 style={{
                   fontFamily: "var(--font-display)",
                   fontSize: "16px",
                   letterSpacing: "6px",
                   textTransform: "uppercase",
                   fontWeight: 400,
+                  color: "#FFFFFF",
                 }}
               >
                 Viltrum
