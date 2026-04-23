@@ -125,11 +125,13 @@ async def get_photo_file(
     )).scalar_one_or_none()
     if not row:
         raise HTTPException(404, "photo not found")
-    # Find file on disk by id (suffix-agnostic).
+    # Find file on disk by id (suffix-agnostic). Guard the dir existence —
+    # a row can outlive the file if the media volume was wiped.
     user_dir = MEDIA_ROOT / str(user.id)
-    for f in user_dir.iterdir():
-        if f.stem == str(photo_id):
-            return FileResponse(f)
+    if user_dir.is_dir():
+        for f in user_dir.iterdir():
+            if f.stem == str(photo_id):
+                return FileResponse(f)
     raise HTTPException(404, "photo file missing on disk")
 
 
@@ -147,14 +149,16 @@ async def delete_photo(
     )).scalar_one_or_none()
     if not row:
         raise HTTPException(404, "photo not found")
-    # Remove file
+    # Remove file — guard dir existence; the DB row is authoritative and
+    # we still delete it even if the disk file is already gone.
     user_dir = MEDIA_ROOT / str(user.id)
-    for f in user_dir.iterdir():
-        if f.stem == str(photo_id):
-            try:
-                f.unlink()
-            except OSError:
-                pass
+    if user_dir.is_dir():
+        for f in user_dir.iterdir():
+            if f.stem == str(photo_id):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
     await db.delete(row)
     return {"ok": True}
 

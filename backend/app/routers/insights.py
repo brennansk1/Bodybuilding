@@ -420,6 +420,13 @@ async def archive_cycle_detail(
     return {
         "cycle_number": row.cycle_number,
         "checkpoint_date": row.checkpoint_date.isoformat() if row.checkpoint_date else None,
+        # V3 fix — frontend `CycleDetail` extends `CycleSummary`, so these
+        # need to be top-level (not only nested in readiness) for the
+        # archive page row rendering + comparison deltas.
+        "body_weight_kg": row.body_weight_kg,
+        "bf_pct": row.bf_pct,
+        "hqi_score": row.hqi_score,
+        "readiness_state": row.readiness_state,
         "readiness": {
             "state": row.readiness_state,
             "hqi_score": row.hqi_score,

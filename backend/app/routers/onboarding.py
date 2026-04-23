@@ -339,9 +339,12 @@ async def update_profile(
         },
         "training_time_anchor": {"start", "end"},
         "training_status": {"natural", "enhanced"},
+        # V3 — manual nutrition mode override
+        "nutrition_mode_override": {"bulk", "cut", "maintain", "pct_recovery"},
     }
     hhmm_fields = {"training_start_time", "training_end_time"}
-    bool_fields = {"cycle_tracking_enabled", "ppm_enabled"}
+    # V3 — pct_mode_active added so Settings Toggle persists
+    bool_fields = {"cycle_tracking_enabled", "ppm_enabled", "pct_mode_active"}
     date_fields = {
         "competition_date", "cycle_start_date", "program_start_date",
         "current_cycle_start_date",
@@ -349,6 +352,8 @@ async def update_profile(
     list_fields = {
         "available_equipment", "disliked_exercises", "injury_history",
         "cycle_focus_muscles",
+        # V3 — persistent specialization tags
+        "structural_priority_muscles",
     }
     all_allowed = (
         set(numeric_int_fields) | set(numeric_float_fields) | set(string_fields)
@@ -371,10 +376,26 @@ async def update_profile(
     if _incoming_comp_date and profile.ppm_enabled:
         profile.ppm_enabled = False
 
+    # V3 — fields the client may send as `null` to explicitly clear. Without
+    # this set, the generic `value is None → continue` below would silently
+    # drop the clear and leave the column set, so the Settings UI couldn't
+    # go back from "Cut" to "Auto" (Auto = null override).
+    nullable_clear_fields = {
+        "nutrition_mode_override",
+        "structural_priority_muscles",
+    }
+
     for field, value in data.items():
         if field in list_fields:
+            if value is None and field in nullable_clear_fields:
+                setattr(profile, field, None)
+                continue
             if isinstance(value, list) and all(isinstance(x, str) for x in value):
                 setattr(profile, field, value)
+            continue
+
+        if value is None and field in nullable_clear_fields:
+            setattr(profile, field, None)
             continue
 
         if field not in all_allowed or value is None:

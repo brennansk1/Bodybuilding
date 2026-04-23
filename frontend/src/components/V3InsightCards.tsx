@@ -177,6 +177,21 @@ export function WeightTrendCard() {
 
   // Mini sparkline from 14d smoothed
   const sm = data.smoothed_14d.filter((v): v is number => v !== null);
+  // Need at least 2 points to render a line; otherwise show the current
+  // weight only. Protects against SVG `M0,0 L0,0` degenerate geometry.
+  if (sm.length < 2) {
+    const latestShort = data.points[data.points.length - 1]?.weight_kg;
+    return (
+      <div className="py-2">
+        <div className="text-2xl font-semibold tabular-nums text-viltrum-obsidian">
+          {latestShort?.toFixed(1) ?? "—"}<span className="text-sm ml-1 text-viltrum-pewter">kg</span>
+        </div>
+        <p className="text-[11px] text-viltrum-iron body-serif-sm italic mt-1">
+          Log weight for a few more days to see trend + rate.
+        </p>
+      </div>
+    );
+  }
   const min = Math.min(...sm);
   const max = Math.max(...sm);
   const range = Math.max(0.1, max - min);
