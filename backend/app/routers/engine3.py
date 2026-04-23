@@ -1942,3 +1942,51 @@ async def log_cheat_meal(
     profile.preferences = current
     await db.flush()
     return _cheat_meal_stats(current)
+
+
+# ---------------------------------------------------------------------------
+# V3 — Explicit carb-cycle endpoint
+# ---------------------------------------------------------------------------
+@router.get("/carb-cycle")
+async def get_carb_cycle(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return H/M/L carb-cycle day macros for the user's current prescription.
+    Used by the nutrition-page weekly calendar view and the dashboard carb-cycle card."""
+    rx = (await db.execute(
+        select(NutritionPrescription)
+        .where(NutritionPrescription.user_id == user.id, NutritionPrescription.is_active == True)
+        .order_by(desc(NutritionPrescription.created_at))
+        .limit(1)
+    )).scalar_one_or_none()
+    if not rx:
+        raise HTTPException(404, "No active prescription")
+
+    profile = (await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    bw = (await db.execute(
+        select(BodyWeightLog).where(BodyWeightLog.user_id == user.id)
+        .order_by(desc(BodyWeightLog.recorded_date)).limit(1)
+    )).scalar_one_or_none()
+    if not bw:
+        raise HTTPException(404, "No weight log")
+
+    from app.engines.engine3.macros import compute_carb_cycle_days
+    try:
+        cycle = compute_carb_cycle_days(
+            base_protein_g=float(rx.protein_g),
+            base_carbs_g=float(rx.carbs_g),
+            base_fat_g=float(rx.fat_g),
+            weight_kg=float(bw.weight_kg),
+            sex=profile.sex or "male",
+            phase=(rx.phase or "cut"),
+            body_fat_pct=float(profile.manual_body_fat_pct) if profile.manual_body_fat_pct else None,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return cycle

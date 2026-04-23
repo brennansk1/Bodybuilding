@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from app.config import settings
 from app.database import engine, Base, async_session
 from app.models import *  # noqa: F401, F403 — register all models with Base
-from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin, telegram, ppm
+from app.routers import auth, onboarding, checkin, engine1, engine2, engine3, viz, export, upload, admin, telegram, ppm, insights
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,14 @@ def _run_schema_migrations(conn):
     # measurements_json blob to first-class PPMCheckpoint columns
     _add_column_if_missing(conn, "ppm_checkpoints", "illusion_xframe",  "DOUBLE PRECISION")
     _add_column_if_missing(conn, "ppm_checkpoints", "conditioning_pct", "DOUBLE PRECISION")
+    # v3 foundation — profile overrides, tier tracking, checkpoint snapshots
+    _add_column_if_missing(conn, "user_profiles", "nutrition_mode_override",     "VARCHAR(24)")
+    _add_column_if_missing(conn, "user_profiles", "pct_mode_active",              "BOOLEAN NOT NULL DEFAULT FALSE")
+    _add_column_if_missing(conn, "user_profiles", "structural_priority_muscles",  "JSONB")
+    _add_column_if_missing(conn, "user_profiles", "current_achieved_tier",        "INTEGER")
+    _add_column_if_missing(conn, "ppm_checkpoints", "macros_snapshot",   "JSONB")
+    _add_column_if_missing(conn, "ppm_checkpoints", "training_snapshot", "JSONB")
+    _add_column_if_missing(conn, "ppm_checkpoints", "volume_snapshot",   "JSONB")
     # Indexes for frequently queried columns
     _create_index_if_missing(conn, "ix_session_user_date", "training_sessions", "user_id, session_date")
     _create_index_if_missing(conn, "ix_sets_session", "training_sets", "session_id")
@@ -196,6 +204,7 @@ app.include_router(upload.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(telegram.router, prefix="/api/v1")
 app.include_router(ppm.router, prefix="/api/v1")
+app.include_router(insights.router, prefix="/api/v1")
 
 import os
 from pathlib import Path as _Path

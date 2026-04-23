@@ -158,20 +158,46 @@ def get_current_phase(
     ppm_enabled: bool = False,
     cycle_start_date: date | None = None,
     mini_cut_active: bool = False,
+    # V3 — manual override + pre-cut enforcement + PCT mode
+    nutrition_mode_override: str | None = None,
+    pct_mode_active: bool = False,
+    current_bf_pct: float | None = None,
+    sex: str = "male",
+    division: str | None = None,
 ) -> str:
-    """Unified phase resolver (Ground Truth PPM doc §8.1).
+    """Unified phase resolver (Ground Truth PPM doc §8.1, extended for V3).
 
     Resolution order:
-    1. ``competition_date`` set → delegate to ``prep_phase_for_date`` (legacy).
-    2. ``ppm_enabled`` and ``cycle_start_date`` set → return the PPM sub-phase.
-    3. Fallback → ``"offseason"``.
-
-    Returns
-    -------
-    str
-        A canonical phase name accepted by macros/periodization engines.
-        PPM sub-phases start with ``"ppm_"``.
+    1. ``pct_mode_active`` → ``"pct_recovery"`` (short-circuits everything —
+       holds maintenance±5%, blocks any deficit path).
+    2. ``nutrition_mode_override`` set → return that override directly
+       (``bulk`` / ``cut`` / ``maintain`` / ``pct_recovery``).
+    3. ``ppm_enabled`` + cycle #1 + BF above divisional offseason ceiling →
+       ``"ppm_pre_cut"`` (extended cut before the first accumulation cycle
+       ever starts). Sim finding: at high starting BF, the right first move
+       is 6–12 months of structured cut, not a lean-bulk improvement cycle.
+    4. ``competition_date`` set → delegate to ``prep_phase_for_date``.
+    5. ``ppm_enabled`` + ``cycle_start_date`` → PPM sub-phase.
+    6. Fallback → ``"offseason"``.
     """
+    # Manual user control takes precedence
+    if pct_mode_active:
+        return "pct_recovery"
+    if nutrition_mode_override:
+        return nutrition_mode_override
+
+    # V3 extended-cut pre-phase: only fires before cycle #1 starts
+    # (cycle_start_date is None means user has PPM enabled but has not yet
+    # begun their first improvement cycle).
+    if ppm_enabled and cycle_start_date is None and current_bf_pct is not None:
+        try:
+            from app.constants.physio import offseason_bf_ceiling_for_division
+            ceiling = offseason_bf_ceiling_for_division(division or "classic_physique", sex)
+        except Exception:
+            ceiling = 13.0 if sex == "male" else 22.0
+        if current_bf_pct > ceiling + 2.0:
+            return "ppm_pre_cut"
+
     if competition_date is not None:
         return prep_phase_for_date(competition_date, current_date)
 
@@ -302,6 +328,34 @@ def phase_description(phase: str) -> dict:
             "training_cue": "Hold intensity, reduce volume 15%. Strength retention focus.",
             "calorie_modifier": 0.80,
         },
+        # V3 — extended pre-cut phase. Fires when PPM is enabled but starting
+        # BF is above the divisional offseason ceiling. Sim finding: an athlete
+        # at 22% BF targeting Classic should run a 6–12 month structured cut
+        # BEFORE their first improvement cycle, not an accumulation block.
+        "ppm_pre_cut": {
+            "label": "PPM — Pre-Cut (Extended)",
+            "description": (
+                "Your starting body fat is above the divisional offseason ceiling. "
+                "Run a 6-12 month structured cut to reach a productive bulking range "
+                "before your first improvement cycle begins. Sim analysis shows this "
+                "saves ~12 months vs. trying to accumulate while high-BF."
+            ),
+            "nutrition_cue": "-18% TDEE deficit. Protein 2.5 g/kg. 1–2 refeeds/week.",
+            "training_cue": "Hold intensity, volume at MAV. Lagging-muscle specialization continues.",
+            "calorie_modifier": 0.82,
+        },
+        "pct_recovery": {
+            "label": "PCT Recovery",
+            "description": (
+                "Post-cycle therapy / hormonal recovery mode. Cuts are blocked; "
+                "calories held at maintenance ±5% with fat floor 1.0 g/kg to "
+                "support endogenous testosterone recovery. Training volume "
+                "autoregulated to recovery signals."
+            ),
+            "nutrition_cue": "Maintenance ±5%. Fat ≥1.0 g/kg. No aggressive deficit.",
+            "training_cue": "Autoregulated volume. Maintain intensity, don't push MRV.",
+            "calorie_modifier": 1.00,
+        },
     }
     return _DESCRIPTIONS.get(phase, _DESCRIPTIONS["offseason"])
 
@@ -333,6 +387,8 @@ def get_phase_config(phase: str) -> dict:
         "ppm_deload":          {"recommended_meso_weeks": 1},
         "ppm_checkpoint":      {"recommended_meso_weeks": 1},
         "ppm_mini_cut":        {"recommended_meso_weeks": 2},
+        "ppm_pre_cut":         {"recommended_meso_weeks": 6},
+        "pct_recovery":        {"recommended_meso_weeks": 4},
     }
     return _CONFIGS.get(phase, {"recommended_meso_weeks": 4})
 

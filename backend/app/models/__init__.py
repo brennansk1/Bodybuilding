@@ -15,3 +15,4 @@ from app.models.posing import PosingLog  # noqa: F401
 from app.models.sleep import SleepLog  # noqa: F401
 from app.models.notification import NotificationLog  # noqa: F401
 from app.models.ppm_checkpoint import PPMCheckpoint  # noqa: F401
+from app.models.progress_photo import ProgressPhoto, POSE_TYPES  # noqa: F401

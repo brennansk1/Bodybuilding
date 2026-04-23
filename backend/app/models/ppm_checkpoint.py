@@ -54,6 +54,12 @@ class PPMCheckpoint(Base):
 
     # Full tape + skinfold snapshot for historical comparison
     measurements_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # V3 — full reconstruction data for Prep Replay: macros prescribed at checkpoint,
+    # training split + volume allocation, and per-muscle actual vs prescribed sets.
+    # Enables side-by-side cycle comparison ("in cycle 3 at 10% you ate 3100 kcal").
+    macros_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    training_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    volume_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

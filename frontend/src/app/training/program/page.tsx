@@ -445,6 +445,9 @@ export default function ProgramPage() {
           {/* Program content */}
           {!fetching && program && (
             <>
+              {/* ── V3.P6 — Periodization education strip ── */}
+              <PeriodizationExplainer />
+
               {/* ── MACRO CYCLE ── */}
               <div className="card space-y-3 py-3">
                 <div className="flex items-center justify-between">
@@ -1176,6 +1179,98 @@ export default function ProgramPage() {
       </main>
 
       <div className="md:hidden h-16" />
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// V3.P6 — Periodization explainer (macro / meso / micro + MEV/MAV/MRV)
+//
+// Collapsible. Users aren't expected to know what MEV/MAV/MRV is; this
+// makes the vocabulary accessible without cluttering the main view.
+// ---------------------------------------------------------------------------
+function PeriodizationExplainer() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="card">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <div>
+          <h3 className="h-card text-viltrum-obsidian">Periodization 101</h3>
+          <p className="text-[11px] text-viltrum-iron body-serif-sm italic leading-snug mt-0.5">
+            What macro, meso, and micro cycles mean — and what MEV/MAV/MRV actually is.
+          </p>
+        </div>
+        <svg
+          className={`w-4 h-4 text-viltrum-pewter transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-4 border-t border-viltrum-ash pt-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-aureus mb-1">Macrocycle (months → years)</div>
+            <p className="text-[12px] text-viltrum-iron leading-relaxed">
+              The big picture. For a PPM athlete, this is the multi-cycle arc from current state to your target
+              tier — typically 2–5 years. Tracks mass gain, proportion refinement, and conditioning across many
+              improvement cycles.
+            </p>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-adriatic mb-1">Mesocycle (weeks)</div>
+            <p className="text-[12px] text-viltrum-iron leading-relaxed">
+              A single 14–16 week improvement cycle. Has phases inside it: assessment → accumulation →
+              intensification → deload → checkpoint. Sized so one cycle produces measurable change.
+            </p>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-laurel mb-1">Microcycle (week)</div>
+            <p className="text-[12px] text-viltrum-iron leading-relaxed">
+              One week of training. Rotates sessions across your split so every muscle group gets hit 1–3× with
+              appropriate volume for the mesocycle phase.
+            </p>
+          </div>
+          <div className="border-t border-viltrum-ash pt-4 space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-viltrum-travertine">
+              Volume Landmarks
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg border border-viltrum-ash bg-viltrum-alabaster p-2.5">
+                <div className="text-[10px] uppercase tracking-widest text-viltrum-pewter">MEV</div>
+                <div className="text-sm font-bold text-viltrum-obsidian mt-0.5">Minimum</div>
+                <div className="text-[10px] text-viltrum-iron leading-tight mt-1">
+                  Effective Volume. Below this, you stop growing.
+                </div>
+              </div>
+              <div className="rounded-lg border border-adriatic bg-viltrum-adriatic-bg p-2.5">
+                <div className="text-[10px] uppercase tracking-widest text-adriatic">MAV</div>
+                <div className="text-sm font-bold text-adriatic mt-0.5">Productive</div>
+                <div className="text-[10px] text-adriatic/80 leading-tight mt-1">
+                  Adaptive Volume. Sweet spot for hypertrophy.
+                </div>
+              </div>
+              <div className="rounded-lg border border-terracotta bg-blush p-2.5">
+                <div className="text-[10px] uppercase tracking-widest text-terracotta">MRV</div>
+                <div className="text-sm font-bold text-centurion mt-0.5">Maximum</div>
+                <div className="text-[10px] text-centurion/80 leading-tight mt-1">
+                  Recoverable Volume. Above this, recovery collapses.
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-viltrum-iron body-serif-sm italic leading-snug">
+              A mesocycle progresses you from MEV → MAV → MRV over 8–12 weeks, then deloads to clear fatigue.
+              Elite athletes push MRV; beginners stay in MAV.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

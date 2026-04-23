@@ -33,6 +33,85 @@ export interface UserProfile {
   training_consistency_factor?: number | null;
   training_intensity_factor?: number | null;
   training_programming_factor?: number | null;
+  // V3 — manual overrides + tier tracking
+  nutrition_mode_override?: "bulk" | "cut" | "maintain" | "pct_recovery" | null;
+  pct_mode_active?: boolean;
+  structural_priority_muscles?: string[] | null;
+  current_achieved_tier?: CompetitiveTier | null;
+}
+
+// V3 — Tier timing projection across adherence scenarios
+export interface TierProjection {
+  target_tier: CompetitiveTier;
+  target_tier_name: string;
+  projections: {
+    high:   { years: number; cycles: number; limiting_dimension: string; adherence_product: number };
+    medium: { years: number; cycles: number; limiting_dimension: string; adherence_product: number };
+    low:    { years: number; cycles: number; limiting_dimension: string; adherence_product: number };
+  };
+}
+
+// V3 — Lever sensitivity card
+export interface SensitivityLever {
+  rank: number;
+  lever: string;
+  label: string;
+  impact: "very_high" | "high" | "medium" | "low";
+  reason: string;
+  action: string;
+}
+export interface SensitivityResponse {
+  levers: SensitivityLever[];
+  coaching_summary: string;
+}
+
+// V3 — Weight trend
+export interface WeightTrendResponse {
+  points: { date: string; weight_kg: number }[];
+  smoothed_7d: (number | null)[];
+  smoothed_14d: (number | null)[];
+  weekly_rate_kg: number | null;
+  weekly_rate_pct: number | null;
+  direction: "cutting" | "bulking" | "steady" | "unknown";
+  in_target_band: boolean | null;
+}
+
+// V3 — Muscle-site timeline
+export interface MuscleTimelineResponse {
+  site: string;
+  series: { date: string; value_cm: number }[];
+  acceleration_windows: { start_date: string; end_date: string; rate_vs_baseline: number }[];
+}
+
+// V3 — Prep Replay
+export interface CycleSummary {
+  cycle_number: number;
+  checkpoint_date: string | null;
+  body_weight_kg: number | null;
+  bf_pct: number | null;
+  hqi_score: number | null;
+  readiness_state: string;
+  limiting_factor: string | null;
+  cycle_focus: string | null;
+}
+export interface CycleDetail extends CycleSummary {
+  readiness: {
+    state: string;
+    hqi_score: number | null;
+    ffmi: number | null;
+    bf_pct: number | null;
+    weight_cap_pct: number | null;
+    shoulder_waist_ratio: number | null;
+    chest_waist_ratio: number | null;
+    arm_calf_neck_parity: number | null;
+    illusion_xframe: number | null;
+    conditioning_pct: number | null;
+  };
+  measurements: Record<string, unknown> | null;
+  macros_snapshot: Record<string, unknown> | null;
+  training_snapshot: Record<string, unknown> | null;
+  volume_snapshot: Record<string, unknown> | null;
+  notes: string | null;
 }
 
 export type CompetitiveTier = 1 | 2 | 3 | 4 | 5;

@@ -54,10 +54,20 @@ class UserProfile(Base):
     # — validated at the /profile API layer.
     ppm_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     target_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1–5 (CompetitiveTier)
+    current_achieved_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1–5; written by readiness.evaluate at each checkpoint
     current_cycle_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     current_cycle_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     current_cycle_week: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     cycle_focus_muscles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    # V3 — manual bulk/cut override + PCT mode. When nutrition_mode_override is set,
+    # the nutrition engine short-circuits phase detection and respects the user's
+    # explicit choice. pct_mode_active blocks any deficit path and enforces the
+    # maintenance±5% band with fat floor at 1.0 g/kg. Structural priority muscles
+    # get persistent specialization regardless of PPM limiting-factor analysis.
+    nutrition_mode_override: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    pct_mode_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    structural_priority_muscles: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # Per-user Telegram bot token from BotFather. Never exposed in GET responses.
     # TODO: encrypt at rest (app-level Fernet or pgcrypto) before production.
     telegram_bot_token: Mapped[str | None] = mapped_column(String(256), nullable=True)

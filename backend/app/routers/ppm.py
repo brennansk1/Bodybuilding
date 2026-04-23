@@ -272,20 +272,39 @@ async def get_ppm_status(
         delta = (today - prof.current_cycle_start_date).days
         current_week = max(1, (delta // 7) + 1)
 
+    # V3 — surface manual overrides + achieved tier + extended-cut gate signal
+    # so the UI can render the pct-mode banner, tier badges, and extended-cut
+    # pre-phase callout. `current_phase` honors all of the above.
+    current_bf = None
+    try:
+        if prof.manual_body_fat_pct is not None:
+            current_bf = float(prof.manual_body_fat_pct)
+    except Exception:
+        current_bf = None
+
     return {
         "ppm_enabled": prof.ppm_enabled,
         "target_tier": prof.target_tier,
+        "current_achieved_tier": prof.current_achieved_tier,
         "training_status": prof.training_status,
         "current_cycle_number": prof.current_cycle_number,
         "current_cycle_start_date": prof.current_cycle_start_date.isoformat() if prof.current_cycle_start_date else None,
         "current_cycle_week": current_week,
         "cycle_focus_muscles": prof.cycle_focus_muscles,
         "competition_date": prof.competition_date.isoformat() if prof.competition_date else None,
+        "nutrition_mode_override": prof.nutrition_mode_override,
+        "pct_mode_active": bool(prof.pct_mode_active),
+        "structural_priority_muscles": prof.structural_priority_muscles,
         "current_phase": get_current_phase(
             competition_date=prof.competition_date,
             current_date=today,
             ppm_enabled=prof.ppm_enabled,
             cycle_start_date=prof.current_cycle_start_date,
+            nutrition_mode_override=prof.nutrition_mode_override,
+            pct_mode_active=bool(prof.pct_mode_active),
+            current_bf_pct=current_bf,
+            sex=prof.sex or "male",
+            division=prof.division,
         ),
     }
 
@@ -557,6 +576,20 @@ async def post_checkpoint(
     )
     db.add(row)
     await db.flush()
+
+    # V3 — write the highest-tier currently achieved back to Profile so
+    # the dashboard can render a "Tier N" badge distinct from target_tier.
+    try:
+        from app.engines.engine1.readiness import compute_achieved_tier
+        achieved = compute_achieved_tier(
+            athlete_metrics=metrics,
+            weight_cap_kg=cap_kg,
+            division=prof.division,
+            training_status=prof.training_status or "natural",
+        )
+        prof.current_achieved_tier = achieved
+    except Exception as e:
+        logger.warning("achieved_tier computation failed: %s", e)
 
     # Find the previous checkpoint for delta display.
     prev_q = await db.execute(

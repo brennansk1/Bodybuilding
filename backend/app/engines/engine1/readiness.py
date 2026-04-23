@@ -458,3 +458,92 @@ def estimate_cycles_to_tier(
         "muscle_fraction_used": muscle_fraction,
         "ceiling_lbm_kg_used": round(ceiling_lbm_kg, 1),
     }
+
+
+# ---------------------------------------------------------------------------
+# V3 — Achieved-tier classification
+# ---------------------------------------------------------------------------
+def compute_achieved_tier(
+    athlete_metrics: dict,
+    weight_cap_kg: float,
+    division: str = "classic_physique",
+    training_status: str = "natural",
+    threshold_pct: float = 0.90,
+) -> int | None:
+    """Return the highest tier for which the athlete meets ≥ ``threshold_pct``
+    of gates. Distinct from target_tier — this is what the athlete has
+    *demonstrated*, used to render "current tier" badges in the UI.
+
+    Iterates T5 → T1, returns the first tier that passes the threshold.
+    Returns None if no tier is met (pre-T1 athlete).
+    """
+    for tier in (CompetitiveTier.OLYMPIA, CompetitiveTier.PRO_QUALIFIER,
+                 CompetitiveTier.NATIONAL_NPC, CompetitiveTier.REGIONAL_NPC,
+                 CompetitiveTier.LOCAL_NPC):
+        try:
+            result = evaluate_readiness(
+                athlete_metrics=athlete_metrics,
+                target_tier=tier,
+                weight_cap_kg=weight_cap_kg,
+                division=division,
+                training_status=training_status,
+            )
+        except Exception:
+            continue
+        if result.get("pct_met", 0.0) >= threshold_pct:
+            return tier.value
+    return None
+
+
+# ---------------------------------------------------------------------------
+# V3 — Tier-timing projection across adherence scenarios
+# ---------------------------------------------------------------------------
+def project_tier_timing_across_adherence(
+    current_metrics: dict,
+    target_tier,
+    training_years: float,
+    training_status: str,
+    weight_cap_kg: float,
+    division: str = "classic_physique",
+    ceiling_lbm_kg: float | None = None,
+) -> dict:
+    """Return tier-timing estimates for HIGH / MED / LOW adherence profiles.
+
+    Adherence scales the consistency × intensity × programming product in the
+    training-age effective-years calculation. Profiles:
+        HIGH:  0.95 × 0.90 × 0.85 = 0.727
+        MED:   0.80 × 0.75 × 0.70 = 0.420
+        LOW:   0.60 × 0.55 × 0.50 = 0.165
+    """
+    from app.constants.competitive_tiers import CompetitiveTier as _CT
+    if isinstance(target_tier, int):
+        tier_enum = _CT(target_tier)
+    else:
+        tier_enum = target_tier
+
+    profiles = {
+        "high": (0.95, 0.90, 0.85),
+        "medium": (0.80, 0.75, 0.70),
+        "low": (0.60, 0.55, 0.50),
+    }
+    out: dict[str, dict] = {}
+    for key, (c, i, p) in profiles.items():
+        est = estimate_cycles_to_tier(
+            current_metrics=current_metrics,
+            target_tier=tier_enum,
+            training_years=training_years,
+            training_status=training_status,
+            weight_cap_kg=weight_cap_kg,
+            division=division,
+            ceiling_lbm_kg=ceiling_lbm_kg,
+            training_consistency=c,
+            training_intensity=i,
+            training_programming=p,
+        )
+        out[key] = {
+            "years": est.get("estimated_years"),
+            "cycles": est.get("estimated_cycles"),
+            "limiting_dimension": est.get("limiting_dimension"),
+            "adherence_product": round(c * i * p, 3),
+        }
+    return out

@@ -307,6 +307,9 @@ export default function NutritionPage() {
       <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
         <PageTitle text="Nutrition" />
 
+        <NutritionOverrideBanner />
+        <CarbCycleWeekView />
+
         {!rx ? (
           <div className="card text-center py-8 space-y-3">
             <p className="text-jungle-muted text-sm">No nutrition prescription yet.</p>
@@ -814,6 +817,140 @@ export default function NutritionPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// V3 — Manual nutrition mode override banner
+// ---------------------------------------------------------------------------
+function NutritionOverrideBanner() {
+  interface PPMStatus {
+    nutrition_mode_override?: string | null;
+    pct_mode_active?: boolean;
+    current_phase?: string;
+  }
+  const [status, setStatus] = useState<PPMStatus | null>(null);
+  useEffect(() => {
+    api.get<PPMStatus>("/ppm/status").then(setStatus).catch(() => {});
+  }, []);
+
+  if (!status) return null;
+
+  const override = status.nutrition_mode_override;
+  const pct = status.pct_mode_active;
+
+  if (!override && !pct) return null;
+
+  const label = pct
+    ? "PCT Recovery Lock"
+    : override === "bulk"
+      ? "Manual: Bulk"
+      : override === "cut"
+        ? "Manual: Cut"
+        : override === "maintain"
+          ? "Manual: Maintain"
+          : "Manual Override";
+  const subtitle = pct
+    ? "Deficit blocked. Maintenance ±5%. Fat floor 1.0 g/kg. Adjust in Settings → Nutrition."
+    : `Engine phase detection suppressed. You set this. Clear in Settings → Nutrition.`;
+  const color = pct ? "border-terracotta bg-blush text-centurion" : "border-aureus bg-viltrum-aureus-bg text-aureus";
+
+  return (
+    <div className={`border ${color} rounded-card p-3 flex items-start gap-3`}>
+      <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+      </svg>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold">{label}</div>
+        <p className="text-[11px] body-serif-sm italic leading-snug opacity-80">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// V3 — Carb cycle weekly calendar (H/M/L day breakdown)
+// ---------------------------------------------------------------------------
+function CarbCycleWeekView() {
+  interface DayMacros { protein_g: number; carbs_g: number; fat_g: number; target_calories: number }
+  interface CarbCycle {
+    high_day: DayMacros | null;
+    medium_day: DayMacros | null;
+    low_day: DayMacros | null;
+    days_per_week?: { high: number; medium: number; low: number };
+  }
+  const [cc, setCc] = useState<CarbCycle | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<CarbCycle>("/engine3/carb-cycle")
+      .then(setCc)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading || !cc || (!cc.high_day && !cc.medium_day && !cc.low_day)) return null;
+
+  // Week template: H, M, H, L, M, H, L (2H 3M 2L default; adapted to training split)
+  // This is a display convention — actual assignment happens in the backend.
+  const weekTemplate = ["H", "M", "H", "L", "M", "H", "L"];
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const dayData: Record<string, DayMacros | null> = {
+    H: cc.high_day,
+    M: cc.medium_day,
+    L: cc.low_day,
+  };
+  const colors: Record<string, string> = {
+    H: "bg-viltrum-aureus-bg border-aureus text-aureus",
+    M: "bg-viltrum-adriatic-bg border-adriatic text-adriatic",
+    L: "bg-viltrum-alabaster border-viltrum-ash text-viltrum-iron",
+  };
+
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-bold text-jungle-text uppercase tracking-wide">Carb Cycle — This Week</h2>
+        <span className="text-[10px] text-viltrum-travertine uppercase tracking-[2px]">H / M / L</span>
+      </div>
+      <p className="text-[11px] text-viltrum-iron body-serif-sm italic leading-snug">
+        Carbs swing with training load. High on big-muscle days, medium on small-muscle days, low on rest. Protein + fat stay constant.
+      </p>
+      <div className="grid grid-cols-7 gap-1.5">
+        {weekTemplate.map((type, i) => (
+          <div
+            key={i}
+            className={`rounded-lg border text-center py-2 ${colors[type]}`}
+            title={`${days[i]} — ${type === "H" ? "High" : type === "M" ? "Medium" : "Low"} carb day`}
+          >
+            <div className="text-[9px] uppercase tracking-widest opacity-70">{days[i]}</div>
+            <div className="text-base font-bold leading-none mt-0.5">{type}</div>
+            {dayData[type] && (
+              <div className="text-[9px] mt-1 tabular-nums">
+                {Math.round(dayData[type]!.carbs_g)}c
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-viltrum-ash text-[11px]">
+        {(["H", "M", "L"] as const).map((t) => {
+          const d = dayData[t];
+          if (!d) return null;
+          return (
+            <div key={t} className={`rounded-lg px-2 py-1.5 border ${colors[t]}`}>
+              <div className="text-[9px] uppercase tracking-widest opacity-70 mb-0.5">
+                {t === "H" ? "High Day" : t === "M" ? "Medium" : "Low"}
+              </div>
+              <div className="tabular-nums">{Math.round(d.target_calories)} kcal</div>
+              <div className="tabular-nums opacity-80">{Math.round(d.carbs_g)}C / {Math.round(d.protein_g)}P / {Math.round(d.fat_g)}F</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

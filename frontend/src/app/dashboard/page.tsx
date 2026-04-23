@@ -16,6 +16,13 @@ import MacroAdherenceChart from "@/components/MacroAdherenceChart";
 import WeeklyVolumeChart from "@/components/WeeklyVolumeChart";
 import RecoveryTrendChart from "@/components/RecoveryTrendChart";
 import SortableCard from "@/components/SortableCard";
+import { ScoreInfoButton } from "@/components/ScoreInfoModal";
+import TierBadge from "@/components/TierBadge";
+import {
+  TierTimingCard,
+  LeverSensitivityCard,
+  WeightTrendCard,
+} from "@/components/V3InsightCards";
 import {
   DndContext,
   PointerSensor,
@@ -227,6 +234,8 @@ interface DashboardContext {
   ppm_enabled: boolean;
   competition_date: string | null;
   target_tier: number | null;
+  /** V3 — highest tier currently demonstrated (set by readiness evaluation at each checkpoint). */
+  current_achieved_tier: number | null;
   current_cycle_start_date: string | null;
   division: string;
   wrist_circumference_cm: number | null;
@@ -246,52 +255,115 @@ interface CardMeta {
   label: string;
   visibleWhen?: VisiblePredicate;
   unlockHint?: string;
+  /** Plain-English one-liner: what this card tells you. Shown under the title. */
+  subtitle?: string;
+  /** Glossary key(s) for the info modal. Pass as `scoreKey` + `extraKeys`. */
+  scoreKey?: import("@/components/ScoreInfoModal").ScoreKey;
+  scoreExtraKeys?: import("@/components/ScoreInfoModal").ScoreKey[];
 }
 
 const CARD_REGISTRY: CardMeta[] = [
-  { key: "workout_tomorrow", label: "Tomorrow's Workout", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program" },
-  { key: "macro_adherence", label: "Macro Adherence", visibleWhen: (c) => c.has_rx, unlockHint: "Start a check-in" },
-  { key: "mesocycle_progress", label: "Mesocycle Progress", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program" },
-  { key: "tomorrow_split", label: "Tomorrow's Split", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program" },
-  { key: "daily_quote", label: "Daily Fire" },
-  { key: "goal_photo", label: "Your Goal" },
-  { key: "sleep_quality_week", label: "Sleep Quality Week" },
-  { key: "spider", label: "Proportion Spider", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
-  { key: "muscle_gaps", label: "Muscle Gaps", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
-  { key: "pds_trajectory", label: "PDS Trajectory", visibleWhen: (c) => c.has_pds_history, unlockHint: "Log a second check-in" },
-  { key: "heatmap", label: "Hypertrophy Heatmap", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
-  { key: "symmetry", label: "Bilateral Symmetry", visibleWhen: (c) => !!c.has_tape.bicep, unlockHint: "Log bilateral tape" },
-  { key: "phase_rec", label: "Phase Recommendation" },
-  { key: "comp_class", label: "Competition Class", visibleWhen: (c) => c.competition_date != null || c.ppm_enabled },
+  { key: "workout_tomorrow", label: "Tomorrow's Workout", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program",
+    subtitle: "Your next session: exercises, sets, and target loads." },
+  { key: "macro_adherence", label: "Macro Adherence", visibleWhen: (c) => c.has_rx, unlockHint: "Start a check-in",
+    subtitle: "How closely you hit your kcal + protein targets this week." },
+  { key: "mesocycle_progress", label: "Mesocycle Progress", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program",
+    subtitle: "Where you are in the current 4–8 week block.",
+    scoreKey: "mev_mav_mrv" },
+  { key: "tomorrow_split", label: "Tomorrow's Split", visibleWhen: (c) => c.has_program, unlockHint: "Generate a program",
+    subtitle: "Which muscle groups get hit next session." },
+  { key: "daily_quote", label: "Daily Fire",
+    subtitle: "A shot of motivation." },
+  { key: "goal_photo", label: "Your Goal",
+    subtitle: "The physique you're chasing." },
+  { key: "sleep_quality_week", label: "Sleep Quality Week",
+    subtitle: "Hours and quality across the last 7 nights. Impacts recovery more than anything else." },
+  { key: "spider", label: "Proportion Spider", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics",
+    subtitle: "Your shape vs. your division's ideal silhouette.",
+    scoreKey: "pds" },
+  { key: "muscle_gaps", label: "Muscle Gaps", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics",
+    subtitle: "Raw cm of lean tissue to add per site, against your tier's ideal.",
+    scoreKey: "hqi" },
+  { key: "pds_trajectory", label: "PDS Trajectory", visibleWhen: (c) => c.has_pds_history, unlockHint: "Log a second check-in",
+    subtitle: "Your Physique Development Score over time.",
+    scoreKey: "pds" },
+  { key: "heatmap", label: "Hypertrophy Heatmap", visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics",
+    subtitle: "A body-map colored by how close each site is to your tier's ideal.",
+    scoreKey: "hqi" },
+  { key: "symmetry", label: "Bilateral Symmetry", visibleWhen: (c) => !!c.has_tape.bicep, unlockHint: "Log bilateral tape",
+    subtitle: "Left-vs-right size differences. Large gaps trigger unilateral priority." },
+  { key: "phase_rec", label: "Phase Recommendation",
+    subtitle: "What nutrition + training phase fits your current state." },
+  { key: "comp_class", label: "Competition Class", visibleWhen: (c) => c.competition_date != null || c.ppm_enabled,
+    subtitle: "Which IFBB/NPC class you'd enter based on height + weight." },
   // V2.P2 — removed `growth_projection` (duplicate of muscle_gaps + heatmap)
   // and `adherence` (duplicate of macro_adherence). Users with these toggled
   // on in their saved layout will silently stop seeing them; the data still
   // renders in the equivalent cards.
-  { key: "detail_metrics", label: "Advanced Anthropometry", visibleWhen: (c) => c.has_hqi },
-  { key: "ari", label: "Autonomic Fuel Gauge" },
-  { key: "prep_timeline", label: "Competition Countdown", visibleWhen: (c) => c.competition_date != null, unlockHint: "Set a competition date" },
-  { key: "strength_progression", label: "Strength Progression", visibleWhen: (c) => c.has_strength_logs, unlockHint: "Log a working set" },
-  { key: "body_weight_trend", label: "Body Weight Trend" },
-  { key: "weekly_volume", label: "Weekly Volume", visibleWhen: (c) => c.has_program },
-  { key: "recovery_trend", label: "Recovery Trend" },
-  { key: "energy_availability", label: "Energy Availability", visibleWhen: (c) => c.has_rx },
-  { key: "training_time", label: "Weekly Training Time" },
+  { key: "detail_metrics", label: "Advanced Anthropometry", visibleWhen: (c) => c.has_hqi,
+    subtitle: "Lat spread, VMO ratio, back width — supplementary data." },
+  { key: "ari", label: "Autonomic Fuel Gauge",
+    subtitle: "How well you're recovering vs. training stress.",
+    scoreKey: "ari" },
+  { key: "prep_timeline", label: "Competition Countdown", visibleWhen: (c) => c.competition_date != null, unlockHint: "Set a competition date",
+    subtitle: "Weeks to stage + current prep phase." },
+  { key: "strength_progression", label: "Strength Progression", visibleWhen: (c) => c.has_strength_logs, unlockHint: "Log a working set",
+    subtitle: "Estimated 1-rep-max trend per lift.",
+    scoreKey: "e1rm" },
+  { key: "body_weight_trend", label: "Body Weight Trend",
+    subtitle: "Smoothed weight + weekly rate-of-change. The single number that answers 'are we losing fat?'" },
+  { key: "weekly_volume", label: "Weekly Volume", visibleWhen: (c) => c.has_program,
+    subtitle: "Working sets per muscle vs. MEV/MAV/MRV landmarks.",
+    scoreKey: "mev_mav_mrv" },
+  { key: "recovery_trend", label: "Recovery Trend",
+    subtitle: "HRV + sleep trend. Two days down → consider deload." },
+  { key: "energy_availability", label: "Energy Availability", visibleWhen: (c) => c.has_rx,
+    subtitle: "Kcal left for physiology after training. Below 30/kg LBM = RED-S risk.",
+    scoreKey: "energy_availability" },
+  { key: "training_time", label: "Weekly Training Time",
+    subtitle: "Total minutes under the bar this week." },
   // PPM (Perpetual Progression Mode) widgets — only render when PPM is active.
-  { key: "tier_readiness",     label: "Tier Readiness",        visibleWhen: (c) => c.ppm_enabled && c.target_tier != null, unlockHint: "Enable PPM" },
-  { key: "cycle_progress",     label: "Improvement Cycle",     visibleWhen: (c) => c.ppm_enabled && c.current_cycle_start_date != null, unlockHint: "Start a cycle" },
+  { key: "tier_readiness",     label: "Tier Readiness",        visibleWhen: (c) => c.ppm_enabled && c.target_tier != null, unlockHint: "Enable PPM",
+    subtitle: "How close your physique is to your target tier's standard.",
+    scoreKey: "tier_readiness" },
+  { key: "cycle_progress",     label: "Improvement Cycle",     visibleWhen: (c) => c.ppm_enabled && c.current_cycle_start_date != null, unlockHint: "Start a cycle",
+    subtitle: "Where you are in the current 14-week improvement cycle.",
+    scoreKey: "mev_mav_mrv" },
   // V2.P2 — parity is a Reeves-classical standard; only Classic Physique
   // judges it as a primary criterion. Tightened predicate.
-  { key: "parity_check",       label: "Arm-Calf-Neck Parity",  visibleWhen: (c) => c.ppm_enabled && c.division === "classic_physique" && !!(c.has_tape.neck && c.has_tape.bicep && c.has_tape.calf), unlockHint: "Classic Physique + tape" },
-  { key: "chest_waist",        label: "Chest : Waist Ratio",   visibleWhen: (c) => !!(c.has_tape.chest && c.has_tape.waist), unlockHint: "Log chest + waist" },
-  { key: "carb_cycle",         label: "Carb Cycle",            visibleWhen: (c) => c.has_rx, unlockHint: "Generate macros" },
+  { key: "parity_check",       label: "Arm-Calf-Neck Parity",  visibleWhen: (c) => c.ppm_enabled && c.division === "classic_physique" && !!(c.has_tape.neck && c.has_tape.bicep && c.has_tape.calf), unlockHint: "Classic Physique + tape",
+    subtitle: "Reeves standard: arms, calves, neck should match. Classic judges look for this.",
+    scoreKey: "parity" },
+  { key: "chest_waist",        label: "Chest : Waist Ratio",   visibleWhen: (c) => !!(c.has_tape.chest && c.has_tape.waist), unlockHint: "Log chest + waist",
+    subtitle: "Reeves ideal is 1.48; modern Classic winners push 1.70+." },
+  { key: "carb_cycle",         label: "Carb Cycle",            visibleWhen: (c) => c.has_rx, unlockHint: "Generate macros",
+    subtitle: "Daily carbs swing with training load. High-day / Medium-day / Low-day.",
+    scoreKey: "carb_cycle" },
   // V2.P2 — broadened so non-PPM Classic-prep users see it too.
-  { key: "conditioning_style", label: "Conditioning Style",    visibleWhen: (c) => c.division === "classic_physique" && (c.competition_date != null || c.ppm_enabled), unlockHint: "Classic Physique prep" },
-  { key: "natural_ceiling",    label: "Natural Ceiling",       visibleWhen: (c) => c.ppm_enabled && !!(c.wrist_circumference_cm && c.ankle_circumference_cm), unlockHint: "Log wrist + ankle" },
+  { key: "conditioning_style", label: "Conditioning Style",    visibleWhen: (c) => c.division === "classic_physique" && (c.competition_date != null || c.ppm_enabled), unlockHint: "Classic Physique prep",
+    subtitle: "Full/tight/dry/grainy. Classic judges prefer full+tight over grainy." },
+  { key: "natural_ceiling",    label: "Natural Ceiling",       visibleWhen: (c) => c.ppm_enabled && !!(c.wrist_circumference_cm && c.ankle_circumference_cm), unlockHint: "Log wrist + ankle",
+    subtitle: "Predicted natural-max LBM from your frame. Honesty gate.",
+    scoreKey: "ceiling_envelope", scoreExtraKeys: ["casey_butt", "kouri_band"] },
   // V2.P3 — four new widgets for V2 engine outputs that had no dashboard home
-  { key: "illusion",            label: "Illusion & V-Taper",    visibleWhen: (c) => !!(c.has_tape.shoulders && c.has_tape.waist), unlockHint: "Log shoulders + waist" },
-  { key: "unilateral_priority", label: "Unilateral Priority",   visibleWhen: (c) => !!c.has_tape.bicep, unlockHint: "Log bilateral tape" },
-  { key: "conditioning_score",  label: "Conditioning Score",    visibleWhen: (c) => c.competition_date != null, unlockHint: "Set competition date" },
-  { key: "bf_confidence",       label: "BF Estimate Confidence",visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics" },
+  { key: "illusion",            label: "Illusion & V-Taper",    visibleWhen: (c) => !!(c.has_tape.shoulders && c.has_tape.waist), unlockHint: "Log shoulders + waist",
+    subtitle: "How much your frame tricks the eye — V-taper, X-frame, waist:height.",
+    scoreKey: "illusion", scoreExtraKeys: ["vtaper", "xframe", "waist_height"] },
+  { key: "unilateral_priority", label: "Unilateral Priority",   visibleWhen: (c) => !!c.has_tape.bicep, unlockHint: "Log bilateral tape",
+    subtitle: "Which side is lagging and by how much. Drives training specialization." },
+  { key: "conditioning_score",  label: "Conditioning Score",    visibleWhen: (c) => c.competition_date != null, unlockHint: "Set competition date",
+    subtitle: "Fraction of the offseason→stage BF range you've closed.",
+    scoreKey: "conditioning_pct" },
+  { key: "bf_confidence",       label: "BF Estimate Confidence",visibleWhen: (c) => c.has_hqi, unlockHint: "Run diagnostics",
+    subtitle: "How much to trust your current BF%. Skinfold is stronger than manual entry." },
+  // V3.P3 — three new insight widgets
+  { key: "tier_timing",         label: "Tier Timing",           visibleWhen: (c) => c.ppm_enabled && c.target_tier != null, unlockHint: "Enable PPM",
+    subtitle: "Projected years to your target tier under HIGH/MED/LOW adherence.",
+    scoreKey: "tier_readiness" },
+  { key: "lever_sensitivity",   label: "What Moves the Needle", visibleWhen: () => true,
+    subtitle: "The 3 levers that matter most for your physique, ranked by simulation impact." },
+  { key: "weight_trend_rate",   label: "Weight Trend + Rate",   visibleWhen: () => true,
+    subtitle: "7-day and 14-day smoothed body weight + weekly %-rate of change." },
 ];
 const DEFAULT_CARD_ORDER = CARD_REGISTRY.map((c) => c.key);
 
@@ -461,6 +533,8 @@ export default function DashboardPage() {
   interface PPMStatus {
     ppm_enabled: boolean;
     target_tier: number | null;
+    /** V3 — highest tier currently demonstrated at last checkpoint. */
+    current_achieved_tier?: number | null;
     training_status: "natural" | "enhanced";
     current_cycle_number: number;
     current_cycle_start_date: string | null;
@@ -507,6 +581,7 @@ export default function DashboardPage() {
     ppm_enabled: Boolean(ppmStatus?.ppm_enabled),
     competition_date: ppmStatus?.competition_date ?? null,
     target_tier: ppmStatus?.target_tier ?? null,
+    current_achieved_tier: ppmStatus?.current_achieved_tier ?? null,
     current_cycle_start_date: ppmStatus?.current_cycle_start_date ?? null,
     division: "classic_physique",     // TODO: source from profile once the dashboard loads it
     wrist_circumference_cm: null,
@@ -1239,7 +1314,9 @@ export default function DashboardPage() {
           <ChartCard
             title="Proportion Spider"
             subtitle="% of Ideal per Site"
-            tooltip="Shows how close each muscle site is to your division-ideal lean circumference from the Volumetric Ghost Model (3D biomechanical scaling to your IFBB weight cap). 100% = at ideal."
+            scoreKey="pds"
+            plainDescription="Your shape vs. your division's ideal silhouette, per judged site."
+            tierBadge={<TierBadge achieved={dashCtx.current_achieved_tier ?? null} target={dashCtx.target_tier ?? null} compact />}
           >
             {muscleGaps && spiderData.length >= 3 ? (
               <div className="flex flex-col items-center mt-2">
@@ -1259,8 +1336,10 @@ export default function DashboardPage() {
             if (isVizOn("muscle_gaps")) bodies.muscle_gaps = (
           <ChartCard
             title="Muscle Gaps"
-            subtitle="Lean Size vs. Ideal"
-            tooltip="Raw centimetre gaps between your current lean circumference and your Volumetric Ghost Model ideal (3D Hanavan physics scaled to your IFBB weight cap). Larger gaps = higher training priority."
+            subtitle="Lean cm vs. Tier Ideal"
+            scoreKey="hqi"
+            plainDescription="Centimetres of lean tissue to add at each site, against your target tier's ideal (not the absolute ceiling)."
+            tierBadge={<TierBadge achieved={dashCtx.current_achieved_tier ?? null} target={dashCtx.target_tier ?? null} compact />}
           >
             {dashLoading && !muscleGaps ? (
               <div className="mt-2 space-y-2 animate-pulse">
@@ -1365,7 +1444,9 @@ export default function DashboardPage() {
           <ChartCard
             title="Hypertrophy Heatmap"
             subtitle="Muscle Development"
-            tooltip="Each muscle section is colored by % of Ideal from the Volumetric Ghost Model — how close you are to your division-optimal lean circumference for that site. Red = major gap, green = at or above ideal."
+            scoreKey="hqi"
+            plainDescription="A body-map colored by how close each site is to your tier's ideal. Red = furthest, green = at or above."
+            tierBadge={<TierBadge achieved={dashCtx.current_achieved_tier ?? null} target={dashCtx.target_tier ?? null} compact />}
           >
             {muscleGaps ? (
               <div className="mt-2">
@@ -1819,7 +1900,13 @@ export default function DashboardPage() {
 
             // ── PPM: Tier Readiness (card-sized summary, mirrors prep_timeline) ──
             if (isVizOn("tier_readiness") && ppmStatus?.ppm_enabled && ppmReadiness) bodies.tier_readiness = (
-              <ChartCard title="Tier Readiness" subtitle={ppmReadiness.tier.replace(/_/g, " ")}>
+              <ChartCard
+                title="Tier Readiness"
+                subtitle={ppmReadiness.tier.replace(/_/g, " ")}
+                scoreKey="tier_readiness"
+                plainDescription="How close your physique is to your target tier's competition standard."
+                tierBadge={<TierBadge achieved={dashCtx.current_achieved_tier ?? null} target={dashCtx.target_tier ?? null} compact />}
+              >
                 <TierReadinessCard
                   readiness={ppmReadiness}
                   projection={ppmProjection ?? undefined}
@@ -1832,7 +1919,12 @@ export default function DashboardPage() {
 
             // ── PPM: Arm-Calf-Neck parity (Classic only, surfaced via tape) ──
             if (isVizOn("parity_check") && ppmStatus?.ppm_enabled) bodies.parity_check = (
-              <ChartCard title="Arm-Calf-Neck Parity" subtitle="Reeves classical standard">
+              <ChartCard
+                title="Arm-Calf-Neck Parity"
+                subtitle="Reeves classical standard"
+                scoreKey="parity"
+                plainDescription="Arm, calf, and neck should match. Classic judges specifically look at this."
+              >
                 <ParityCheckCard
                   arm_cm={ppmTape?.bicep ?? null}
                   calf_cm={ppmTape?.calf ?? null}
@@ -1843,14 +1935,24 @@ export default function DashboardPage() {
 
             // ── PPM: Chest : Waist ratio ──
             if (isVizOn("chest_waist") && ppmStatus?.ppm_enabled) bodies.chest_waist = (
-              <ChartCard title="Chest : Waist" subtitle="V-taper ratio">
+              <ChartCard
+                title="Chest : Waist"
+                subtitle="V-taper ratio"
+                scoreKey="vtaper"
+                plainDescription="Reeves ideal is 1.48; modern Classic winners push 1.70+."
+              >
                 <ChestWaistCard chest_cm={ppmTape?.chest ?? null} waist_cm={ppmTape?.waist ?? null} />
               </ChartCard>
             );
 
             // ── PPM: Carb cycle (high/medium/low days) ──
             if (isVizOn("carb_cycle") && ppmStatus?.ppm_enabled && carbCycle) bodies.carb_cycle = (
-              <ChartCard title="Carb Cycle" subtitle="High / Medium / Low days">
+              <ChartCard
+                title="Carb Cycle"
+                subtitle="High / Medium / Low"
+                scoreKey="carb_cycle"
+                plainDescription="Daily carbs swing with training load. Protein and fat stay constant."
+              >
                 <CarbCycleCard
                   high_day={carbCycle.high_day}
                   medium_day={carbCycle.medium_day}
@@ -1872,7 +1974,13 @@ export default function DashboardPage() {
 
             // ── Natural ceiling (honesty) ──
             if (isVizOn("natural_ceiling") && ppmStatus?.ppm_enabled && ppmAttain) bodies.natural_ceiling = (
-              <ChartCard title="Natural Ceiling" subtitle="Casey Butt prediction">
+              <ChartCard
+                title="Natural Ceiling"
+                subtitle="Frame-predicted max"
+                scoreKey="ceiling_envelope"
+                scoreExtraKeys={["casey_butt", "kouri_band", "natural_attainability"]}
+                plainDescription="Your predicted natural-max stage weight from wrist + ankle + height. Honesty gate for tier selection."
+              >
                 <NaturalCeilingCard
                   predictedStageKg={ppmAttain.predicted_natural_max_stage_kg}
                   tierRequiredKg={ppmAttain.tier_required_stage_kg}
@@ -1888,7 +1996,14 @@ export default function DashboardPage() {
 
             // ── V2.P3 — Illusion & V-Taper ──
             if (isVizOn("illusion")) bodies.illusion = (
-              <ChartCard title="Illusion & V-Taper" subtitle="Shape independent of mass">
+              <ChartCard
+                title="Illusion & V-Taper"
+                subtitle="Shape independent of mass"
+                scoreKey="illusion"
+                scoreExtraKeys={["vtaper", "xframe", "waist_height"]}
+                plainDescription="How much your frame tricks the eye into looking bigger. V-taper, X-frame, waist:height."
+                tierBadge={<TierBadge achieved={dashCtx.current_achieved_tier ?? null} target={dashCtx.target_tier ?? null} compact />}
+              >
                 <IllusionCard
                   shouldersCm={ppmTape?.shoulders ?? null}
                   waistCm={ppmTape?.waist ?? null}
@@ -1915,7 +2030,12 @@ export default function DashboardPage() {
             // dashboard default division); female + other-division paths
             // will ship with Phase-5 when profile + sex hit dashboard ctx.
             if (isVizOn("conditioning_score")) bodies.conditioning_score = (
-              <ChartCard title="Conditioning Score" subtitle="Offseason → Stage">
+              <ChartCard
+                title="Conditioning Score"
+                subtitle="Offseason → Stage"
+                scoreKey="conditioning_pct"
+                plainDescription="Fraction of the offseason→stage BF range you've closed. 100% = at stage BF."
+              >
                 <ConditioningCard
                   currentBfPct={diagnostic?.body_fat?.body_fat_pct ?? null}
                   offseasonCeilingPct={dashCtx.division === "mens_physique" ? 12 : 13}
@@ -1939,6 +2059,39 @@ export default function DashboardPage() {
                   methodsUsed={diagnostic?.body_fat?.methods ?? null}
                   source={diagnostic?.body_fat?.source ?? undefined}
                 />
+              </ChartCard>
+            );
+
+            // ── V3.P3 — Three new insight widgets ──
+            if (isVizOn("tier_timing")) bodies.tier_timing = (
+              <ChartCard
+                title="Tier Timing"
+                subtitle="HIGH / MED / LOW"
+                scoreKey="tier_readiness"
+                plainDescription="Projected years to your target tier under three adherence scenarios. Real simulation output — not optimistic marketing."
+                tierBadge={<TierBadge achieved={dashCtx.current_achieved_tier ?? null} target={dashCtx.target_tier ?? null} compact />}
+              >
+                <TierTimingCard />
+              </ChartCard>
+            );
+
+            if (isVizOn("lever_sensitivity")) bodies.lever_sensitivity = (
+              <ChartCard
+                title="What Moves the Needle"
+                subtitle="Lever sensitivity"
+                plainDescription="The 3 levers that matter most for your physique, ranked by multi-year simulation impact. Don't chase macros at the expense of session quality."
+              >
+                <LeverSensitivityCard />
+              </ChartCard>
+            );
+
+            if (isVizOn("weight_trend_rate")) bodies.weight_trend_rate = (
+              <ChartCard
+                title="Weight Trend + Rate"
+                subtitle="Smoothed + %/wk"
+                plainDescription="7-day and 14-day rolling average body weight with weekly %-rate of change. Target band is ±0.5–1.0%/week."
+              >
+                <WeightTrendCard />
               </ChartCard>
             );
 
@@ -2498,24 +2651,45 @@ const ChartCard = memo(function ChartCard({
   title,
   subtitle,
   tooltip,
+  scoreKey,
+  scoreExtraKeys,
+  tierBadge,
+  plainDescription,
   children,
 }: {
   title: string;
   subtitle: string;
   tooltip?: string;
+  /** V3 — open glossary modal for the named score. */
+  scoreKey?: import("@/components/ScoreInfoModal").ScoreKey;
+  scoreExtraKeys?: import("@/components/ScoreInfoModal").ScoreKey[];
+  /** V3 — tier chip rendered alongside subtitle (e.g., "T1 → T2"). */
+  tierBadge?: React.ReactNode;
+  /** V3 — plain-English subtitle under the title. Distinct from `subtitle`
+   * which is a small uppercase right-aligned tag. */
+  plainDescription?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="card">
       <div className="flex items-baseline justify-between mb-2 gap-3">
-        <h3 className="h-card flex items-center">
+        <h3 className="h-card flex items-center gap-1.5">
           {title}
           {tooltip && <InfoTooltip text={tooltip} />}
+          {scoreKey && <ScoreInfoButton scoreKey={scoreKey} extraKeys={scoreExtraKeys} />}
         </h3>
-        <span className="text-[10px] text-viltrum-travertine uppercase tracking-[2px] font-sans truncate">
-          {subtitle}
-        </span>
+        <div className="flex items-center gap-2">
+          {tierBadge}
+          <span className="text-[10px] text-viltrum-travertine uppercase tracking-[2px] font-sans truncate">
+            {subtitle}
+          </span>
+        </div>
       </div>
+      {plainDescription && (
+        <p className="text-[11px] text-viltrum-iron italic body-serif-sm leading-snug mb-2 -mt-1">
+          {plainDescription}
+        </p>
+      )}
       {children}
     </div>
   );

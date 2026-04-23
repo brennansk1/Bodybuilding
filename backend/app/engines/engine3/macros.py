@@ -48,6 +48,11 @@ _PPM_PHASE_ALIAS: dict[str, str] = {
     "ppm_deload":         "maintain",
     "ppm_checkpoint":     "maintain",
     "ppm_mini_cut":       "cut",
+    # V3 — extended pre-cut uses a sustained cut signature (-18% TDEE by default,
+    # autoregulated). PCT recovery maps to maintain with a floor guard — see
+    # compute_macros() for the ±5% clamp enforcement.
+    "ppm_pre_cut":        "cut",
+    "pct_recovery":       "maintain",
 }
 
 # Protein targets (g per kg TOTAL body weight) — aligned with ISSN position stand and
@@ -414,6 +419,11 @@ def compute_macros(
     sex: str,
     lean_mass_kg: float | None = None,
     body_fat_pct: float | None = None,
+    *,
+    # V3 — manual overrides + PCT guard. When nutrition_mode_override is set
+    # the caller passes the override as `phase` directly; pct_mode_active
+    # clamps the final kcal to maintenance ±5% and guarantees fat ≥1.0 g/kg.
+    pct_mode_active: bool = False,
 ) -> Dict[str, float]:
     """Derive a macronutrient prescription from TDEE and training phase.
 
@@ -467,6 +477,14 @@ def compute_macros(
     pct = _PHASE_OFFSET_PCT.get(phase_lower, 0.0)
     target_calories = tdee * (1.0 + pct)
 
+    # V3 — PCT mode clamp. Any deficit is pulled up to maintenance; small
+    # surpluses are clamped to +5% of TDEE. Protects endogenous testosterone
+    # recovery during post-cycle therapy. Fat floor is raised separately below.
+    if pct_mode_active:
+        tdee_floor = tdee * 0.95
+        tdee_ceiling = tdee * 1.05
+        target_calories = max(tdee_floor, min(tdee_ceiling, target_calories))
+
     # Protein and fat are anchored to TOTAL body weight (TBW), not lean mass.
     # Research (Morton et al. 2018, ISSN 2017) reports optimal intakes in g/kg TBW.
     # lean_mass_kg is retained as a parameter for informational use but is not the
@@ -481,6 +499,10 @@ def compute_macros(
     # Fat — phase-decaying floor (1.0 g/kg offseason → 0.5 late cut → 0.4 peak)
     # Spared fat calories are routed strictly to carbohydrates
     fat_floor = _fat_floor_for_context(phase_lower, body_fat_pct, sex)
+    # V3 — PCT mode raises the floor to 1.0 g/kg regardless of phase to support
+    # cholesterol → testosterone synthesis during recovery.
+    if pct_mode_active:
+        fat_floor = max(fat_floor, 1.0)
     fat_g = round(fat_floor * weight_kg, 1)
     fat_kcal = fat_g * _KCAL_PER_G_FAT
 

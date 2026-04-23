@@ -29,6 +29,11 @@ interface Profile {
   training_duration_min: number | null;
   cycle_tracking_enabled: boolean;
   cycle_start_date: string | null;
+  // V3 — manual overrides + achievement tracking
+  nutrition_mode_override?: string | null;
+  pct_mode_active?: boolean;
+  structural_priority_muscles?: string[] | null;
+  current_achieved_tier?: number | null;
   available_equipment: string[];
   disliked_exercises: string[];
   injury_history: string[];
@@ -223,6 +228,10 @@ export default function SettingsPage() {
   const [consistencyFactor, setConsistencyFactor] = useState("");
   const [intensityFactor,   setIntensityFactor]   = useState("");
   const [programmingFactor, setProgrammingFactor] = useState("");
+  // V3 — manual nutrition mode override + PCT mode + structural priority muscles
+  const [nutritionModeOverride, setNutritionModeOverride] = useState<"" | "bulk" | "cut" | "maintain" | "pct_recovery">("");
+  const [pctModeActive, setPctModeActive] = useState(false);
+  const [structuralPriority, setStructuralPriority] = useState<string[]>([]);
   const [wrist, setWrist] = useState("");
   const [ankle, setAnkle] = useState("");
   const [manualBF, setManualBF] = useState("");
@@ -328,6 +337,10 @@ export default function SettingsPage() {
         setExpYears(p.training_experience_years?.toString() ?? "");
         // @ts-expect-error new v2 fields on Profile
         setConsistencyFactor(p.training_consistency_factor?.toString() ?? "");
+        // V3 — hydrate manual overrides
+        setNutritionModeOverride((p.nutrition_mode_override as typeof nutritionModeOverride) ?? "");
+        setPctModeActive(Boolean(p.pct_mode_active));
+        setStructuralPriority(Array.isArray(p.structural_priority_muscles) ? p.structural_priority_muscles : []);
         // @ts-expect-error new v2 fields on Profile
         setIntensityFactor(p.training_intensity_factor?.toString() ?? "");
         // @ts-expect-error new v2 fields on Profile
@@ -556,6 +569,10 @@ export default function SettingsPage() {
         ppm_enabled: ppmEnabled,
         target_tier: ppmEnabled ? targetTier : null,
         training_status: trainingStatus,
+        // V3 — manual overrides + PCT mode + structural priority
+        nutrition_mode_override: nutritionModeOverride || null,
+        pct_mode_active: pctModeActive,
+        structural_priority_muscles: structuralPriority.length ? structuralPriority : null,
         training_start_time: trainingStartTime || null,
         training_end_time: trainingEndTime || null,
         training_time_anchor: trainingTimeAnchor,
@@ -1128,6 +1145,46 @@ export default function SettingsPage() {
           {/* ── TRAINING ── */}
           {activeSection === "training" && (
             <div className="space-y-5">
+              {/* V3 — Structural Priority Muscles */}
+              <div className="card space-y-4">
+                <SectionHeader description="Persistent specialization regardless of PPM cycle focus. Pick muscles your frame structurally lags.">Structural Priority</SectionHeader>
+                <div>
+                  <label className="label-field">Always-on specialization (+15% weekly sets)</label>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {[
+                      "neck", "calves", "forearms",
+                      "rear_delts", "upper_chest", "hamstrings",
+                      "traps", "abs", "biceps",
+                    ].map((m) => {
+                      const on = structuralPriority.includes(m);
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => {
+                            setStructuralPriority((prev) =>
+                              prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
+                            );
+                          }}
+                          className={`py-2 rounded-lg text-[11px] font-semibold transition-colors capitalize ${
+                            on
+                              ? "bg-jungle-accent text-white"
+                              : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
+                          }`}
+                        >
+                          {m.replace("_", " ")}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-viltrum-iron body-serif-sm italic leading-snug mt-2">
+                    Unlike episodic cycle focus (which rotates based on PPM limiting factor), structural priority sites
+                    get persistent bonus volume. Use for asymmetries your frame won't grow out of — e.g. small neck,
+                    short-belly calves.
+                  </p>
+                </div>
+              </div>
+
               <div className="card space-y-4">
                 <SectionHeader description="Training frequency and timing — drives meal plan scheduling">Schedule</SectionHeader>
 
@@ -1377,6 +1434,69 @@ export default function SettingsPage() {
           {/* ── NUTRITION ── */}
           {activeSection === "nutrition" && (
             <div className="space-y-5">
+              {/* V3 — Manual Nutrition Mode Override + PCT Mode */}
+              <div className="card space-y-4">
+                <SectionHeader>Nutrition Mode Override</SectionHeader>
+                <p className="text-[11px] text-viltrum-iron body-serif-sm italic leading-snug -mt-2">
+                  By default, the app chooses bulk/cut/maintain from your phase, BF%, and target tier. Use these controls
+                  when you need manual authority — e.g. entering PCT (post-cycle recovery) you should not cut even if
+                  the engine otherwise would.
+                </p>
+
+                <div>
+                  <label className="label-field">Manual Mode</label>
+                  <div className="grid grid-cols-5 gap-2 mt-2">
+                    {[
+                      { v: "",               label: "Auto" },
+                      { v: "bulk",           label: "Bulk" },
+                      { v: "cut",            label: "Cut" },
+                      { v: "maintain",       label: "Maintain" },
+                      { v: "pct_recovery",   label: "PCT" },
+                    ].map((o) => (
+                      <button
+                        key={o.v || "auto"}
+                        onClick={() => setNutritionModeOverride(o.v as typeof nutritionModeOverride)}
+                        className={`py-2.5 rounded-lg text-xs font-semibold transition-colors ${
+                          nutritionModeOverride === o.v
+                            ? "bg-jungle-accent text-white"
+                            : "bg-jungle-deeper border border-jungle-border hover:border-jungle-accent text-jungle-muted"
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-jungle-dim mt-2">
+                    {nutritionModeOverride === ""
+                      ? "Engine picks based on phase + BF% + target tier."
+                      : nutritionModeOverride === "bulk"
+                      ? "+15% TDEE. Phase detection suppressed — you chose this."
+                      : nutritionModeOverride === "cut"
+                      ? "−20% TDEE, autoregulated by rate-of-loss."
+                      : nutritionModeOverride === "maintain"
+                      ? "At TDEE. Use during life stress, travel, or when you want to hold."
+                      : "Post-cycle therapy — maintenance ±5%, fat floor 1.0 g/kg. Cuts blocked."}
+                  </p>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-viltrum-alabaster border border-viltrum-ash">
+                  <input
+                    id="pct-toggle"
+                    type="checkbox"
+                    checked={pctModeActive}
+                    onChange={(e) => setPctModeActive(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-terracotta"
+                  />
+                  <label htmlFor="pct-toggle" className="flex-1 cursor-pointer">
+                    <div className="text-sm font-semibold text-viltrum-obsidian">PCT / Recovery Lock</div>
+                    <p className="text-[11px] text-viltrum-iron body-serif-sm italic leading-snug mt-0.5">
+                      Hard-lock to maintenance ±5%. Blocks any deficit path regardless of phase. Fat floor raised to 1.0 g/kg
+                      to support cholesterol → testosterone recovery. Enable during PCT windows.
+                    </p>
+                  </label>
+                </div>
+              </div>
+
               <div className="card space-y-4">
                 <SectionHeader>Meal Planning</SectionHeader>
 

@@ -96,6 +96,79 @@ def compute_all_gaps(
     return results
 
 
+# V3 — Tier-scaled ideal gaps.
+#
+# The absolute `ideal_circumferences` returned by hqi.compute_ideal_circumferences
+# are division-ceiling values — they correspond to T4/T5 pro-qualifier / Olympia
+# proportions. For an athlete targeting Tier 1 (local NPC) that reference is
+# discouraging and misleading: a 9 cm bicep gap vs the Olympia ideal becomes
+# a ~1 cm gap vs the T1-scaled ideal.
+#
+# Scaling factors are anchored to each tier's weight-cap-pct gate:
+#   T1 = 0.87 × ideal  (matches 80–87% cap)
+#   T2 = 0.92 × ideal  (87–92%)
+#   T3 = 0.96 × ideal  (92–97%)
+#   T4 = 1.00 × ideal  (97–100%)
+#   T5 = 1.03 × ideal  (modern Olympia drift above published cap ratios)
+#
+# Waist/hips stay-small sites are NOT downscaled — their tier ideal matches
+# the division absolute (a T1 athlete still wants a small waist).
+TIER_IDEAL_SCALING = {
+    1: 0.87,
+    2: 0.92,
+    3: 0.96,
+    4: 1.00,
+    5: 1.03,
+}
+
+
+def scale_ideals_for_tier(
+    ideal_circumferences: dict[str, float],
+    target_tier: int | None,
+) -> dict[str, float]:
+    """Return a copy of ideal_circumferences scaled to the athlete's target tier.
+
+    Waist/hips (stay-small sites) are passed through unchanged — the ideal
+    for those sites is a ceiling, not a target to approach from below.
+
+    If target_tier is None or out of range, the absolute (T4) ideals are returned.
+    """
+    if not target_tier or target_tier not in TIER_IDEAL_SCALING:
+        return dict(ideal_circumferences)
+
+    factor = TIER_IDEAL_SCALING[target_tier]
+    scaled: dict[str, float] = {}
+    for site, absolute_ideal in ideal_circumferences.items():
+        if site in _RATIO_SITES:
+            scaled[site] = absolute_ideal
+        else:
+            scaled[site] = round(absolute_ideal * factor, 1)
+    return scaled
+
+
+def compute_all_gaps_tier_aware(
+    lean_measurements: dict[str, float],
+    ideal_circumferences: dict[str, float],
+    target_tier: int | None,
+) -> dict[str, dict]:
+    """Compute gaps against tier-scaled ideals. Adds `absolute_ideal_cm` and
+    `tier_ideal_cm` to each site payload so the UI can toggle between views."""
+    tier_ideals = scale_ideals_for_tier(ideal_circumferences, target_tier)
+    results: dict[str, dict] = {}
+    for site, tier_ideal in tier_ideals.items():
+        if site in lean_measurements:
+            site_gap = compute_site_gap(
+                lean_circ_cm=lean_measurements[site],
+                ideal_lean_cm=tier_ideal,
+                site=site,
+            )
+            site_gap["absolute_ideal_cm"] = round(ideal_circumferences[site], 1)
+            site_gap["tier_ideal_cm"] = round(tier_ideal, 1)
+            site_gap["target_tier"] = target_tier
+            results[site] = site_gap
+    return results
+
+
 def compute_total_gap(site_data: dict[str, dict]) -> float:
     """Sum of all positive gaps (total cm of muscle to add)."""
     return round(sum(
