@@ -39,6 +39,7 @@ If you're new to the project, read in this order:
 | Doc | What it covers |
 |---|---|
 | [`DASHBOARD_WIDGETS.md`](./DASHBOARD_WIDGETS.md) | All 35 dashboard widgets — predicate, renderer, endpoint |
+| [`UI_THEME.md`](./UI_THEME.md) | Color tokens, typography, status vocabulary, motion + source-file map |
 | [`DEVELOPMENT.md`](./DEVELOPMENT.md) | Local dev setup, tests, type-check, env vars |
 | [`DEPLOYMENT.md`](./DEPLOYMENT.md) | Home-server deploy, Docker Compose, JWT minting, smoke tests |
 
