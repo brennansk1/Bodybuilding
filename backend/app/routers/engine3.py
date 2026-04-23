@@ -302,11 +302,20 @@ async def get_current_prescription(
     # Recompute coach warnings on the fly — they depend on current BF + phase,
     # and we want them to appear immediately even if the prescription row
     # was saved before the warnings feature existed.
+    #
+    # V3 — when the user has manually overridden the mode, filter out the
+    # "wind down the bulk / start a mini-cut" nag copy. They've already made
+    # the choice; contradicting it on every dashboard load creates noise.
+    # Other warning lines (hydration, protein per meal, etc.) pass through.
     from app.engines.engine3.macros import compute_macros as _cm
     warning_payload: list[str] = []
     try:
         fresh_macros = _cm(rx.tdee, phase, weight_kg, sex, body_fat_pct=latest_bf)
-        warning_payload = list(fresh_macros.get("coach_warnings") or [])
+        raw = list(fresh_macros.get("coach_warnings") or [])
+        if rx_profile is not None and rx_profile.nutrition_mode_override:
+            _nag_markers = ("wind down the bulk", "mini-cut", "time to cut", "start a cut")
+            raw = [w for w in raw if not any(m in w.lower() for m in _nag_markers)]
+        warning_payload = raw
     except Exception:
         warning_payload = []
 

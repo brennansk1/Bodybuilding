@@ -623,15 +623,28 @@ async def get_phase_recommendation(
     # tradeoff they're making by overriding.
     override = profile.nutrition_mode_override
     if override:
+        engine_phase = rec.get("recommended_phase")
+        # The heuristic recommender doesn't always populate `reasoning`;
+        # derive a serviceable fallback so the UI's "Engine would have said"
+        # panel never renders a blank line.
+        engine_reason = rec.get("reasoning")
+        if not engine_reason:
+            engine_reason = (
+                f"Based on your current BF ({bf_pct:.1f}%), goal tier, and "
+                f"division standards, the engine's default pick is "
+                f"'{engine_phase}'."
+                if bf_pct is not None
+                else f"Engine default pick for your current state: '{engine_phase}'."
+            )
         rec = {
             **rec,
-            "engine_recommended_phase": rec.get("recommended_phase"),
-            "engine_reasoning": rec.get("reasoning"),
+            "engine_recommended_phase": engine_phase,
+            "engine_reasoning": engine_reason,
             "recommended_phase": override,
             "confidence": "user_override",
             "reasoning": (
                 f"Manually set to '{override}' in Settings → Nutrition. "
-                f"Engine would otherwise recommend '{rec.get('recommended_phase')}'. "
+                f"Engine would otherwise recommend '{engine_phase}'. "
                 f"Clear the override to return to auto."
             ),
         }

@@ -498,11 +498,15 @@ async def get_week_plan(
     metrics = await _compute_athlete_metrics(db, user, prof)
     from app.constants.physio import offseason_bf_ceiling_for_division
     _mini_cut_trigger = offseason_bf_ceiling_for_division(prof.division)
+    # V3 — when the user has manually overridden nutrition mode (bulk/cut/
+    # maintain), don't auto-prepend a mini-cut. They've taken the wheel.
+    _override = prof.nutrition_mode_override
+    _bf_high = metrics["bf_pct"] > _mini_cut_trigger
     plan = _build_cycle_plan(
         prof=prof,
         metrics=metrics,
         focus_muscles=prof.cycle_focus_muscles or [],
-        mini_cut_active=(metrics["bf_pct"] > _mini_cut_trigger),
+        mini_cut_active=(_bf_high and _override is None),
     )
     week = max(1, min(week, len(plan["weeks"])))
     return {
@@ -819,16 +823,24 @@ def _build_cycle_plan(
     )
 
     total_weeks = 16 if mini_cut_active else 14
+    # V3 — respect manual nutrition_mode_override for macros every week.
+    # Training rhythm stays on the PPM sub_phase arc (volume landmarks,
+    # intensification, etc.) because that's about mechanical stimulus,
+    # but calories/macros honor the user's explicit choice.
+    _nutrition_override = prof.nutrition_mode_override
     weeks_out: list[dict] = []
     for w in range(1, total_weeks + 1):
         sub_phase = ppm_phase_for_week(w, mini_cut_active=mini_cut_active)
         cycle_plan = compute_cycle_mesocycle(w, focus_muscles, landmarks)
 
-        # Macros for this week (compute_macros aliases ppm_* to base phases
-        # and returns a carb_cycle block).
+        # Macros for this week. When override is set, feed the override to
+        # compute_macros so the user gets bulk/cut/maintain macros for every
+        # week in the cycle view. Otherwise use the ppm_* sub_phase which
+        # compute_macros aliases to the correct base phase.
+        macro_phase = _nutrition_override or sub_phase
         macros = compute_macros(
             tdee=tdee,
-            phase=sub_phase,
+            phase=macro_phase,
             weight_kg=body_weight_kg,
             sex=prof.sex,
             lean_mass_kg=lbm_kg,

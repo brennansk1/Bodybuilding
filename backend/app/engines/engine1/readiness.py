@@ -432,17 +432,34 @@ def estimate_cycles_to_tier(
 
     # Mass cycles: walk the logistic curve forward until we've closed the gap.
     # No per-cycle 5% tax — the curve already slows as current approaches ceiling.
+    #
+    # V3 fix: scale the growth-rate constant `k` by the adherence product
+    # (consistency × intensity × programming) so HIGH/MED/LOW scenarios
+    # produce meaningfully different timings. Previously k was constant
+    # across adherence levels, which flattened all projections to the
+    # same mass_cycles count — masking the real coaching delta between
+    # an elite-execution athlete and an inconsistent one.
+    #
+    # Floor the multiplier at 0.25 so catastrophic LOW adherence still
+    # produces a finite projection instead of "never".
     mass_cycles = 0
     if lbm_gap > 0 and per_cycle_lbm > 0:
         import math
-        # Closed-form: t_needed_years = −ln(1 − lbm_gap/remaining) / (k × 12)
         from app.engines.engine1.training_age import (
             K_MONTHLY_NATURAL, K_MONTHLY_ENHANCED,
         )
-        k = K_MONTHLY_ENHANCED if training_status == "enhanced" else K_MONTHLY_NATURAL
+        k_base = K_MONTHLY_ENHANCED if training_status == "enhanced" else K_MONTHLY_NATURAL
+        # Adherence-scaled k. Defaults (0.85 × 0.75 × 0.70 = 0.446) come
+        # from effective_training_years priors so callers that omit the
+        # three factors get a "moderate" projection, not a HIGH-ideal one.
+        c = training_consistency if training_consistency is not None else 0.85
+        i = training_intensity   if training_intensity   is not None else 0.75
+        p = training_programming if training_programming is not None else 0.70
+        adherence = max(0.25, min(1.0, c * i * p))
+        k_eff = k_base * adherence
         remaining = max(0.01, ceiling_lbm_kg - current_lbm_kg)
         frac = min(0.99, lbm_gap / remaining)
-        t_years = -math.log(1.0 - frac) / (k * 12.0)
+        t_years = -math.log(1.0 - frac) / (k_eff * 12.0)
         mass_cycles = max(0, int(math.ceil(t_years * 52.0 / 14.0)))
 
     # Proportion metrics — cycles scale with deficit magnitude
