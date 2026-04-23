@@ -105,12 +105,18 @@ async def get_current_prescription(
         # It returns a ppm_* sub-phase that compute_macros aliases to the
         # correct base phase (assessment/deload→maintain, accumulation/
         # intensification→lean_bulk, mini_cut→cut).
+        # V3 — also thread nutrition_mode_override + pre-cut BF gate inputs so
+        # the resolver honors the user's manual Settings choice.
         if profile.ppm_enabled and profile.competition_date is None:
             from app.engines.engine1.prep_timeline import get_current_phase
             recommended_phase = get_current_phase(
                 competition_date=profile.competition_date,
                 ppm_enabled=profile.ppm_enabled,
                 cycle_start_date=profile.current_cycle_start_date,
+                nutrition_mode_override=profile.nutrition_mode_override,
+                current_bf_pct=bf_pct,
+                sex=profile.sex or "male",
+                division=profile.division,
             )
 
         # User-override: if initial_phase is set in preferences, honor it
@@ -179,6 +185,8 @@ async def get_current_prescription(
     #   (a) rx phase is 'maintain' while Engine 1 suggests bulk/cut, OR
     #   (b) PPM is enabled but the rx is still pinned to a legacy phase
     #       (cut/lean_bulk/bulk/peak) from before PPM was turned on.
+    #   (c) V3 — user set a manual `nutrition_mode_override` in Settings
+    #       and the stored rx still reflects the pre-override phase.
     _LEGACY_PHASES = {"cut", "lean_bulk", "bulk", "peak"}
     _rx_is_stale_vs_ppm = (
         profile is not None
@@ -186,7 +194,12 @@ async def get_current_prescription(
         and profile.competition_date is None
         and rx.phase in _LEGACY_PHASES
     )
-    if (rx.phase == "maintain" or _rx_is_stale_vs_ppm) and profile:
+    _rx_is_stale_vs_override = (
+        profile is not None
+        and profile.nutrition_mode_override is not None
+        and rx.phase != profile.nutrition_mode_override
+    )
+    if (rx.phase == "maintain" or _rx_is_stale_vs_ppm or _rx_is_stale_vs_override) and profile:
         hqi_res = await db.execute(select(HQILog).where(HQILog.user_id == user.id).order_by(desc(HQILog.recorded_date), desc(HQILog.created_at)).limit(1))
         hqi = hqi_res.scalar_one_or_none()
         pds_res = await db.execute(select(PDSLog).where(PDSLog.user_id == user.id).order_by(desc(PDSLog.recorded_date), desc(PDSLog.created_at)).limit(1))
@@ -213,12 +226,17 @@ async def get_current_prescription(
 
         # Perpetual Progression Mode override takes priority over the legacy
         # _recommend_phase heuristic when PPM is active (no comp date).
+        # V3 — thread nutrition_mode_override + pre-cut BF context.
         if profile.ppm_enabled and profile.competition_date is None:
             from app.engines.engine1.prep_timeline import get_current_phase
             new_phase = get_current_phase(
                 competition_date=profile.competition_date,
                 ppm_enabled=profile.ppm_enabled,
                 cycle_start_date=profile.current_cycle_start_date,
+                nutrition_mode_override=profile.nutrition_mode_override,
+                current_bf_pct=bf_pct,
+                sex=profile.sex or "male",
+                division=profile.division,
             )
         
         if new_phase != rx.phase:

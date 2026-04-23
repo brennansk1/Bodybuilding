@@ -128,22 +128,58 @@ async def sensitivity(
     levers: list[dict] = []
     # 1. Starting BF is the #1 lever when the athlete is above the divisional
     # offseason ceiling. Fades below the ceiling.
+    #
+    # V3 — if the user has manually overridden the nutrition mode (e.g. they
+    # explicitly chose bulk while high-BF), don't tell them to cut. Soften to
+    # an advisory risk callout — they made an informed choice and the engine
+    # should respect it, but surface the tradeoff so they know what they're
+    # paying for the choice.
     sex = (prof.sex or "male").lower()
     offseason_ceiling = 13.0 if sex == "male" else 22.0
+    override = prof.nutrition_mode_override
     if bf and bf > offseason_ceiling:
-        levers.append({
-            "rank": 1,
-            "lever": "starting_bodyfat",
-            "label": "Cut to offseason ceiling first",
-            "impact": "very_high",
-            "reason": (
-                f"You're at {bf:.1f}% BF; offseason ceiling for your division is "
-                f"~{offseason_ceiling:.0f}%. Until you're under, every lean-bulk "
-                f"cycle spends capacity fighting fat gain instead of building mass. "
-                f"Sim: ~12 months of tier timing on the table."
-            ),
-            "action": "Run ppm_pre_cut. Target −0.7% BW/week until BF ≤ ceiling.",
-        })
+        if override == "bulk":
+            levers.append({
+                "rank": 1,
+                "lever": "starting_bodyfat",
+                "label": "Bulking at high BF — watch trajectory",
+                "impact": "very_high",
+                "reason": (
+                    f"You're at {bf:.1f}% BF (ceiling ~{offseason_ceiling:.0f}%) "
+                    f"and chose to bulk. The engine respects that — but a surplus "
+                    f"at this BF partitions more aggressively toward fat than lean "
+                    f"tissue. Expect lower muscle-fraction of scale gains and a "
+                    f"longer eventual cut to reach stage condition."
+                ),
+                "action": "Keep weekly rate ≤+0.3%/wk. If BF rises >3 pts, cut.",
+            })
+        elif override in ("maintain", "cut"):
+            levers.append({
+                "rank": 1,
+                "lever": "starting_bodyfat",
+                "label": f"Manually {override}ing at high BF — good call",
+                "impact": "very_high",
+                "reason": (
+                    f"You're at {bf:.1f}% BF (ceiling ~{offseason_ceiling:.0f}%) "
+                    f"and chose to {override}. This is what the sim points to — "
+                    f"strip BF first, then accumulate."
+                ),
+                "action": f"Target {'−0.5 to −1.0' if override == 'cut' else '±0.1'}%/wk.",
+            })
+        else:
+            levers.append({
+                "rank": 1,
+                "lever": "starting_bodyfat",
+                "label": "Cut to offseason ceiling first",
+                "impact": "very_high",
+                "reason": (
+                    f"You're at {bf:.1f}% BF; offseason ceiling for your division is "
+                    f"~{offseason_ceiling:.0f}%. Until you're under, every lean-bulk "
+                    f"cycle spends capacity fighting fat gain instead of building mass. "
+                    f"Sim: ~12 months of tier timing on the table."
+                ),
+                "action": "Run ppm_pre_cut. Target −0.7% BW/week until BF ≤ ceiling.",
+            })
 
     # 2. Training quality dominates nutrition adherence 3×
     levers.append({

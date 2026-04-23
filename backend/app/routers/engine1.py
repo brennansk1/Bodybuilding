@@ -616,4 +616,23 @@ async def get_phase_recommendation(
     bw = bw_result.scalar_one_or_none()
     weight_kg = bw.weight_kg if bw else 85.0
 
-    return _recommend_phase(muscle_gaps, pds_score, bf_pct, profile.sex, profile.preferences, competition_date=profile.competition_date, body_weight_kg=weight_kg)
+    rec = _recommend_phase(muscle_gaps, pds_score, bf_pct, profile.sex, profile.preferences, competition_date=profile.competition_date, body_weight_kg=weight_kg)
+
+    # V3 — manual override wins over the heuristic recommender. Surface
+    # the original recommendation alongside so the user can see the
+    # tradeoff they're making by overriding.
+    override = profile.nutrition_mode_override
+    if override:
+        rec = {
+            **rec,
+            "engine_recommended_phase": rec.get("recommended_phase"),
+            "engine_reasoning": rec.get("reasoning"),
+            "recommended_phase": override,
+            "confidence": "user_override",
+            "reasoning": (
+                f"Manually set to '{override}' in Settings → Nutrition. "
+                f"Engine would otherwise recommend '{rec.get('recommended_phase')}'. "
+                f"Clear the override to return to auto."
+            ),
+        }
+    return rec
